@@ -1,0 +1,1 @@
+window.AMS = {"map":{"Arun Kumar":"Harjaspreet Singh","Azad Singh":"Sakshi Sharma","Fadila Rahman Erin":"Romana Akter Liza","Fahim Al Raji":"Faria Akter","Jatinder Sharma":"Ruchita Thakur","Jyoti Rawat":"Puneet Goel","Kazi Muhammad Tanzimul Islam":"Nowshin Sharmin Shama","Md. Asraful Rashid":"Umme Kulsum Rakhi","Pooja Sharma":"Ajay Sharma"}};

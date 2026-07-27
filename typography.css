@@ -1,0 +1,88 @@
+/* ==========================================================================
+   MarginEdge — Typography tokens
+   Display: Obviously  → Archivo (substitute)
+   Text/UI: Proxima Nova → Montserrat (brand-documented free alternative)
+   ========================================================================== */
+
+:root {
+  /* Families */
+  --font-display: 'Archivo', 'Century Gothic', system-ui, sans-serif;   /* headlines */
+  --font-body:    'Montserrat', 'Proxima Nova', 'Avenir Next', Arial, sans-serif;
+  --font-num:     'Montserrat', 'Avenir Next', Arial, sans-serif;       /* tabular figures */
+
+  /* Weights */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+  --fw-extra:    800; /* @kind font */
+  --fw-black:    900; /* @kind font */
+
+  /* Fluid display sizes (slides / hero) */
+  --fs-display-1: 88px;
+  --fs-display-2: 64px;
+  --fs-display-3: 48px;
+
+  /* UI / document type scale */
+  --fs-h1:   34px;
+  --fs-h2:   26px;
+  --fs-h3:   20px;
+  --fs-lg:   18px;
+  --fs-body: 15px;
+  --fs-sm:   13px;
+  --fs-xs:   11px;
+  --fs-eyebrow: 12px;  /* uppercase kicker */
+
+  /* Line heights */
+  --lh-tight:   1.05; /* @kind other */
+  --lh-snug:    1.2;  /* @kind other */
+  --lh-normal:  1.45; /* @kind other */
+  --lh-relaxed: 1.6;  /* @kind other */
+
+  /* Letter spacing */
+  --ls-display: -0.02em;  /* @kind other */
+  --ls-tight:   -0.01em;  /* @kind other */
+  --ls-normal:  0;        /* @kind other */
+  --ls-eyebrow: 0.14em;   /* @kind other */
+}
+
+/* Reusable type roles ------------------------------------------------------ */
+.me-eyebrow {
+  font-family: var(--font-body);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--me-blue);
+}
+
+.me-display {
+  font-family: var(--font-display);
+  font-weight: var(--fw-extra);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-display);
+  color: var(--text-strong);
+}
+
+.me-heading {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--ls-tight);
+  color: var(--text-strong);
+}
+
+.me-body {
+  font-family: var(--font-body);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  color: var(--text-body);
+}
+
+/* Tabular numbers for reports / prices */
+.me-num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}

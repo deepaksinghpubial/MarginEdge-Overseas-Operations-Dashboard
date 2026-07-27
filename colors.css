@@ -1,0 +1,150 @@
+/* ==========================================================================
+   MarginEdge — Color tokens
+   Source of truth: ME Style Guidelines (Feb 2022), full palette p.12
+   Playful swatch names from the guide are preserved in comments.
+   ========================================================================== */
+
+:root {
+  /* ----- Brand core ------------------------------------------------------ */
+  --me-blue:        #0072ce; /* "[me] blue" — if you use one color, use this  */
+  --me-black:       #282827; /* "forgot-a-timer black"                        */
+
+  /* ----- Secondary (warm "fire" — supportive, never the star) ------------ */
+  --me-persimmon:   #f06246; /* "persimmon season"                            */
+  --me-honey:       #faaa41; /* "honey, I shrunk the mustard"                 */
+
+  /* ----- Additional (data-viz, notifications, accents only) -------------- */
+  --me-chartreuse:  #dbe442; /* "chartreuserie board"                         */
+  --me-teal:        #00c7b1; /* "bon appeteal"                                */
+  --me-ube:         #981d97; /* "ube-be-baby"                                 */
+
+  /* ----- Blue scale ------------------------------------------------------ */
+  --blue-50:  #f4f9fd;
+  --blue-100: #e3f4ff;
+  --blue-200: #c7ebff;
+  --blue-300: #9fd4fc;
+  --blue-400: #72b8f2;
+  --blue-500: #3b93e2;
+  --blue-600: #0072ce; /* brand */
+  --blue-700: #0056a3;
+  --blue-800: #00366b;
+  --blue-900: #00244d;
+
+  /* ----- Neutral / gray scale (cool gray) -------------------------------- */
+  --neutral-50:  #f8f8f8;
+  --neutral-100: #efefef;
+  --neutral-200: #e5e5e5;
+  --neutral-300: #cfd1d2;
+  --neutral-400: #b2b6b7;
+  --neutral-500: #939899;
+  --neutral-600: #73787a;
+  --neutral-700: #5a5d60;
+  --neutral-800: #3e3f42;
+  --neutral-900: #282827; /* brand black */
+  --white:       #ffffff;
+
+  /* ----- Persimmon scale ------------------------------------------------- */
+  --persimmon-50:  #fff6f5;
+  --persimmon-100: #ffece9;
+  --persimmon-200: #ffd5ca;
+  --persimmon-300: #ffa894;
+  --persimmon-400: #ff7d6c;
+  --persimmon-500: #f06246; /* brand */
+  --persimmon-600: #d3422f;
+  --persimmon-700: #b73220;
+  --persimmon-800: #991e14;
+  --persimmon-900: #770e00;
+
+  /* ----- Honey / mustard scale ------------------------------------------- */
+  --honey-50:  #fffbf3;
+  --honey-100: #fff4e1;
+  --honey-200: #ffe9b7;
+  --honey-300: #fad276;
+  --honey-400: #faaa41; /* brand */
+  --honey-500: #f18b06;
+  --honey-600: #e07012;
+  --honey-700: #cc5902;
+  --honey-800: #b74a00;
+  --honey-900: #993c0f;
+
+  /* ----- Chartreuse scale ------------------------------------------------ */
+  --chartreuse-50:  #fefff3;
+  --chartreuse-100: #fdffd9;
+  --chartreuse-200: #fcfaac;
+  --chartreuse-300: #f4f478;
+  --chartreuse-400: #dbe442; /* brand */
+  --chartreuse-500: #c9db03;
+  --chartreuse-600: #b8c105;
+  --chartreuse-700: #a4a804;
+  --chartreuse-800: #747704;
+  --chartreuse-900: #4d4f00;
+
+  /* ----- Teal scale ------------------------------------------------------ */
+  --teal-50:  #f5fffe;
+  --teal-100: #e1fff9;
+  --teal-200: #c3f4ea;
+  --teal-300: #8fefdc;
+  --teal-400: #40e2c3;
+  --teal-500: #00c7b1; /* brand */
+  --teal-600: #00aa99;
+  --teal-700: #048e87;
+  --teal-800: #007776;
+  --teal-900: #004f4c;
+
+  /* ----- Ube / purple scale ---------------------------------------------- */
+  --ube-50:  #fff3ff;
+  --ube-100: #fae3fc;
+  --ube-200: #e8c1e7;
+  --ube-300: #d88fd6;
+  --ube-400: #bf66c6;
+  --ube-500: #ad44ad;
+  --ube-600: #981d97; /* brand */
+  --ube-700: #79117c;
+  --ube-800: #570759;
+  --ube-900: #3d0034;
+
+  /* ======================================================================
+     Semantic aliases — reference these in components, not raw scales
+     ====================================================================== */
+
+  /* Surfaces */
+  --surface-page:     #f4f9fd;         /* app canvas — faint cool blue tint  */
+  --surface-card:     var(--white);
+  --surface-sunken:   var(--neutral-50);
+  --surface-inverse:  var(--me-black); /* dark slides / footers              */
+  --surface-brand:    var(--me-blue);
+
+  /* Text */
+  --text-strong:   var(--neutral-900);
+  --text-body:     var(--neutral-800);
+  --text-muted:    var(--neutral-600);
+  --text-subtle:   var(--neutral-500);
+  --text-inverse:  var(--white);
+  --text-brand:    var(--me-blue);
+  --text-link:     var(--me-blue);
+  --text-link-hover: var(--blue-700);
+
+  /* Lines & borders */
+  --border-subtle: var(--neutral-200);
+  --border-default:var(--neutral-300);
+  --border-strong: var(--neutral-400);
+
+  /* Interactive (primary = blue) */
+  --action-primary:        var(--me-blue);
+  --action-primary-hover:  var(--blue-700);
+  --action-primary-active: var(--blue-800);
+
+  /* Status / feedback (semantics chosen from palette) */
+  --success:       var(--teal-600);
+  --success-bg:    var(--teal-100);
+  --warning:       var(--honey-400);
+  --warning-bg:    var(--honey-100);
+  --danger:        var(--persimmon-500);
+  --danger-bg:     var(--persimmon-100);
+  --info:          var(--me-blue);
+  --info-bg:       var(--blue-100);
+
+  /* Financial reporting cues (used across the product) */
+  --pos:  var(--teal-700);   /* under budget / favorable variance            */
+  --neg:  var(--persimmon-600); /* over budget / unfavorable variance        */
+}

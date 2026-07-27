@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarginEdge Overseas Operations Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#0d1116;}
+  *{box-sizing:border-box;}
+  #wrap{height:100vh;display:flex;flex-direction:column;background:#0d1116;font-family:'Archivo',system-ui,sans-serif;}
+  #bar{flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:10px 20px;background:#0d1116;border-bottom:1px solid rgba(255,255,255,.1);}
+  #bar .brandmark{width:9px;height:24px;border-radius:2px;background:#0072CE;}
+  #bar .brandtxt{color:#fff;font-weight:800;font-size:16px;letter-spacing:-.01em;white-space:nowrap;}
+  #bar label{margin-left:auto;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.65);font-size:12.5px;font-weight:600;}
+  #dash-select{font-family:inherit;font-size:13px;font-weight:700;color:#0f2942;background:#fff;border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:7px 11px;cursor:pointer;min-width:260px;}
+  #stage{flex:1 1 auto;position:relative;width:100%;}
+  #stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <div class="brandmark"></div>
+    <div class="brandtxt">MarginEdge Overseas Operations Dashboard</div>
+    <label>Dashboard
+      <select id="dash-select">
+        <option value="legacy">Legacy Dashboard</option>
+        <option value="ipa">IPA Dashboard</option>
+        <option value="split">Both Portals (Split-Time Leads)</option>
+      </select>
+    </label>
+  </div>
+  <div id="stage">
+    <iframe id="f-legacy" title="Legacy Dashboard" src="legacy.html"></iframe>
+    <iframe id="f-ipa" title="IPA Dashboard" src="ipa.html"></iframe>
+    <iframe id="f-split" title="Both Portals" src="split.html"></iframe>
+  </div>
+</div>
+<script>
+(function(){
+  var sel=document.getElementById('dash-select');
+  var frames={legacy:document.getElementById('f-legacy'),ipa:document.getElementById('f-ipa'),split:document.getElementById('f-split')};
+  function show(key){
+    if(!frames[key]) key='legacy';
+    Object.keys(frames).forEach(function(k){
+      var on=k===key;
+      frames[k].style.visibility=on?'visible':'hidden';
+      frames[k].style.zIndex=on?'1':'0';
+    });
+    sel.value=key;
+    try{localStorage.setItem('qa-active-dashboard',key);}catch(e){}
+  }
+  sel.addEventListener('change',function(e){show(e.target.value);});
+  var saved='legacy';
+  try{saved=localStorage.getItem('qa-active-dashboard')||'legacy';}catch(e){}
+  show(saved);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+<meta name="ext-resource-dependency" content="assets/me-white.png" data-resource-id="meLogo" />
+</head>
+<body>
+<x-dc>
+<helmet>
+  <script>(function(){function opaque(m,src){return (!src||src==="")&&(String(m||"").indexOf("Script error")>=0);}window.addEventListener("error",function(e){if(opaque(e&&e.message,e&&e.filename)){e.stopImmediatePropagation&&e.stopImmediatePropagation();e.preventDefault&&e.preventDefault();return true;}},true);var _oe=window.onerror;window.onerror=function(m,s,l,c,err){if(opaque(m,s))return true;return _oe?_oe.apply(this,arguments):false;};window.addEventListener("unhandledrejection",function(e){var r=e&&e.reason;var msg=r&&(r.message||r);if(String(msg||"").indexOf("Script error")>=0){e.preventDefault&&e.preventDefault();}},true);})();</script>
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/tokens/fonts.css">
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/tokens/effects.css">
+  <link rel="stylesheet" href="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/styles.css">
+  <script src="_ds/marginedge-design-system-e6ce8f11-ad18-4d6d-9bc9-ae55d33845e7/_ds_bundle.js"></script>
+  <script src="scores-data.js"></script>
+  <script src="qa-data.js"></script>
+  <script src="location-data.js"></script>
+  <script src="role-data.js"></script>
+  <script src="am-data.js"></script>
+  <script src="ipa-exclude.js"></script>
+  <script>window.__SHEET_TARGET="legacy";</script>
+  <script src="sheet-loader.js"></script>
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+      <rect width="240" height="240" fill="#0072ce"/>
+      <g transform="translate(72,86)">
+        <rect x="0" y="40" width="18" height="28" rx="3" fill="#fff" opacity="0.55"/>
+        <rect x="26" y="22" width="18" height="46" rx="3" fill="#fff" opacity="0.8"/>
+        <rect x="52" y="8" width="18" height="60" rx="3" fill="#fff"/>
+        <rect x="78" y="30" width="18" height="38" rx="3" fill="#faaa41"/>
+      </g>
+      <text x="120" y="176" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="800" font-size="30" fill="#fff">[me]</text>
+      <text x="120" y="200" text-anchor="middle" font-family="Montserrat, sans-serif" font-size="13" fill="#cfe4fb">QA Analytics</text>
+    </svg>
+  </template>
+</helmet>
+<div ref="{{ root }}" style="min-height:100vh;background:var(--surface-page);font-family:var(--font-body)">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:14px;color:var(--text-muted);font-family:var(--font-body)">
+    <div style="font-family:var(--font-display);font-weight:800;font-size:26px;letter-spacing:-.02em;color:var(--me-blue)">[me]</div>
+    <div style="font-size:14px">Loading Analyst Scoring — Legacy Portal…</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
+  QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11};
+  PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
+  ICON = {
+    overview:'<path d="M3 3v18h18"/><path d="M7 16v2"/><path d="M12 11v7"/><path d="M17 6v12"/>',
+    summary:'<path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>',
+    leaderboard:'<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v1.5a3 3 0 0 1-3 3"/><path d="M7 5H4v1.5a3 3 0 0 0 3 3"/>',
+    specialist:'<path d="M12 2l2.4 5.2 5.6.6-4.2 3.8 1.2 5.6L12 20l-5 3 1.2-5.6L4 13.6l5.6-.6z"/>',
+    spprofile:'<circle cx="12" cy="8" r="3.6"/><path d="M5 21a7 7 0 0 1 14 0"/><path d="M18 3l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
+    anprofile:'<circle cx="12" cy="8" r="3.6"/><path d="M5 21a7 7 0 0 1 14 0"/>',
+    teams:'<circle cx="9" cy="8" r="3.4"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.8a3.4 3.4 0 0 1 0 6.4"/><path d="M20 20a6 6 0 0 0-4-5.6"/>',
+    teamreport:'<circle cx="9" cy="8" r="3.4"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.8a3.4 3.4 0 0 1 0 6.4"/><path d="M20 20a6 6 0 0 0-4-5.6"/>',
+    amreport:'<circle cx="12" cy="7" r="3.6"/><path d="M5 21a7 7 0 0 1 14 0"/>',
+    profile:'<circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/>',
+    compare:'<path d="M12 3v18"/><path d="M6 8h12"/><path d="M6 8l-2.5 6h5L6 8z"/><path d="M18 8l-2.5 6h5L18 8z"/>',
+    coaching:'<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+    training:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/>',
+    locations:'<path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+    roles:'<path d="M4 20a5 5 0 0 1 10 0"/><circle cx="9" cy="8" r="3"/><path d="M15 8h6"/><path d="M15 12h6"/><path d="M15 16h6"/>',
+    ams:'<rect x="3" y="4" width="7" height="7" rx="1.4"/><rect x="14" y="4" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
+    doc:'<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>'
+  };
+
+  renderVals() { return { root: this.rootRef }; }
+  componentDidMount() { this.boot(); }
+
+  boot() {
+    if (!window.SCORES) { setTimeout(() => this.boot(), 40); return; }
+    window.__QA_RELOAD = () => { this._reloading = true; this.boot(); };
+    var prevPage = this._booted ? (this.st && this.st.page) : null;
+    var prevSel = this._booted ? this.sel : null;
+    var prevSt = this._booted ? this.st : null;
+    this._booted = true;
+    this.S = window.SCORES;
+    this.Q = window.QA_DATA || null;
+    this.st = { page:"summary", from:this.S.dates[0], to:this.S.dates[this.S.dates.length-1] };
+    this.st.preset = "all";
+    this.LOC = window.LOCATIONS || null;
+    this.ROLE = window.ROLES || null;
+    this.AM = window.AMS || null;
+    this._teamAllowed = {};
+    if (this.AM) { for (var ti=0; ti<this.S.teams.length; ti++){ this._teamAllowed[ti] = !!this.AM.map[this.S.teams[ti]]; } }
+    // Team membership is now governed entirely by the sheet loader (allowlisted
+    // team leads + Specialist/Analyst designation). The old hardcoded per-person
+    // exclude list wrongly dropped valid team members, so it is disabled.
+    this.EXCL = {};
+    this.st.role = "";
+    if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
+    this.sel = { lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false };
+    if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
+    this.noteText = "Scores: legacy_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
+    this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
+    this.noteLoc = this.LOC ? ("Locations: " + this.LOC.locations.map(l=>l+" "+this.LOC.counts[l]).join(", ")) : "Locations: none loaded";
+    this.noteRole = this.ROLE ? ("Roles: " + this.ROLE.roles.map(l=>l+" "+this.ROLE.counts[l]).join(", ")) : "Roles: none loaded";
+    this.rootRef.current.innerHTML = this.buildShell();
+    if (prevPage && this.PAGES[prevPage]) this.st.page = prevPage;
+    if (prevSt) {
+      if (prevSt.from && this.S.dates.indexOf(prevSt.from) >= 0) this.st.from = prevSt.from;
+      if (prevSt.to && this.S.dates.indexOf(prevSt.to) >= 0) this.st.to = prevSt.to;
+      if (prevSt.preset) this.st.preset = prevSt.preset;
+      if (prevSt.role != null) this.st.role = prevSt.role;
+      if (prevSt.loc != null) this.st.loc = prevSt.loc;
+      if (prevSt.exclusiveOnly != null) this.st.exclusiveOnly = prevSt.exclusiveOnly;
+    }
+    this._exTeams = null;
+    // If a team report was open, re-resolve the team index by NAME (indices can
+    // shift between sheet loads) so the drill-down survives the refresh.
+    if (this.st.page === "teamreport" && this._teamReportName) {
+      var ni = this.S.teams.indexOf(this._teamReportName);
+      if (ni >= 0) this.sel.teamReport = ni; else this.st.page = "teams";
+    }
+    this.wire(); this.syncDates(); this.setActiveNav(); this.setTitle(); this.renderContent();
+  }
+
+  _q(s){ return this.rootRef.current ? this.rootRef.current.querySelector(s) : null; }
+  ic = (name) => '<svg viewBox="0 0 24 24">' + (this.ICON[name]||"") + '</svg>';
+  esc = (s) => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  fs1 = (v) => v>=100 ? String(Math.round(v)) : (Math.round(v*10)/10).toFixed(1);
+  pct = (v) => (v*100).toFixed(2)+"%";
+  median = (arr) => { if(!arr.length) return 0; var a=arr.slice().sort((x,y)=>x-y); var m=Math.floor(a.length/2); return a.length%2?a[m]:(a[m-1]+a[m])/2; };
+  fsColor = (v,med) => v>=med ? "var(--green)" : "var(--red)";
+  erColor = (v,med) => v<=med ? "var(--green)" : "var(--red)";
+
+  buildShell() {
+    var nav = (p,l) => '<div class="sb-item" data-act="nav" data-arg="'+p+'">'+this.ic(p)+'<span>'+l+'</span></div>';
+    return '<div class="qa"><style>'+this.shellCSS()+'</style><div class="app">'
+      + '<aside class="sidebar">'
+      +   '<div class="sb-brand"><img src="'+((window.__resources&&window.__resources.meLogo)||"assets/me-white.png")+'" alt="MarginEdge"><div class="ttl">Analyst Scoring</div><div class="sub">Legacy Portal \u00b7 Dhaka &amp; Chandigarh Operations</div></div>'
+      +   '<div class="sb-group"><div class="sb-group-label">Insights</div>'+nav("summary","Executive Summary")+nav("ams","AM Performance")+nav("teams","Team Lead Performance")+nav("specialist","Specialist Performance")+nav("leaderboard","Analyst Performance")+'</div>'
+      +   '<div class="sb-group"><div class="sb-group-label">Deep dive</div>'+nav("spprofile","Individual Specialist Performance")+nav("anprofile","Individual Analyst Performance")+'</div>'
+      +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
+      +   '<div class="sb-admin">'
+      +     '<div class="sb-source"><div class="lbl">'+this.ic("doc")+'Data source</div><div class="sb-source-name">Legacy Productivity &middot; Google Sheet</div><a class="sb-source-link" href="https://docs.google.com/spreadsheets/d/16GBOjwfzCdJBASuSqr_8A-TCJPjEMZxK3EWWcz3ETmo/edit" target="_blank" rel="noopener">Open sheet \u2197</a></div>'
+      +     '<div class="sb-note" id="qa-note">'+this.esc(this.noteText)+'</div>'
+      +   '</div>'
+      + '</aside>'
+      + '<div class="main">'
+      +   '<div class="topbar"><h1 id="qa-title"></h1>'
+      +     '<div class="tb-right">'+this.locFilterHTML()+this.roleFilterHTML()+'<div class="tb-presets"><button class="preset-btn" data-act="preset" data-arg="7">7d</button><button class="preset-btn" data-act="preset" data-arg="14">14d</button><button class="preset-btn" data-act="preset" data-arg="all">All</button></div><label>from</label><input type="date" id="qa-from" data-act="datefrom"><label>to</label><input type="date" id="qa-to" data-act="dateto"><button class="reset-btn" data-act="reset">Reset</button><button class="reset-btn" data-act="email" title="Build a presentable email from this view">\u2709 Email summary</button><button class="reset-btn" data-act="export" title="Export the current view to CSV">\u2913 Export CSV</button></div>'
+      +   '</div>'
+      +   '<div class="content" id="qa-content"></div>'
+      +   '<div class="footer">Source: legacy_analyst_daily_scores mart (per analyst, per day). Higher final score &amp; lower error rate are better. Median &amp; \u0394 recompute across every analyst-day row in the selected range. Mistake detail (order links) comes from the Mistake Details export.</div>'
+      + '</div></div></div>';
+  }
+
+  locFilterHTML(){ if(!this.LOC) return ''; var active=!!this.st.loc; var opts='<option value="">All Locations</option>'+this.LOC.locations.map(l=>'<option value="'+this.esc(l)+'"'+(this.st.loc===l?' selected':'')+'>'+this.esc(l)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Location</label><select data-act="locfilter">'+opts+'</select></div>'; }
+  roleFilterHTML(){ if(!this.ROLE) return ''; var active=!!this.st.role; var opts='<option value="">All roles</option>'+this.ROLE.roles.map(r=>'<option value="'+this.esc(r)+'"'+(this.st.role===r?' selected':'')+'>'+this.esc(r)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Role</label><select data-act="rolefilter">'+opts+'</select></div>'; }
+  exclusiveToggleHTML(){ var tgt=window.__SHEET_TARGET==="ipa"?"IPA":"Legacy"; var n=this.exclusiveTeamIdx?Object.keys(this.exclusiveTeamIdx()).length:0; return '<div class="excl-badge"><span class="excl-badge-main">'+tgt+' teams</span><span class="excl-badge-count">'+n+'</span></div>'; }
+
+  wire() {
+    var host = this.rootRef.current;
+    host.addEventListener("click", this.onClick);
+    host.addEventListener("change", this.onChange);
+    host.addEventListener("input", this.onInput);
+  }
+  onClick = (e) => {
+    var t = e.target.closest("[data-act]"); if(!t) return;
+    var act=t.dataset.act, arg=t.dataset.arg;
+    if(act==="nav") this.setPage(arg);
+    else if(act==="reset") this.resetDates();
+    else if(act==="process") this.startProcessing();
+    else if(act==="processMistakes") this.startMistakes();
+    else if(act==="processLoc") this.startLoc();
+    else if(act==="processRole") this.startRole();
+    else if(act==="profile") this.gotoProfile(arg);
+    else if(act==="team") this.gotoTeam(arg);
+    else if(act==="teamname") this.gotoTeamName(arg);
+    else if(act==="am") this.gotoAM(arg);
+    else if(act==="preset") this.setPreset(arg);
+    else if(act==="export") this.exportCSV();
+    else if(act==="email") this.showEmailModal();
+    else if(act==="shoutdismiss"){ this.sel.shoutDismissed=true; this.renderContent(); }
+    else if(act==="emailclose"){ var m=this.rootRef.current.querySelector("#qa-email"); if(m) m.remove(); }
+    else if(act==="emailrich") this.copyEmail("rich");
+    else if(act==="emailtext") this.copyEmail("text");
+    else if(act==="showall"){ this.sel.showAllMistakes=true; this.renderContent(); }
+  };
+  onChange = (e) => {
+    var t=e.target, act=t.dataset.act; if(!act) return;
+    if(act==="datefrom"||act==="dateto") this.onDateChange();
+    else if(act==="lbsort"){ this.sel.lbSort=t.value; this.renderContent(); }
+    else if(act==="spsort"){ this.sel.spSort=t.value; this.renderContent(); }
+    else if(act==="cmpmode"){ this.sel.cmpMode=t.value; this.sel.cmpA=""; this.sel.cmpB=""; this.renderContent(); }
+    else if(act==="cmpa"){ this.sel.cmpA=t.value; this.renderContent(); }
+    else if(act==="cmpb"){ this.sel.cmpB=t.value; this.renderContent(); }
+    else if(act==="prteam"){ this.sel.prTeam=t.value; this.sel.prAnalyst=""; this.renderContent(); }
+    else if(act==="pranalyst"){ this.sel.prAnalyst=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="spteam"){ this.sel.spTeam=t.value; this.sel.spAnalyst=""; this.renderContent(); }
+    else if(act==="spanalyst"){ this.sel.spAnalyst=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="anteam"){ this.sel.anTeamK=t.value; this.sel.anAnalystK=""; this.renderContent(); }
+    else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="rolefilter"){ this.st.role=t.value; var rf=t.closest(".role-filter"); if(rf) rf.classList.toggle("active", !!t.value); this.setTitle(); this.renderContent(); }
+    else if(act==="locfilter"){ this.st.loc=t.value; var lf=t.closest(".role-filter"); if(lf) lf.classList.toggle("active", !!t.value); this.renderContent(); }
+    else if(act==="exclusive"){ this.st.exclusiveOnly=t.checked; var el=t.closest(".excl-toggle"); if(el){ el.classList.toggle("active", t.checked); var cn=el.querySelector(".excl-count"); if(cn){ var allN=this.S.teams.filter(x=>x!=="Unassigned").length; var exN=Object.keys(this.exclusiveTeamIdx()).length; cn.textContent=(t.checked?exN:allN)+" teams shown"; } } this.renderContent(); }
+    else if(act==="amsort"){ this.sel.amSort=t.value; this.renderContent(); }
+  };
+  onInput = (e) => {
+    var t=e.target;
+    if(t.dataset.act==="lbsearch"){ this.sel.lbSearch=t.value; this._caret=t.selectionStart; this.renderContent(); this._caret=null; }
+    else if(t.dataset.act==="spsearch"){ this.sel.spSearch=t.value; this._caret=t.selectionStart; this._caretSp=true; this.renderContent(); this._caret=null; this._caretSp=false; }
+  };
+
+  setActiveNav(){ this.rootRef.current.querySelectorAll(".sb-item").forEach(it=>it.classList.toggle("active", it.dataset.arg===this.st.page)); }
+  setTitle(){ var el=this._q("#qa-title"); if(!el) return; var scope=(this.ROLE&&this.st.role&&this.st.page!=="roles"&&this.st.page!=="specialist"&&this.st.page!=="spprofile"&&this.st.page!=="anprofile")?' <span class="title-scope">'+this.esc(this.st.role)+'s only</span>':''; el.innerHTML=this.ic(this.st.page)+"<span>"+this.PAGES[this.st.page]+"</span>"+scope; }
+  setPage(p){ this.st.page=p; this.setActiveNav(); this.setTitle(); this.renderContent(); if(window.scrollTo) window.scrollTo(0,0); }
+  onDateChange(){ var f=this._q("#qa-from").value, t=this._q("#qa-to").value; if(f)this.st.from=f; if(t)this.st.to=t; if(this.st.from>this.st.to){var tmp=this.st.from;this.st.from=this.st.to;this.st.to=tmp;} this.st.preset="custom"; this.syncDates(); this.renderContent(); }
+  resetDates(){ this.st.from=this.S.dates[0]; this.st.to=this.S.dates[this.S.dates.length-1]; this.st.preset="all"; this.syncDates(); this.renderContent(); }
+  setPreset(n){ var d=this.S.dates; if(n==="all"){ this.st.from=d[0]; this.st.to=d[d.length-1]; } else { var k=parseInt(n); this.st.to=d[d.length-1]; this.st.from=d[Math.max(0,d.length-k)]; } this.st.preset=n; this.syncDates(); this.renderContent(); }
+  syncDates(){ var f=this._q("#qa-from"), t=this._q("#qa-to"); if(!f||!t) return; f.value=this.st.from; t.value=this.st.to; f.min=t.min=this.S.dates[0]; f.max=t.max=this.S.dates[this.S.dates.length-1]; this.setPresetActive(); }
+  setPresetActive(){ var el=this.rootRef.current; if(!el) return; el.querySelectorAll(".preset-btn").forEach(b=>b.classList.toggle("active", b.dataset.arg===this.st.preset)); }
+
+  roleOf(login){ if(!this.ROLE) return null; var m=this.ROLE.map; return m[login] || m[String(login).toLowerCase()] || null; }
+  isExcluded(login){ return !!this.EXCL[String(login).toLowerCase()]; }
+  exclusiveTeamIdx(){ if(this._exTeams) return this._exTeams; var set={}; var tgt=window.__SHEET_TARGET==="ipa"?"ipa":"legacy"; var names=(window.TEAM_SETS&&window.TEAM_SETS[tgt])||[]; var nm={}; names.forEach(n=>nm[n]=1); for(var i=0;i<this.S.teams.length;i++){ if(nm[this.S.teams[i]]) set[i]=1; } this._exTeams=set; return set; }
+  srows(ignoreRole){ var S=this.S, st=this.st, D=this.SD, out=[]; var rf=(!ignoreRole && this.ROLE && st.role) ? st.role : null; var gate=this.ROLE; var unTi=S.teams.indexOf("Unassigned"); var teamGate=this.AM; var exOnly=!!st.exclusiveOnly; var exSet=exOnly?this.exclusiveTeamIdx():null; for(var i=0;i<S.records.length;i++){ var rec=S.records[i]; var d=S.dates[rec[D.DATE]]; if(d<st.from||d>st.to) continue; if(rec[D.TEAM]===unTi) continue; if(exOnly && !exSet[rec[D.TEAM]]) continue; if(teamGate && !this._teamAllowed[rec[D.TEAM]]) continue; var login=S.analysts[rec[D.AN]]; if(this.isExcluded(login)) continue; var role=gate?this.roleOf(login):null; if(gate && !role) continue; if(rf && role!==rf) continue; if(st.loc && this.locationOf(login)!==st.loc) continue; out.push(rec); } return out; }
+  datesInRange(){ var st=this.st; return this.S.dates.filter(d=>d>=st.from&&d<=st.to); }
+  windowMedians(rws){ var D=this.SD; return { fs:this.median(rws.map(r=>r[D.FS])), er:this.median(rws.map(r=>r[D.ER])) }; }
+  rowsForRange(from,to){ var S=this.S, D=this.SD, out=[]; var unTi=S.teams.indexOf("Unassigned"); var teamGate=this.AM; for(var i=0;i<S.records.length;i++){ var rec=S.records[i]; var d=S.dates[rec[D.DATE]]; if(d<from||d>to) continue; if(rec[D.TEAM]===unTi) continue; if(teamGate && !this._teamAllowed[rec[D.TEAM]]) continue; var login=S.analysts[rec[D.AN]]; if(this.isExcluded(login)) continue; if(this.ROLE && !this.roleOf(login)) continue; if(this.st.loc && this.locationOf(login)!==this.st.loc) continue; out.push(rec); } return out; }
+  priorWindow(){ var ds=this.datesInRange(); if(ds.length<2) return null; var allBefore=this.S.dates.filter(d=>d<this.st.from); if(!allBefore.length) return null; var n=ds.length; var prior=allBefore.slice(-n); return {from:prior[0], to:prior[prior.length-1], days:prior.length}; }
+  deltaChip(cur,prev,opts){ opts=opts||{}; if(prev==null||!isFinite(prev)){ return '<span class="d-chip d-neu">\u2014</span>'; } var d=cur-prev; var good = opts.higherBetter? d>0 : d<0; var neutral=Math.abs(d)<(opts.eps||0.0001); var cls=neutral?'d-neu':good?'d-up':'d-down'; var arrow=neutral?'\u2192':d>0?'\u25B2':'\u25BC'; var val=opts.pct?(Math.abs(d)*100).toFixed(2)+'pp':this.fs1(Math.abs(d)); return '<span class="d-chip '+cls+'">'+arrow+' '+val+'</span>'; }
+
+  aggAnalysts(rws){
+    var S=this.S, D=this.SD, m={};
+    rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]); });
+    return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, series:ser, trend:this.trendOf(ser)}; });
+  }
+  trendOf(ser){ if(!ser||ser.length<2) return {dir:"flat",delta:0}; var mid=Math.floor(ser.length/2); var e=ser.slice(0,mid), l=ser.slice(mid); var ea=e.reduce((s,v)=>s+v,0)/(e.length||1), la=l.reduce((s,v)=>s+v,0)/(l.length||1); var d=la-ea, rel=ea?d/Math.abs(ea):0; return {dir:rel>0.05?"up":rel<-0.05?"down":"flat", delta:d}; }
+  trendArrow(t){ if(!t||t.dir==="flat") return '<span style="color:var(--muted);font-weight:700">\u2013</span>'; return t.dir==="up" ? '<span style="color:var(--green);font-weight:700">\u25B2</span>' : '<span style="color:var(--red);font-weight:700">\u25BC</span>'; }
+  sparkline(ser,color){ color=color||"var(--accent)"; if(!ser||!ser.length) return ""; var w=80,h=22,p=3; var mn=Math.min.apply(null,ser),mx=Math.max.apply(null,ser),rng=(mx-mn)||1; var pts=ser.map((v,i)=>{ var x=p+(ser.length===1?(w-2*p)/2:i/(ser.length-1)*(w-2*p)); var y=h-p-((v-mn)/rng)*(h-2*p); return x.toFixed(1)+","+y.toFixed(1); }); var lc=pts[pts.length-1].split(","); return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:block"><polyline points="'+pts.join(" ")+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lc[0]+'" cy="'+lc[1]+'" r="1.9" fill="'+color+'"/></svg>'; }
+  aggTeams(rws){
+    var S=this.S, D=this.SD, m={};
+    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{}}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; });
+    return Object.keys(m).map(k=>{ var o=m[k]; return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts}; });
+  }
+
+  lineChart(labels, values, opts){
+    opts=opts||{}; var w=opts.w||660, hgt=opts.h||220, col=opts.color||"var(--accent)", fmt=opts.fmt||(v=>Math.round(v));
+    var padL=opts.padL||46,padR=26,padT=26,padB=30;
+    var mx=Math.max.apply(null,values.concat([opts.min||0.0001]))*1.15;
+    var iw=w-padL-padR, ih=hgt-padT-padB;
+    var pts=values.map((v,i)=>{ var x=padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); var y=padT+ih-(v/mx*ih); return [x,y]; });
+    var path=""; pts.forEach((p,i)=>{ if(i===0){path="M"+p[0]+","+p[1];return;} var p0=pts[i-1],cx=(p0[0]+p[0])/2; path+=" C"+cx+","+p0[1]+" "+cx+","+p[1]+" "+p[0]+","+p[1]; });
+    var ticks="",nT=4; for(var t=0;t<=nT;t++){ var val=mx/1.15*t/nT, y=padT+ih-(val/mx*ih); ticks+='<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/><text x="'+(padL-8)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+fmt(val)+'</text>'; }
+    var area = pts.length ? "M"+pts[0][0]+","+(padT+ih)+" "+path.replace(/^M/,"L")+" L"+pts[pts.length-1][0]+","+(padT+ih)+" Z" : "";
+    var baseline="";
+    if(opts.baseline!=null && opts.baseline<=mx){ var by=padT+ih-(opts.baseline/mx*ih); baseline='<line x1="'+padL+'" y1="'+by+'" x2="'+(w-padR)+'" y2="'+by+'" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="5 4"/><text x="'+(w-padR)+'" y="'+(by-5)+'" text-anchor="end" font-size="9" fill="var(--muted)" font-family="var(--font-num)">median '+fmt(opts.baseline)+'</text>'; }
+    var dots=pts.map((p,i)=>'<circle cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="'+col+'" stroke="var(--card)" stroke-width="2"/><text x="'+p[0]+'" y="'+(p[1]-10)+'" text-anchor="middle" font-size="9.5" font-weight="700" fill="'+col+'" font-family="var(--font-num)">'+fmt(values[i])+'</text><text x="'+p[0]+'" y="'+(hgt-9)+'" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+labels[i]+'</text>').join("");
+    return '<svg viewBox="0 0 '+w+' '+hgt+'" class="me-chart" style="width:100%;height:auto"><defs><linearGradient id="g'+(opts.gid||"x")+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+col+'" stop-opacity="0.16"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'+ticks+'<path d="'+area+'" class="me-area" fill="url(#g'+(opts.gid||"x")+')" stroke="none"/>'+baseline+'<path d="'+path+'" class="me-trend" fill="none" stroke="'+col+'" stroke-width="2.6" stroke-linecap="round"/>'+dots+'</svg>';
+  }
+  rankBars(items, colorFn){
+    var mx=Math.max.apply(null,items.map(i=>i.value).concat([0.0001]));
+    return items.map((it,i)=>'<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><span style="width:20px;text-align:right;font-size:11px;color:var(--muted);font-family:var(--font-num)">'+(i+1)+'</span><span style="width:118px;flex-shrink:0;font-size:12px;font-family:var(--font-body);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+this.esc(it.label)+'">'+(it.act?'<button class="team-link" data-act="'+it.act+'" data-arg="'+this.esc(it.label)+'">'+this.esc(it.label)+'</button>':this.esc(it.label))+'</span><div style="flex:1;height:8px;background:var(--neutral-200);border-radius:4px;overflow:hidden"><div class="me-grow" style="width:'+(it.value/mx*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+(colorFn?colorFn(it):"var(--accent)")+'"></div></div><span style="width:52px;text-align:right;font-size:12px;font-family:var(--font-num);font-weight:700;color:'+(colorFn?colorFn(it):"var(--text)")+'">'+it.disp+'</span></div>').join("");
+  }
+  dualBar(title,aName,aV,bName,bV,opts){
+    opts=opts||{}; var hb=opts.higherBetter, mx=Math.max(Math.abs(aV),Math.abs(bV),0.0001)*1.15;
+    var aBetter = hb ? aV>=bV : aV<=bV;
+    var aC=aBetter?"var(--green)":"var(--red)", bC=aBetter?"var(--red)":"var(--green)";
+    if(aV===bV){aC="var(--gold)";bC="var(--gold)";}
+    var f=(v)=>opts.pct?this.pct(v):(opts.dec?this.fs1(v):v);
+    return '<div><div class="cmp-title">'+title+'</div><div class="cmp-dual"><div><div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="cmp-side-label" style="color:'+aC+'">'+f(aV)+'</span><span style="font-size:10px;color:var(--muted)">'+this.esc(aName)+'</span></div><div class="cmp-bar-wrap"><div class="cmp-bar-fill me-grow" style="width:'+(Math.abs(aV)/mx*100).toFixed(1)+'%;background:'+aC+'"></div></div></div><div class="cmp-vs">vs</div><div><div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;flex-direction:row-reverse"><span class="cmp-side-label" style="color:'+bC+'">'+f(bV)+'</span><span style="font-size:10px;color:var(--muted)">'+this.esc(bName)+'</span></div><div class="cmp-bar-wrap" style="direction:rtl"><div class="cmp-bar-fill me-grow" style="width:'+(Math.abs(bV)/mx*100).toFixed(1)+'%;background:'+bC+'"></div></div></div></div></div>';
+  }
+
+  renderContent(){
+    var el=this._q("#qa-content"); if(!el) return;
+    var rws=this.srows(), p=this.st.page, html="";
+    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); return; }
+    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); return; }
+    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); return; }
+    if(p==="summary") html=this.pageSummary(rws);
+    else if(p==="overview") html=this.pageOverview(rws);
+    else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
+    else if(p==="teams") html=this.pageTeams(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
+    else if(p==="teamreport") html=this.pageTeamReport(rws);
+    else if(p==="amreport") html=this.pageAMReport(rws);
+    else if(p==="ams") html=this.pageAMs(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
+    else if(p==="locations") html=this.pageLocations(rws);
+    else if(p==="roles") html=this.pageRoles(rws);
+    else if(p==="training") html=this.pageTraining(rws);
+    else if(p==="profile") html=this.pageProfile(rws);
+    else if(p==="coaching") html=this.pageCoaching(rws);
+    else if(p==="compare") html=this.pageCompare(rws);
+    el.innerHTML=html;
+    if(this._caret!=null){ var s=this._q(this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
+  }
+
+  pageSummary(rws){
+    var D=this.SD;
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var ds=this.datesInRange();
+    var med=this.windowMedians(rws);
+    var avgFs=rws.reduce((s,r)=>s+r[D.FS],0)/rws.length;
+    var avgEr=rws.reduce((s,r)=>s+r[D.ER],0)/rws.length;
+    var avgProd=rws.reduce((s,r)=>s+r[D.PROD],0)/rws.length;
+    var totErr=rws.reduce((s,r)=>s+r[D.ERRS],0);
+    var ans=this.aggAnalysts(rws), teams=this.aggTeams(rws), am=this.aggByAM(rws);
+    var pw=this.priorWindow(), pAvgFs=null,pAvgEr=null,pAvgProd=null,pErrDay=null;
+    if(pw){ var pr=this.rowsForRange(pw.from,pw.to); if(pr.length){ pAvgFs=pr.reduce((s,r)=>s+r[D.FS],0)/pr.length; pAvgEr=pr.reduce((s,r)=>s+r[D.ER],0)/pr.length; pAvgProd=pr.reduce((s,r)=>s+r[D.PROD],0)/pr.length; pErrDay=pr.reduce((s,r)=>s+r[D.ERRS],0)/pw.days; } }
+    var errDay=totErr/ds.length;
+    var scope=(this.ROLE&&this.st.role)?this.st.role+'s':'analysts';
+    var fsUp=pAvgFs!=null&&avgFs>=pAvgFs, erDown=pAvgEr!=null&&avgEr<=pAvgEr;
+    var verdict, vColor;
+    if(pAvgFs==null){ verdict='Baseline period \u2014 no prior window to compare against.'; vColor='var(--muted)'; }
+    else if(fsUp&&erDown){ verdict='Improving on both fronts \u2014 higher output and fewer errors than the previous '+pw.days+' days.'; vColor='var(--green)'; }
+    else if(fsUp&&!erDown){ verdict='Output up, but error rate ticked up versus the previous '+pw.days+' days \u2014 watch quality.'; vColor='var(--gold)'; }
+    else if(!fsUp&&erDown){ verdict='Cleaner work, but overall final score slipped versus the previous '+pw.days+' days.'; vColor='var(--gold)'; }
+    else { verdict='Both output and quality softened versus the previous '+pw.days+' days \u2014 needs attention.'; vColor='var(--red)'; }
+    var hero='<div class="exec-hero"><div class="exec-hero-l"><div class="exec-eyebrow">Executive Summary \u00b7 Legacy Portal</div><div class="exec-period">'+this.esc(this.st.from)+' \u2192 '+this.esc(this.st.to)+' \u00b7 '+ds.length+' days</div></div><div class="exec-hero-r"><div class="exec-big">'+this.fs1(avgFs)+'</div><div class="exec-big-lbl">avg final score</div></div></div>';
+    var kcard=(label,val,prev,opts)=>'<div class="kpi"><div class="k-label">'+label+'</div><div class="k-val"'+(opts.color?' style="color:'+opts.color+'"':'')+'>'+opts.disp+'</div><div class="k-sub">'+(opts.disp2||'')+'</div></div>';
+    var kpi='<div class="kpi-row">'
+      +kcard('Avg final score',avgFs,pAvgFs,{higherBetter:true,disp:this.fs1(avgFs),disp2:'median '+this.fs1(med.fs),color:'var(--accent)'})
+      +kcard('Avg error rate',avgEr,pAvgEr,{higherBetter:false,pct:true,disp:this.pct(avgEr),disp2:'median '+this.pct(med.er),color:this.erColor(avgEr,med.er)})
+      +kcard('Avg productivity',avgProd,pAvgProd,{higherBetter:true,disp:this.fs1(avgProd),disp2:'per analyst-day'})
+      +kcard('Errors / day',errDay,pErrDay,{higherBetter:false,disp:this.fs1(errDay),disp2:'across '+ds.length+' days',color:'var(--proc)'})
+      +'<div class="kpi"><div class="k-label">'+(this.ROLE&&this.st.role?this.esc(this.st.role)+'s':'Analysts')+'</div><div class="k-val">'+ans.length+'</div><div class="k-sub">'+teams.length+' teams \u00b7 '+am.list.length+' AMs</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">over '+rws.length.toLocaleString()+' analyst-days</div></div>'
+      +'<div class="kpi"><div class="k-label">Total possible errors</div><div class="k-val">'+rws.reduce((s,r)=>s+r[D.PTS],0).toLocaleString()+'</div><div class="k-sub">points reviewed \u00b7 '+this.pct(totErr/Math.max(1,rws.reduce((s,r)=>s+r[D.PTS],0)))+' error rate</div></div>'
+      +'</div>';
+    var minDays=Math.max(1,Math.round(ds.length*0.5));
+    var teamsSorted=teams.slice().sort((a,b)=>b.fs-a.fs);
+    var amsSorted=am.list.slice().sort((a,b)=>b.fs-a.fs);
+    var eligAns=ans.filter(a=>a.days>=minDays);
+    var topAn=eligAns.slice().sort((a,b)=>b.fs-a.fs).slice(0,5);
+    var botAn=eligAns.slice().sort((a,b)=>a.fs-b.fs).slice(0,5);
+    var hl=(title,items,nameKey,color)=>{ var act=nameKey==='team'?'teamname':nameKey==='am'?'am':null; return '<div class="hl-card"><div class="hl-title" style="color:'+color+'">'+title+'</div>'+items.map((x,i)=>'<div class="hl-row"><span class="hl-rank">'+(i+1)+'</span><span class="hl-name" title="'+this.esc(x[nameKey])+'">'+(act?'<button class="team-link" data-act="'+act+'" data-arg="'+this.esc(x[nameKey])+'">'+this.esc(x[nameKey])+'</button>':this.esc(x[nameKey]))+'</span><span class="hl-val" style="color:'+color+'">'+this.fs1(x.fs)+'</span></div>').join('')+'</div>'; };
+    var leaders='<div class="card"><div class="card-head">Who is driving the numbers</div><div class="card-body"><div class="hl-grid">'
+      +hl('Top teams',teamsSorted.slice(0,5),'team','var(--green)')
+      +hl('Teams needing support',teamsSorted.slice(-5).reverse(),'team','var(--red)')
+      +hl('Strongest AMs',amsSorted.slice(0,5),'am','var(--green)')
+      +hl('AMs to watch',amsSorted.slice(-5).reverse(),'am','var(--red)')
+      +'</div></div></div>';
+    var people='<div class="grid-2">'
+      +'<div class="card"><div class="card-head" style="color:var(--green)">Top '+scope+' \u2014 final score</div><div class="card-body">'+this.rankBars(topAn.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--green)")+'<div class="chart-note">Active \u2265'+minDays+' of '+ds.length+' days.</div></div></div>'
+      +'<div class="card"><div class="card-head" style="color:var(--red)">Training priorities \u2014 lowest final score</div><div class="card-body">'+this.rankBars(botAn.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--red)")+'<div class="chart-note">Coaching candidates active \u2265'+minDays+' days.</div></div></div>'
+      +'</div>';
+    var dayFs=ds.map(d=>{ var v=rws.filter(r=>this.S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.FS],0)/v.length:0; });
+    var dayErrCount=ds.map(d=>{ var n=0; rws.forEach(r=>{ if(this.S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
+    var trend='';
+    var soSpec=ans.filter(a=>/special/i.test(this.roleOf(a.an)||'')).sort((a,b)=>b.fs-a.fs)[0];
+    var soAna=ans.filter(a=>{var r=this.roleOf(a.an)||'';return !/lead|special/i.test(r);}).sort((a,b)=>b.fs-a.fs)[0];
+    var soTeam=teamsSorted[0], soAM=amsSorted[0];
+    var soCard=(role,name,stat,act,i)=>{ var nm=act?'<button class="so-namebtn" data-act="'+act+'" data-arg="'+this.esc(name)+'">'+this.esc(name)+'</button>':this.esc(name); return '<div class="so-card" style="animation-delay:'+(i*0.07).toFixed(2)+'s"><div class="so-name">'+nm+'</div><div class="so-role"><span class="so-star">\u2605</span> '+role+'</div><div class="so-stat">'+stat+'</div></div>'; };
+    var soCards=[];
+    if(soAna) soCards.push(soCard('Top Analyst',soAna.an,'Final Score '+this.fs1(soAna.fs)+' \u00b7 Prod '+this.fs1(soAna.prod)+' \u00b7 Err '+this.pct(soAna.er),'profile',soCards.length));
+    if(soSpec) soCards.push(soCard('Top Specialist',soSpec.an,'Final Score '+this.fs1(soSpec.fs)+' \u00b7 Prod '+this.fs1(soSpec.prod)+' \u00b7 Err '+this.pct(soSpec.er),'profile',soCards.length));
+    if(soTeam) soCards.push(soCard('Top Team Lead',soTeam.team,'Final Score '+this.fs1(soTeam.fs)+' \u00b7 '+soTeam.n+' people','teamname',soCards.length));
+    if(soAM) soCards.push(soCard('Top Assistant Manager',soAM.am,'Final Score '+this.fs1(soAM.fs)+' \u00b7 '+soAM.nTeams+' lead'+(soAM.nTeams===1?'':'s')+' \u00b7 '+soAM.n+' people','am',soCards.length));
+    var shout=soCards.length?'<div class="shout-grid">'+soCards.join('')+'</div>':'';
+    var dayErrRate=ds.map(d=>{ var e=0,p=0; rws.forEach(r=>{ if(this.S.dates[r[D.DATE]]===d){ e+=r[D.ERRS]; p+=r[D.PTS]; } }); return p>0?e/p:0; });
+    var med=this.windowMedians(rws);
+    var errTrend='<div class="card"><div class="card-head">Daily trend \u2014 final score, errors, error rate<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body">'+this.normTrendChart(ds.map(d=>d.slice(5)),[
+      {name:"Final score",color:"#0f2942",values:dayFs,fmt:(v)=>this.fs1(v)},
+      {name:"Errors per day",color:"#2563EB",values:dayErrCount,fmt:(v)=>Math.round(v).toLocaleString()},
+      {name:"Error rate",color:"#93c5fd",values:dayErrRate,fmt:(v)=>(v*100).toFixed(2)+"%"}
+    ])+'</div></div>';
+    var maWin=3, movAvg=dayErrCount.map((_,i)=>{ var a=Math.max(0,i-maWin+1), sl=dayErrCount.slice(a,i+1); return sl.reduce((s,v)=>s+v,0)/sl.length; });
+    var ovErr='<div class="card"><div class="card-head">Total errors per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Errors / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
+    var soCat=this.mistakeExecCards(this.qaRowsForLogins(ans.map(a=>a.an)),"all shown");
+    return shout+hero+kpi+leaders+people+trend+errTrend+ovErr+soCat+this.methodPanel();
+  }
+
+  normTrendChart(labels, series){
+    var w=1080,h=380,padL=26,padR=26,padT=22,padB=30, iw=w-padL-padR, ih=h-padT-padB;
+    var xAt=function(i){ return padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); };
+    var grid=''; for(var t=0;t<=3;t++){ var y=padT+(t/3*ih); grid+='<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>'; }
+    var body=series.map(function(s){
+      var vals=s.values.filter(function(v){return v!=null&&isFinite(v);});
+      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals), span=(hi-lo)||1;
+      var pts=s.values.map(function(v,i){ if(v==null||!isFinite(v))return null; return [xAt(i), padT+ih-((v-lo)/span*ih*0.86)-ih*0.07, v]; }).filter(Boolean);
+      if(!pts.length) return '';
+      var path=''; pts.forEach(function(p,i){ if(i===0){path='M'+p[0].toFixed(1)+','+p[1].toFixed(1);return;} var p0=pts[i-1],cx=(p0[0]+p[0])/2; path+=' C'+cx.toFixed(1)+','+p0[1].toFixed(1)+' '+cx.toFixed(1)+','+p[1].toFixed(1)+' '+p[0].toFixed(1)+','+p[1].toFixed(1); });
+      var dots=pts.map(function(p,i){ return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4" fill="#fff" stroke="'+s.color+'" stroke-width="2.2"><title>'+labels[i]+' \u00b7 '+s.name+': '+s.fmt(p[2])+'</title></circle>'; }).join('');
+      return '<path class="me-trend" d="'+path+'" fill="none" stroke="'+s.color+'" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>'+dots;
+    }).join('');
+    var leg=series.map(function(s){
+      var vals=s.values.filter(function(v){return v!=null&&isFinite(v);});
+      var avg=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:0;
+      return '<span style="display:inline-flex;align-items:center;gap:8px;margin:0 16px;font-size:13px;font-weight:700;color:var(--text)"><span style="width:18px;height:3px;border-radius:2px;background:'+s.color+';display:inline-block"></span>'+s.name+' <span style="color:'+s.color+';font-family:var(--font-num)">('+s.fmt(avg)+')</span></span>';
+    }).join('');
+    return '<div style="text-align:center;margin-bottom:12px">'+leg+'</div><svg viewBox="0 0 '+w+' '+h+'" class="me-chart" style="width:100%;height:auto">'+grid+body+'</svg>';
+  }
+
+  pageOverview(rws){
+    var D=this.SD;
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var med=this.windowMedians(rws);
+    var ans=this.aggAnalysts(rws), teams=this.aggTeams(rws);
+    var avgFs=rws.reduce((s,r)=>s+r[D.FS],0)/rws.length;
+    var avgEr=rws.reduce((s,r)=>s+r[D.ER],0)/rws.length;
+    var avgProd=rws.reduce((s,r)=>s+r[D.PROD],0)/rws.length;
+    var totErr=rws.reduce((s,r)=>s+r[D.ERRS],0);
+    var ds=this.datesInRange();
+    var dayFs=ds.map(d=>{ var v=rws.filter(r=>this.S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.FS],0)/v.length:0; });
+    var dayEr=ds.map(d=>{ var v=rws.filter(r=>this.S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.ER],0)/v.length:0; });
+    var minDays=Math.max(1,Math.round(ds.length*0.5));
+    var eligible=ans.filter(a=>a.days>=minDays);
+    var top=eligible.slice().sort((a,b)=>b.fs-a.fs).slice(0,6);
+    var bottom=eligible.slice().sort((a,b)=>a.fs-b.fs).slice(0,6);
+    var kpi='<div class="kpi-row">'
+      +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:var(--accent)">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
+      +'<div class="kpi"><div class="k-label">Analysts</div><div class="k-val">'+ans.length+'</div><div class="k-sub">'+teams.length+' teams</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'<div class="kpi"><div class="k-label">Analyst-days</div><div class="k-val">'+rws.length.toLocaleString()+'</div><div class="k-sub">scored rows</div></div>'
+      +'</div>';
+    var trend='<div class="grid-2"><div class="card"><div class="card-head">Avg final score per day</div><div class="card-body">'+this.lineChart(ds.map(d=>d.slice(5)),dayFs,{color:"var(--accent)",gid:"fs",fmt:v=>this.fs1(v)})+'</div></div>'
+      +'<div class="card"><div class="card-head">Avg error rate per day</div><div class="card-body">'+this.lineChart(ds.map(d=>d.slice(5)),dayEr,{color:"var(--persimmon-500)",gid:"er",fmt:v=>(v*100).toFixed(1)+"%"})+'</div></div></div>';
+    var dayErrCount=ds.map(d=>{ var n=0; rws.forEach(r=>{ if(this.S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
+    var maWin=3, movAvg=dayErrCount.map((_,i)=>{ var a=Math.max(0,i-maWin+1), sl=dayErrCount.slice(a,i+1); return sl.reduce((s,v)=>s+v,0)/sl.length; });
+    var errTrend='<div class="card"><div class="card-head">Total errors per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Errors / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
+    var performers='<div class="grid-2">'
+      +'<div class="card"><div class="card-head" style="color:var(--green)">Top performers \u2014 final score</div><div class="card-body">'+this.rankBars(top.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--green)")+'<div class="chart-note">Analysts active \u2265'+minDays+' of '+ds.length+' days.</div></div></div>'
+      +'<div class="card"><div class="card-head" style="color:var(--red)">Needs coaching \u2014 lowest final score</div><div class="card-body">'+this.rankBars(bottom.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--red)")+'<div class="chart-note">Lowest scorers active \u2265'+minDays+' days \u2014 candidates for training.</div></div></div>'
+      +'</div>';
+    return kpi+trend+errTrend+performers+this.methodPanel();
+  }
+
+  methodPanel(){
+    var mcard=(t,f,d)=>'<div class="meth-card"><div class="m-t">'+t+'</div><div class="m-f">'+f+'</div><div class="m-d">'+d+'</div></div>';
+    return '<div class="card"><div class="card-head">How the scores work</div><div class="card-body" style="display:flex;flex-direction:column;gap:16px"><div class="meth-grid">'
+      +mcard("Error rate","Total errors \u00f7 total possible error points","Points: 7 per IR-or-Recon \u00b7 4 per line item \u00b7 4 per Recon (misc charges). Lower is better.")
+      +mcard("Final score","Productivity score \u00d7 (1 \u2212 error rate)\u00b2","Rewards output, penalises errors non-linearly. Higher is better.")
+      +mcard("Median &amp; \u0394 from median","Across all analyst-day rows in the window","An analyst is compared to the full-population median for the selected range.")
+      +'</div><div class="meth-note">Scoping \u2014 orders currently CLOSED / PENDING_APPROVAL, analyst-role users; system consolidation baked in. Every metric recomputes live for the date range above.</div></div></div>';
+  }
+
+  pageLeaderboard(rws){
+    var D=this.SD;
+    rws=rws.filter(r=>this.roleOf(this.S.analysts[r[D.AN]])!=="Specialist");
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No Analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
+    var med=this.windowMedians(rws);
+    var list=this.aggAnalysts(rws);
+    var sort=this.sel.lbSort;
+    list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
+    var q=this.sel.lbSearch.toLowerCase();
+    var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
+    var capped=shown.slice(0,250);
+    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
+    var rowsH=capped.map((a,i)=>{
+      var rk=i+1, top3=(sort==="finalDesc"&&rk<=3);
+      var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
+      var dF=a.fs-med.fs;
+      return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+        +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
+        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td class="r">'+this.fs1(a.prod)+'</td>'
+        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
+        +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
+    }).join("");
+    var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
+    return '<div class="card"><div class="card-head">Analyst leaderboard \u2014 '+list.length+' analysts \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)
+      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-lbsearch" data-act="lbsearch" placeholder="Search analyst or team\u2026" value="'+this.esc(this.sel.lbSearch)+'"><select data-act="lbsort">'+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("prodDesc","Productivity \u2193")+sortOpt("errorsDesc","Most errors")+'</select></span></div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Analyst</th><th>Team</th><th class="r">Avg final score</th><th>Trajectory</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r">\u0394 vs median</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+      +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' analysts \u2014 refine the search to narrow down.</div>':'')+'</div>';
+  }
+
+  pageTeams(rws){
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var med=this.windowMedians(rws);
+    var list=this.aggTeams(rws).sort((a,b)=>b.fs-a.fs);
+    var mxFs=Math.max.apply(null,list.map(t=>t.fs).concat([0.0001]));
+    var rowsH=list.map((t,i)=>{
+      var rk=i+1, top3=rk<=3;
+      var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
+      var dF=t.fs-med.fs;
+      return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></td>'
+        +'<td class="r">'+t.n+'</td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(t.fs,med.fs)+';font-weight:800">'+this.fs1(t.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,t.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(t.fs,med.fs)+'"></div></div></div></td>'
+        +'<td class="r" style="color:'+this.erColor(t.er,med.er)+';font-weight:700">'+this.pct(t.er)+'</td>'
+        +'<td class="r">'+this.fs1(t.prod)+'</td>'
+        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:var(--proc)">'+t.errs.toLocaleString()+'</td></tr>';
+    }).join("");
+    return '<div class="card"><div class="card-head">Team leaderboard \u2014 ranked by avg final score (median '+this.fs1(med.fs)+')'+(this.ROLE&&this.st.role?' \u00b7 counting only each team\u2019s '+this.esc(this.st.role)+'s':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Team<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">named after its lead</span></th><th class="r">Analysts</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r">\u0394 vs median</th><th class="r" style="color:var(--proc)">Total errors</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+  }
+
+  gotoProfile(login){ var idx=this.S.analysts.indexOf(login); if(idx===-1) return; var role=this.roleOf(login); var team=String(this.S.analyst_team[idx]); this.sel.showAllMistakes=false;
+    if(role==="Specialist"){ this.sel.spAnalyst=String(idx); this.sel.spTeam=team; this.setPage("spprofile"); }
+    else if(role==="Analyst"){ this.sel.anAnalystK=String(idx); this.sel.anTeamK=team; this.setPage("anprofile"); }
+    else { this.sel.prAnalyst=String(idx); this.sel.prTeam=team; this.setPage("profile"); } }
+  gotoTeam(teamIdx){ this.sel.teamReport=parseInt(teamIdx); this._teamReportName=this.S.teams[parseInt(teamIdx)]; this.setPage("teamreport"); }
+  pageSpecialist(rws){
+    var D=this.SD;
+    var sp=rws.filter(r=>this.roleOf(this.S.analysts[r[D.AN]])==="Specialist");
+    if(!sp.length) return '<div class="card"><div class="placeholder-msg">No Specialist analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
+    var med=this.windowMedians(sp);
+    var fr=(this.S&&this.S.frByIdx)||{};
+    var list=this.aggAnalysts(sp).map(a=>{ a.fr=(fr[a.anIdx]!=null?fr[a.anIdx]:null); return a; });
+    var maxFr=Math.max.apply(null,list.map(a=>a.fr||0).concat([0.0001]));
+    var hasFr=list.some(a=>a.fr!=null);
+    // FR-blended position score: final score rewarded by Final-Review volume (up to +25%).
+    list.forEach(a=>{ a.pos=a.fs*(1+0.25*((a.fr||0)/maxFr)); });
+    var sort=this.sel.spSort||"posDesc";
+    list.sort(sort==="frDesc"?(a,b)=>(b.fr||0)-(a.fr||0):sort==="finalDesc"?(a,b)=>b.fs-a.fs:sort==="errorAsc"?(a,b)=>a.er-b.er:(a,b)=>b.pos-a.pos);
+    var q=(this.sel.spSearch||"").toLowerCase();
+    var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
+    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
+    var rowsH=shown.slice(0,250).map((a,i)=>{
+      var rk=i+1, top3=(sort==="posDesc"&&rk<=3);
+      var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
+      var dF=a.fs-med.fs;
+      var frBar=a.fr!=null?'<div class="ibar-wrap"><span style="color:var(--me-blue);font-weight:800;font-family:var(--font-num)">'+a.fr.toLocaleString()+'</span><div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,(a.fr/maxFr*100)).toFixed(1)+'%;background:var(--me-blue)"></div></div></div>':'<span style="color:var(--neutral-300)">\u2014</span>';
+      return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+        +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+        +'<td class="r">'+frBar+'</td>'
+        +'<td class="r" style="font-weight:800;color:var(--honey-600);font-family:var(--font-num)">'+this.fs1(a.pos)+'</td>'
+        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
+        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td class="r">'+this.fs1(a.prod)+'</td>'
+        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
+        +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
+    }).join("");
+    var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
+    var totFr=list.reduce((s,a)=>s+(a.fr||0),0);
+    return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews':'')
+      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Final reviews \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
+      +(hasFr?'<div class="note-strip">Position score blends avg final score with Final-Review (FR) volume \u2014 a specialist\u2019s standing is lifted by up to 25% by their FR count relative to the top reviewer.</div>':'')
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Specialist</th><th>Team</th><th class="r">Avg final score</th><th class="r">FR count</th><th class="r">Position score</th><th>Trajectory</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r">\u0394 vs median</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+      +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' specialists.</div>':'')+'</div>';
+  }
+  gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
+  gotoAM(amName){ this.sel.amReport=amName; this.setPage("amreport"); }
+
+  pageAMReport(rws){
+    var S=this.S, D=this.SD;
+    var amName=this.sel.amReport;
+    var back='<button class="reset-btn" data-act="nav" data-arg="ams" style="margin-bottom:14px">\u2190 Back to AM overview</button>';
+    if(!this.AM||amName==null) return back+'<div class="card"><div class="placeholder-msg">Pick an Assistant Manager from the AM overview.</div></div>';
+    var mine=rws.filter(r=>this.amOf(S.teams[r[D.TEAM]])===amName);
+    if(!mine.length) return back+'<div class="card"><div class="placeholder-msg">'+this.esc(amName)+' has no scored days in this range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
+    var med=this.windowMedians(rws);
+    var days=mine.length;
+    var avgFs=mine.reduce((s,r)=>s+r[D.FS],0)/days, avgEr=mine.reduce((s,r)=>s+r[D.ER],0)/days, avgProd=mine.reduce((s,r)=>s+r[D.PROD],0)/days;
+    var totErr=mine.reduce((s,r)=>s+r[D.ERRS],0);
+    var teams=this.aggTeams(mine).sort((a,b)=>b.fs-a.fs);
+    var nAnalysts=teams.reduce((s,t)=>s+t.n,0);
+    var dF=avgFs-med.fs;
+    var ds=this.datesInRange();
+    var dayProd=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.PROD],0)/v.length:0; });
+    var dayFs=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.FS],0)/v.length:0; });
+    var dayEr=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.ER],0)/v.length:0; });
+    var dayErrCount=ds.map(d=>{ var n=0; mine.forEach(r=>{ if(S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
+    var labs=ds.map(d=>d.slice(5));
+    var kpi='<div class="kpi-row">'
+      +'<div class="kpi"><div class="k-label">Assistant Manager</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)"><button class="team-link" data-act="am" data-arg="'+this.esc(amName)+'">'+this.esc(amName)+'</button></div><div class="k-sub">'+teams.length+' teams \u00b7 '+nAnalysts+' analysts</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:'+this.fsColor(avgFs,med.fs)+'">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'</div>';
+    var charts=labs.length?'<div class="card"><div class="card-head">Daily trend \u2014 final score, productivity, error rate<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body">'+this.normTrendChart(labs,[
+      {name:"Final score",color:"#0f2942",values:dayFs,fmt:(v)=>this.fs1(v)},
+      {name:"Productivity",color:"#2563EB",values:dayProd,fmt:(v)=>this.fs1(v)},
+      {name:"Error rate",color:"#93c5fd",values:dayEr,fmt:(v)=>(v*100).toFixed(2)+"%"}
+    ])+'</div></div>':'';
+    var charts2=labs.length?'<div class="card"><div class="card-head">Total errors per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Errors / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
+    var mxFs=Math.max.apply(null,teams.map(t=>t.fs).concat([0.0001]));
+    var rowsH=teams.map((t,i)=>'<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
+      +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></td>'
+      +'<td class="r">'+t.n+'</td>'
+      +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(t.fs,med.fs)+';font-weight:800">'+this.fs1(t.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,t.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(t.fs,med.fs)+'"></div></div></div></td>'
+      +'<td class="r" style="color:'+this.erColor(t.er,med.er)+';font-weight:700">'+this.pct(t.er)+'</td>'
+      +'<td class="r">'+this.fs1(t.prod)+'</td>'
+      +'<td class="r" style="color:var(--proc)">'+t.errs.toLocaleString()+'</td></tr>').join("");
+    var roster='<div class="card"><div class="card-head">Team leaders under '+this.esc(amName)+' \u2014 '+teams.length+' teams, ranked by avg final score \u00b7 click a lead to open the team report</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Team lead</th><th class="r">Analysts</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Total errors</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    var mcat=this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(mine).map(a=>a.an)),this.esc(amName));
+    return back+kpi+roster+charts+charts2+mcat;
+  }
+
+  pageTeamReport(rws){
+    var S=this.S, D=this.SD;
+    var ti=this.sel.teamReport;
+    var back='<button class="reset-btn" data-act="nav" data-arg="teams" style="margin-bottom:14px">\u2190 Back to team leaderboard</button>';
+    if(ti==null||isNaN(ti)) return back+'<div class="card"><div class="placeholder-msg">Pick a team from the leaderboard.</div></div>';
+    var teamName=S.teams[ti];
+    var mine=rws.filter(r=>r[D.TEAM]===ti);
+    if(!mine.length) return back+'<div class="card"><div class="placeholder-msg">'+this.esc(teamName)+' has no scored days in this range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
+    var med=this.windowMedians(rws);
+    var days=mine.length;
+    var avgFs=mine.reduce((s,r)=>s+r[D.FS],0)/days, avgEr=mine.reduce((s,r)=>s+r[D.ER],0)/days, avgProd=mine.reduce((s,r)=>s+r[D.PROD],0)/days;
+    var totErr=mine.reduce((s,r)=>s+r[D.ERRS],0);
+    var members=this.aggAnalysts(mine).sort((a,b)=>b.fs-a.fs);
+    var dF=avgFs-med.fs;
+    var ds=this.datesInRange();
+    var dayProd=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.PROD],0)/v.length:0; });
+    var dayFs=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.FS],0)/v.length:0; });
+    var dayEr=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.ER],0)/v.length:0; });
+    var dayErrCount=ds.map(d=>{ var n=0; mine.forEach(r=>{ if(S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
+    var labs=ds.map(d=>d.slice(5));
+    var kpi='<div class="kpi-row">'
+      +'<div class="kpi"><div class="k-label">Team</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)"><button class="team-link" data-act="teamname" data-arg="'+this.esc(teamName)+'">'+this.esc(teamName)+'</button></div><div class="k-sub">'+(this.amOf(teamName)?'AM <button class="team-link" style="font-weight:700" data-act="am" data-arg="'+this.esc(this.amOf(teamName))+'">'+this.esc(this.amOf(teamName))+'</button> \u00b7 ':'')+members.length+' analysts \u00b7 '+days.toLocaleString()+' analyst-days</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:'+this.fsColor(avgFs,med.fs)+'">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'</div>';
+    var charts=labs.length?'<div class="card"><div class="card-head">Daily trend \u2014 final score, productivity, error rate<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body">'+this.normTrendChart(labs,[
+      {name:"Final score",color:"#0f2942",values:dayFs,fmt:(v)=>this.fs1(v)},
+      {name:"Productivity",color:"#2563EB",values:dayProd,fmt:(v)=>this.fs1(v)},
+      {name:"Error rate",color:"#93c5fd",values:dayEr,fmt:(v)=>(v*100).toFixed(2)+"%"}
+    ])+'</div></div>':'';
+    var charts2=labs.length?'<div class="card"><div class="card-head">Total errors per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Errors / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
+    var mxFs=Math.max.apply(null,members.map(a=>a.fs).concat([0.0001]));
+    var rowFn=(a,i)=>'<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
+      +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+      +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+      +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+      +'<td class="r">'+this.fs1(a.prod)+'</td>'
+      +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
+      +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
+    var rosterTbl=(label,list)=>{ if(!list.length) return ''; return '<div class="card"><div class="card-head">'+label+' \u2014 '+list.length+', ranked by avg final score</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+list.map(rowFn).join("")+'</tbody></table></div></div>'; };
+    var specs=members.filter(a=>this.roleOf(a.an)==="Specialist");
+    var anas=members.filter(a=>this.roleOf(a.an)==="Analyst");
+    var others=members.filter(a=>{ var r=this.roleOf(a.an); return r!=="Specialist"&&r!=="Analyst"; });
+    var roster=rosterTbl("Specialists",specs)+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
+    if(!specs.length&&!anas.length&&!others.length) roster=rosterTbl("Team roster",members);
+    var mcat=this.mistakeExecCards(this.qaRowsForLogins(members.map(a=>a.an)),"this team");
+    return back+kpi+roster+charts+charts2+mcat;
+  }
+
+  mistakesFor(login){
+    if(!this.Q) return null;
+    var idx=this.Q.analysts.indexOf(login); if(idx===-1) return []; if(this.isExcluded(login)) return [];
+    var F=this.QF; return this.Q.records.filter(r=>r[F.AN]===idx);
+  }
+
+  pageProfile(rws){ return this._profile(rws,{teamKey:"prTeam",anKey:"prAnalyst",teamAct:"prteam",anAct:"pranalyst",title:"Analyst drill-down"}); }
+
+  _profile(rws,cfg){
+    var S=this.S, D=this.SD, sel=this.sel;
+    var teamK=cfg.teamKey, anK=cfg.anKey;
+    var selTeam=sel[teamK]||"", selAn=sel[anK]||"";
+    var pool=cfg.role ? rws.filter(r=>this.roleOf(S.analysts[r[D.AN]])===cfg.role) : rws;
+    var noun=cfg.role||"analyst";
+    if(cfg.role && !pool.length) return '<div class="card"><div class="placeholder-msg">No '+this.esc(cfg.role)+' analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
+    var byTeamMembers={}; pool.forEach(r=>{ (byTeamMembers[r[D.TEAM]]=byTeamMembers[r[D.TEAM]]||{})[r[D.AN]]=1; });
+    var teamKeys=Object.keys(byTeamMembers).sort((a,b)=>S.teams[a].localeCompare(S.teams[b]));
+    var tOpts='<option value="">All teams</option>'+teamKeys.map(k=>'<option value="'+k+'"'+(selTeam===String(k)?" selected":"")+'>'+this.esc(S.teams[k])+'</option>').join("");
+    var anKeys=[];
+    if(selTeam!==""&&byTeamMembers[selTeam]) anKeys=Object.keys(byTeamMembers[selTeam]);
+    else { var s={}; pool.forEach(r=>s[r[D.AN]]=1); anKeys=Object.keys(s); }
+    anKeys.sort((a,b)=>S.analysts[a].localeCompare(S.analysts[b]));
+    var aOpts='<option value="">-- choose '+this.esc(noun.toLowerCase())+' --</option>'+anKeys.map(k=>'<option value="'+k+'"'+(selAn===String(k)?" selected":"")+'>'+this.esc(S.analysts[k])+'</option>').join("");
+    var ctrl='<div class="card"><div class="card-head">'+this.esc(cfg.title)+'<span style="margin-left:auto" class="ctrl-row"><label>Team</label><select data-act="'+cfg.teamAct+'">'+tOpts+'</select><label>'+this.esc(noun.charAt(0).toUpperCase()+noun.slice(1))+'</label><select data-act="'+cfg.anAct+'">'+aOpts+'</select></span></div></div>';
+    if(selAn==="") return ctrl+'<div class="card"><div class="placeholder-msg">Select '+(/^[aeiou]/i.test(noun)?"an":"a")+' '+this.esc(noun.toLowerCase())+' to see their daily score trend, quality metrics, and full mistake detail with order links.</div></div>';
+    var aIdx=parseInt(selAn);
+    var mine=pool.filter(r=>r[D.AN]===aIdx);
+    var med=this.windowMedians(rws);
+    var login=S.analysts[aIdx], teamName=S.teams[S.analyst_team[aIdx]], role=this.roleOf(login);
+    if(!mine.length) return ctrl+'<div class="card"><div class="placeholder-msg">'+this.esc(login)+' has no scored days in this range.</div></div>';
+    var days=mine.length;
+    var avgFs=mine.reduce((s,r)=>s+r[D.FS],0)/days, avgEr=mine.reduce((s,r)=>s+r[D.ER],0)/days, avgProd=mine.reduce((s,r)=>s+r[D.PROD],0)/days;
+    var totErr=mine.reduce((s,r)=>s+r[D.ERRS],0), totPts=mine.reduce((s,r)=>s+r[D.PTS],0);
+    var dF=avgFs-med.fs;
+    var ds=this.datesInRange();
+    var byDate={}; mine.forEach(r=>byDate[S.dates[r[D.DATE]]]=r);
+    var labs=[],vFs=[],vEr=[],vProd=[]; ds.forEach(d=>{ if(byDate[d]){ labs.push(d.slice(5)); vFs.push(byDate[d][D.FS]); vEr.push(byDate[d][D.ER]); vProd.push(byDate[d][D.PROD]); } });
+    var anim=cfg.anim;
+    var kpi='<div class="kpi-row'+(anim?' anim-kpi':'')+'">'
+      +'<div class="kpi"><div class="k-label">'+this.esc(noun.charAt(0).toUpperCase()+noun.slice(1))+'</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)">'+this.esc(login)+'</div><div class="k-sub">'+(role?this.esc(role)+' \u00b7 ':'')+'team: <button class="team-link" style="font-weight:700" data-act="teamname" data-arg="'+this.esc(teamName)+'">'+this.esc(teamName)+'</button>'+(this.amOf(teamName)?' \u00b7 AM: <button class="team-link" style="font-weight:700" data-act="am" data-arg="'+this.esc(this.amOf(teamName))+'">'+this.esc(this.amOf(teamName))+'</button>':'')+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:'+this.fsColor(avgFs,med.fs)+'">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
+      +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
+      +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">'+days+' active days</div></div>'
+      +'<div class="kpi"><div class="k-label">Errors / points</div><div class="k-val" style="color:var(--proc)">'+totErr+'</div><div class="k-sub">of '+totPts.toLocaleString()+' possible</div></div>'
+      +'</div>';
+    var wrap=(inner)=>anim?'<div class="anim-chart">'+inner+'</div>':inner;
+    var comboSeries=[
+      {name:'Final score',color:'#2563EB',values:vFs,fmt:(v)=>this.fs1(v),axis:'left'},
+      {name:'Productivity',color:'#0e9f6e',values:vProd,fmt:(v)=>this.fs1(v),axis:'left'},
+      {name:'Error rate',color:'#d97706',values:vEr,fmt:(v)=>(v*100).toFixed(1)+"%",axis:'right'}
+    ];
+    var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, productivity &amp; error rate</div><div class="card-body">'+(labs.length?wrap(this.comboChart(labs,comboSeries)):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
+    return ctrl+kpi+charts+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login))+this.mistakeDetail(login);
+  }
+
+  mistakeDetail(login){
+    var F=this.QF, m=this.mistakesFor(login);
+    if(m===null) return '<div class="card"><div class="card-head">Mistake detail</div><div class="placeholder-msg">Mistake Details export (order links) not loaded.</div></div>';
+    if(!m.length) return '<div class="card"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
+    var Q=this.Q, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
+    var cap=this.sel.showAllMistakes?m.length:200;
+    var rowsH=m.slice(0,cap).map(r=>{
+      var org=r[F.ORG]===0?'<span class="tag tag-proc">Processing</span>':'<span class="tag tag-pp">Post-prod</span>';
+      var area=Q.areas[r[F.AREA]];
+      return '<tr><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+'</a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
+    }).join("");
+    return '<div class="card"><div class="card-head">Mistake detail &mdash; order links ('+m.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Area</th><th>Variable</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+  }
+
+  pageCompare(rws){
+    var S=this.S, D=this.SD, sel=this.sel;
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var med=this.windowMedians(rws);
+    var mode=sel.cmpMode||"analysts";
+    var MODES=[["analysts","Analysts"],["specialists","Specialists"],["teams","Teams"],["ams","Asst Managers"],["locations","Locations"]];
+    var norm;
+    if(mode==="teams"){ norm=this.aggTeams(rws).map(x=>({key:"t"+x.teamIdx,name:x.team,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
+    else if(mode==="ams"){ norm=this.aggByAM(rws).list.map(x=>({key:"m"+x.am,name:x.am,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
+    else if(mode==="locations"){ norm=this.aggByLocation(rws).list.map(x=>({key:"l"+x.loc,name:x.loc,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
+    else if(mode==="specialists"){ norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Specialist").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
+    else { mode="analysts"; norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Analyst").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
+    var hasN=(mode==="teams"||mode==="ams"||mode==="locations");
+    var byKey={}; norm.forEach(x=>byKey[x.key]=x);
+    var sorted=norm.slice().sort((a,b)=>a.name.localeCompare(b.name));
+    var opts=(cur,act)=>'<select data-act="'+act+'"><option value="">-- choose --</option>'+sorted.map(x=>'<option value="'+this.esc(x.key)+'"'+(String(cur)===x.key?" selected":"")+'>'+this.esc(x.name)+' (fs '+this.fs1(x.fs)+')</option>').join("")+'</select>';
+    var modeSel='<select data-act="cmpmode">'+MODES.map(m=>'<option value="'+m[0]+'"'+(mode===m[0]?" selected":"")+'>'+m[1]+'</option>').join("")+'</select>';
+    var nounMap={analysts:"analysts",specialists:"specialists",teams:"teams",ams:"Asst Managers",locations:"locations"};
+    var noun=nounMap[mode];
+    var ctrl='<div class="card"><div class="card-head">Head-to-head \u2014 pick two to compare<span style="margin-left:auto" class="ctrl-row">'+modeSel+opts(sel.cmpA,"cmpa")+'<span class="cmp-vs">vs</span>'+opts(sel.cmpB,"cmpb")+'</span></div>';
+    if(!byKey[sel.cmpA]||!byKey[sel.cmpB]) return ctrl+'<div class="placeholder-msg">Select two '+noun+' above \u2014 every metric recomputes for the selected date range.</div></div>';
+    var A=byKey[sel.cmpA], B=byKey[sel.cmpB], an=A.name, bn=B.name;
+    var bars=[this.dualBar("Avg final score",an,A.fs,bn,B.fs,{dec:true,higherBetter:true})
+      ,this.dualBar("Avg error rate",an,A.er,bn,B.er,{pct:true,higherBetter:false})
+      ,this.dualBar("Avg productivity",an,A.prod,bn,B.prod,{dec:true,higherBetter:true})
+      ,this.dualBar("Total errors",an,A.errs,bn,B.errs,{higherBetter:false})];
+    if(hasN) bars.push(this.dualBar("Members",an,A.n,bn,B.n,{higherBetter:true}));
+    var dFsA=A.fs-med.fs, dFsB=B.fs-med.fs, gap=A.fs-B.fs;
+    var deltas='<div class="delta-grid">'
+      +'<div class="delta-card"><div class="d-label">Final score gap</div><div class="d-val '+(gap>0?"delta-pos":gap<0?"delta-neg":"delta-neu")+'">'+(gap>=0?"+":"")+this.fs1(gap)+'</div><div class="d-sub">'+this.esc(an)+' vs '+this.esc(bn)+'</div></div>'
+      +'<div class="delta-card"><div class="d-label">'+this.esc(an)+' \u0394 median</div><div class="d-val '+(dFsA>=0?"delta-pos":"delta-neg")+'">'+(dFsA>=0?"+":"\u2212")+this.fs1(Math.abs(dFsA))+'</div><div class="d-sub">final score</div></div>'
+      +'<div class="delta-card"><div class="d-label">'+this.esc(bn)+' \u0394 median</div><div class="d-val '+(dFsB>=0?"delta-pos":"delta-neg")+'">'+(dFsB>=0?"+":"\u2212")+this.fs1(Math.abs(dFsB))+'</div><div class="d-sub">final score</div></div>'
+      +'</div>';
+    return ctrl+'<div class="card-body" style="display:flex;flex-direction:column;gap:16px">'+bars.join("")+deltas+'</div>';
+  }
+
+  pageCoaching(rws){
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var med=this.windowMedians(rws);
+    var ds=this.datesInRange(); var minDays=Math.max(1,Math.round(ds.length*0.5));
+    var noMistakes=this.Q===null;
+    var rowFn=(a,i)=>{
+      var dF=a.fs-med.fs, top=this.topErrors(a.an);
+      var chips = top===null ? '<span style="color:var(--muted);font-size:11px">load mistake export</span>'
+        : (top.length ? top.map(t=>'<span class="'+(t.area==="Header"?"tag tag-hdr":t.area==="Line Item"?"tag tag-line":"tag tag-misc")+'">'+this.esc(t.v)+' \u00d7'+t.count+'</span>').join(" ") : '<span style="color:var(--muted);font-size:11px">no mistakes in export</span>');
+      var spk=this.sparkline(a.series,a.trend.dir==="up"?"var(--green)":"var(--red)");
+      return '<tr><td style="color:var(--muted)">'+(i+1)+'</td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+        +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
+        +'<td class="r" style="color:var(--red);font-weight:800">'+this.fs1(a.fs)+'</td>'
+        +'<td class="r"><span class="tag pill-bad">\u2212'+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+spk+'</div></td>'
+        +'<td style="white-space:normal;line-height:2">'+chips+'</td>'
+        +'<td><button class="reset-btn" style="font-size:11px" data-act="profile" data-arg="'+this.esc(a.an)+'">Review \u2192</button></td></tr>';
+    };
+    var thr=med.fs/4;
+    var thrBy={Specialist:med.fs/5, Analyst:med.fs/2};
+    var below=this.aggAnalysts(rws).sort((a,b)=>a.fs-b.fs);
+    var thead='<thead><tr><th>#</th><th>Name</th><th>Team</th><th class="r">Final score</th><th class="r">\u0394 median</th><th class="r">Error rate</th><th>Trajectory</th><th>Top error types (from mistake export)</th><th></th></tr></thead>';
+    var tbl=(role,n)=>{ var list=below.filter(a=>this.roleOf(a.an)===role).slice(0,n); return '<div class="card"><div class="card-head">Bottom '+n+' '+role+'s by final score \u2014 worst first \u00b7 '+list.length+' shown'+(noMistakes?' \u00b7 load a mistake export for error types':'')+'</div><div style="overflow-x:auto"><table class="tbl">'+thead+'<tbody>'+(list.length?list.map(rowFn).join(""):'<tr><td colspan="9" style="color:var(--muted);padding:16px">No '+role+'s in the selected range.</td></tr>')+'</tbody></table></div></div>'; };
+    return tbl("Specialist",25)+tbl("Analyst",50);
+  }
+  topErrors(login){ var m=this.mistakesFor(login); if(m===null) return null; var F=this.QF, Q=this.Q, c={}; m.forEach(r=>{ var v=Q.vars[r[F.VAR]]; if(!c[v]) c[v]={v:v,count:0,area:Q.areas[r[F.AREA]]}; c[v].count++; }); return Object.keys(c).map(k=>c[k]).sort((a,b)=>b.count-a.count).slice(0,3); }
+
+  qaRowsForLogins(logins){ if(this.Q===null) return null; var F=this.QF, Q=this.Q, set={}; logins.forEach(l=>{ var i=Q.analysts.indexOf(l); if(i>=0 && !this.isExcluded(l)) set[i]=1; }); var from=this.st.from,to=this.st.to; return Q.records.filter(r=>set[r[F.AN]] && Q.dates[r[F.DATE]]>=from && Q.dates[r[F.DATE]]<=to); }
+  mistakeCatCard(qrows,subtitle){
+    if(qrows===null) return '';
+    var lbl=subtitle?' \u2014 '+subtitle:'';
+    if(!qrows.length) return '<div class="card"><div class="card-head">Mistake mix'+lbl+'</div><div class="placeholder-msg">No mistakes on record in this range.</div></div>';
+    var Q=this.Q, F=this.QF, esc=(x)=>this.esc(x);
+    var prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a);
+    var AREAS=["Header","Line Item","Misc Charge"];
+    var total=qrows.length, byArea={}, byVar={}, byVarArea={};
+    qrows.forEach(r=>{ var ar=prettyArea(Q.areas[r[F.AREA]]); byArea[ar]=(byArea[ar]||0)+1; var v=Q.vars[r[F.VAR]]||"\u2014"; byVar[v]=(byVar[v]||0)+1; if(!byVarArea[v])byVarArea[v]={}; byVarArea[v][ar]=(byVarArea[v][ar]||0)+1; });
+    var pctOf=(n)=>Math.round(n/total*100);
+    var areaColor=(a)=>a==="Header"?"#2563EB":a==="Line Item"?"#5b8def":a==="Misc Charge"?"#93b4f5":"#64748b";
+    var areaCards=AREAS.filter(a=>byArea[a]).map(a=>'<div class="mm-area" style="flex:'+byArea[a]+' 1 130px;border-left-color:'+areaColor(a)+'"><div class="mm-area-lbl" style="color:'+areaColor(a)+'">'+esc(a.toUpperCase())+'</div><div class="mm-area-val">'+byArea[a].toLocaleString()+'</div><div class="mm-area-sub">'+pctOf(byArea[a])+'% of mistakes</div></div>').join('');
+    var mixCard='<div class="card"><div class="card-head">Mistake mix'+lbl+' \u2014 '+total.toLocaleString()+' total</div><div class="card-body"><div class="mm-arearow">'+areaCards+'</div></div></div>';
+    var varItems=Object.keys(byVar).map(k=>({label:k,value:byVar[k]})).sort((a,b)=>b.value-a.value).slice(0,10);
+    var pareto=this.paretoChart(varItems);
+    var matVars=Object.keys(byVar).map(k=>({label:k,value:byVar[k]})).sort((a,b)=>b.value-a.value).slice(0,8);
+    var maxCell=1; matVars.forEach(v=>AREAS.forEach(a=>{ var c=(byVarArea[v.label]||{})[a]||0; if(c>maxCell)maxCell=c; }));
+    var matHead='<div class="mx-row mx-head"><div class="mx-lbl"></div>'+AREAS.map(a=>'<div class="mx-col-h">'+esc(a.toUpperCase())+'</div>').join('')+'</div>';
+    var matRows=matVars.map(v=>{ var cells=AREAS.map(a=>{ var c=(byVarArea[v.label]||{})[a]||0; if(!c) return '<div class="mx-cell mx-empty"></div>'; var t=c/maxCell, col=areaColor(a); var bg='color-mix(in srgb,'+col+' '+(30+t*58).toFixed(0)+'%,#fff)'; var fg=t>0.5?'#fff':'#14161a'; return '<div class="mx-cell me-grow" style="background:'+bg+';color:'+fg+'">'+c.toLocaleString()+'</div>'; }).join(''); var sv=v.label.length>13?v.label.slice(0,12)+'\u2026':v.label; return '<div class="mx-row"><div class="mx-lbl" title="'+esc(v.label)+'">'+esc(sv)+'</div>'+cells+'</div>'; }).join('');
+    var matrix='<div class="card"><div class="card-head">Variable \u00d7 area intensity'+lbl+'</div><div class="card-body"><div class="mx-grid">'+matHead+matRows+'</div></div></div>';
+    return mixCard+'<div class="grid-2"><div class="card"><div class="card-head">Top mistake variables \u2014 frequency (Pareto)</div><div class="card-body">'+pareto+'</div></div>'+matrix+'</div>';
+  }
+
+  donutChart(items, total, colors){
+    var size=210, r=78, sw=30, cx=size/2, cy=size/2, C=2*Math.PI*r;
+    var off=0, segs=items.map(function(it,i){
+      var frac=it.value/(total||1), len=frac*C;
+      var s='<circle class="dn-seg" cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="'+sw+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"><title>'+it.label+': '+it.value.toLocaleString()+' ('+Math.round(frac*100)+'%)</title></circle>';
+      off+=len; return s;
+    }).join('');
+    var leg=items.map(function(it,i){ return '<span style="display:inline-flex;align-items:center;gap:7px;margin:0 12px;font-size:12px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:9px;height:9px;border-radius:50%;background:'+colors[i%colors.length]+';display:inline-block"></span>'+it.label+'</span>'; }).join('');
+    return '<div style="display:flex;justify-content:center"><svg viewBox="0 0 '+size+' '+size+'" style="width:210px;height:210px">'+segs
+      +'<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" font-size="27" font-weight="800" fill="var(--text)" font-family="var(--font-num)">'+total.toLocaleString()+'</text>'
+      +'<text x="'+cx+'" y="'+(cy+18)+'" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-body)">total</text></svg></div>'
+      +'<div style="text-align:center;margin-top:12px;display:flex;justify-content:center;flex-wrap:wrap;gap:4px 0">'+leg+'</div>';
+  }
+
+  paretoBig(items, total){
+    if(!items||!items.length) return '<div class="placeholder-msg">No data.</div>';
+    var esc=(x)=>this.esc(x);
+    var w=1080,h=420,padL=64,padR=26,padT=26,padB=104, iw=w-padL-padR, ih=h-padT-padB;
+    var n=items.length, raw=Math.max.apply(null,items.map(i=>i.value).concat([1]));
+    var step=Math.pow(10,Math.floor(Math.log10(raw)))/2, mx=Math.ceil(raw/step)*step;
+    var gap=iw/n, bw=Math.min(58,gap*0.62), sum=total||items.reduce((s,i)=>s+i.value,0)||1;
+    var grid='',nT=5;
+    for(var t=0;t<=nT;t++){ var gv=mx*t/nT, y=padT+ih-(t/nT*ih);
+      grid+='<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>'
+        +'<text x="'+(padL-11)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end" font-size="12" fill="var(--muted)" font-family="var(--font-num)">'+Math.round(gv).toLocaleString()+'</text>';
+    }
+    var cum=0, pts=[], bars=items.map(function(it,i){
+      var cx=padL+i*gap+gap/2, bh=it.value/mx*ih, y=padT+ih-bh, x=cx-bw/2;
+      cum+=it.value; pts.push([cx, padT+ih-(cum/sum*ih)]);
+      var sv=it.label.length>11?it.label.slice(0,10)+'\u2026':it.label;
+      return '<rect class="me-growy" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="3" fill="url(#pgrad)" style="transform-origin:'+cx.toFixed(1)+'px '+(padT+ih)+'px;animation-delay:'+(i*0.045).toFixed(2)+'s"><title>'+esc(it.label)+': '+it.value.toLocaleString()+' ('+(it.value/sum*100).toFixed(1)+'% of all errors)</title></rect>'
+        +'<text x="'+cx.toFixed(1)+'" y="'+(y-9).toFixed(1)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--text)" font-family="var(--font-num)">'+it.value.toLocaleString()+'</text>'
+        +'<text x="'+cx.toFixed(1)+'" y="'+(padT+ih+20)+'" text-anchor="end" font-size="12" fill="var(--muted)" font-family="var(--font-body)" transform="rotate(-32 '+cx.toFixed(1)+' '+(padT+ih+20)+')">'+esc(sv)+'</text>';
+    }).join('');
+    var path='', area='';
+    pts.forEach(function(p,i){ path+=(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); });
+    area='M'+pts[0][0].toFixed(1)+','+(padT+ih)+' '+path.replace(/^M/,'L')+' L'+pts[pts.length-1][0].toFixed(1)+','+(padT+ih)+' Z';
+    var dots=pts.map(function(p){ return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4.5" fill="#fff" stroke="#e8890c" stroke-width="2.4"/>'; }).join('');
+    var leg='<div style="text-align:center;margin-bottom:10px"><span style="display:inline-flex;align-items:center;gap:7px;margin:0 14px;font-size:12.5px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:11px;height:11px;border-radius:2px;background:#2563EB;display:inline-block"></span>Error count</span><span style="display:inline-flex;align-items:center;gap:7px;margin:0 14px;font-size:12.5px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:18px;height:3px;border-radius:2px;background:#e8890c;display:inline-block"></span>% of all errors</span></div>';
+    return leg+'<svg viewBox="0 0 '+w+' '+h+'" class="me-chart" style="width:100%;height:auto"><defs><linearGradient id="pgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1d5fd0"/><stop offset="100%" stop-color="#7fb0f0"/></linearGradient></defs>'
+      +grid+'<path d="'+area+'" fill="#e8890c" fill-opacity="0.07"/>'+bars
+      +'<path class="me-trend" d="'+path+'" fill="none" stroke="#e8890c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'+dots+'</svg>';
+  }
+
+  mistakeExecCards(qrows,subtitle){
+    if(qrows===null) return '';
+    var lbl=subtitle?' \u2014 '+subtitle:'';
+    if(!qrows.length) return '<div class="card"><div class="card-head">Mistakes'+lbl+'</div><div class="placeholder-msg">No mistakes on record in this range.</div></div>';
+    var Q=this.Q, F=this.QF, esc=(x)=>this.esc(x);
+    var prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header"}[a]||a);
+    var total=qrows.length, byArea={}, byType={}, byVar={};
+    qrows.forEach(r=>{ var ar=prettyArea(Q.areas[r[F.AREA]]); byArea[ar]=(byArea[ar]||0)+1;
+      var st=(F.ST!=null&&Q.statuses)?(Q.statuses[r[F.ST]]||''):''; if(st) byType[st]=(byType[st]||0)+1;
+      var v=Q.vars[r[F.VAR]]||"\u2014"; byVar[v]=(byVar[v]||0)+1; });
+    var srt=(o)=>Object.keys(o).map(k=>({label:k,value:o[k]})).sort((a,b)=>b.value-a.value);
+    var AC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'], TC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'];
+    var areaItems=srt(byArea), typeItems=srt(byType);
+    var donuts='<div class="grid-2">'
+      +'<div class="card"><div class="card-head">Mistakes by area'+lbl+' \u2014 '+total.toLocaleString()+'</div><div class="card-body">'+this.donutChart(areaItems,total,AC)+'</div></div>'
+      +(typeItems.length?'<div class="card"><div class="card-head">Mistakes by type'+lbl+'</div><div class="card-body">'+this.donutChart(typeItems,typeItems.reduce((s,i)=>s+i.value,0),TC)+'</div></div>':'')
+      +'</div>';
+    var varItems=srt(byVar).slice(0,12);
+    var pareto='<div class="card"><div class="card-head">Top mistake variables'+lbl+'</div><div class="card-body">'+this.paretoBig(varItems,total)+'</div></div>';
+    return donuts+pareto;
+  }
+
+  paretoChart(items){
+    if(!items||!items.length) return '<div class="placeholder-msg">No data.</div>';
+    var esc=(x)=>this.esc(x);
+    var w=720,h=300,padL=10,padR=44,padT=18,padB=52, iw=w-padL-padR, ih=h-padT-padB;
+    var n=items.length, mx=Math.max.apply(null,items.map(i=>i.value).concat([1]));
+    var sum=items.reduce((s,i)=>s+i.value,0)||1, gap=iw/n, bw=Math.min(46,gap*0.6);
+    var cum=0, cumPts=[], bars=items.map((it,i)=>{ var cx=padL+i*gap+gap/2, bh=it.value/mx*ih, y=padT+ih-bh, x=cx-bw/2; cum+=it.value; cumPts.push([cx,padT+ih-(cum/sum*ih),Math.round(cum/sum*100)]); var sv=it.label.length>9?it.label.slice(0,8)+'\u2026':it.label; return '<rect class="me-growy" x="'+x+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="2.5" fill="#2563EB" style="transform-origin:'+cx+'px '+(padT+ih)+'px;animation-delay:'+(i*0.05).toFixed(2)+'s"/><text x="'+cx+'" y="'+(padT+ih+15)+'" text-anchor="middle" font-size="8.5" fill="var(--muted)" font-family="var(--font-num)">'+esc(sv)+'</text>'; }).join('');
+    var y80=padT+ih-(0.8*ih);
+    var ref='<line x1="'+padL+'" y1="'+y80+'" x2="'+(w-padR)+'" y2="'+y80+'" stroke="var(--border-strong,#d7dade)" stroke-width="1" stroke-dasharray="4 4"/><text x="'+(w-padR+5)+'" y="'+(y80+3)+'" font-size="9" fill="var(--muted)" font-family="var(--font-num)">80%</text>';
+    var path=''; cumPts.forEach((p,i)=>{ path+=(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); });
+    var dots=cumPts.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="#64748b"/>').join('');
+    return '<svg viewBox="0 0 '+w+' '+h+'" class="me-chart" style="width:100%;height:auto">'+ref+bars+'<path class="me-trend" d="'+path+'" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'+dots+'</svg>';
+  }
+
+  buildEmailPayload(){
+    var SD=this.SD, rws=this.srows(); var med=this.windowMedians(rws);
+    var portalEl=this.rootRef.current&&this.rootRef.current.querySelector('.sb-brand .sub'); var portal=(portalEl?portalEl.textContent.trim():'QA')+' Dashboard';
+    var pageName=this.PAGES[this.st.page]||'Overview';
+    var scope=[]; if(this.st.loc) scope.push(this.st.loc); if(this.st.role) scope.push(this.st.role+'s');
+    var scopeTxt=scope.length?scope.join(' \u00b7 '):'All locations & roles';
+    var range=this.st.from+' \u2192 '+this.st.to;
+    var ans=this.aggAnalysts(rws);
+    var avgFs=rws.length?rws.reduce((s,r)=>s+r[SD.FS],0)/rws.length:0;
+    var avgEr=rws.length?rws.reduce((s,r)=>s+r[SD.ER],0)/rws.length:0;
+    var avgProd=rws.length?rws.reduce((s,r)=>s+r[SD.PROD],0)/rws.length:0;
+    var totErr=rws.reduce((s,r)=>s+r[SD.ERRS],0);
+    var top=ans.slice().sort((a,b)=>b.fs-a.fs).slice(0,5);
+    var bottom=ans.slice().sort((a,b)=>a.fs-b.fs).slice(0,5);
+    var qrows=this.qaRowsForLogins(ans.map(a=>a.an)); var areaLine='';
+    if(qrows&&qrows.length){ var Q=this.Q,F=this.QF,pa=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header"}[a]||a),byA={}; qrows.forEach(r=>{var k=pa(Q.areas[r[F.AREA]]);byA[k]=(byA[k]||0)+1;}); areaLine=Object.keys(byA).map(k=>k+' '+Math.round(byA[k]/qrows.length*100)+'%').join(' \u00b7 '); }
+    var esc=(x)=>this.esc(x);
+    // KPI cards
+    var kpi=(l,v,c)=>'<td style="padding:12px 14px;border:1px solid #e2e6ec;border-radius:8px;background:#f7f9fb"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c8698;font-weight:700">'+l+'</div><div style="font-size:22px;font-weight:800;color:'+(c||'#12161c')+';font-family:Arial,sans-serif;margin-top:4px">'+v+'</div></td>';
+    var kpiRow='<table cellspacing="8" cellpadding="0" style="border-collapse:separate;margin:0 -8px"><tr>'+kpi('Avg final score',this.fs1(avgFs),'#0072CE')+kpi('Avg error rate',this.pct(avgEr))+kpi('Avg productivity',this.fs1(avgProd))+kpi('Total errors',totErr.toLocaleString(),'#c0492b')+'</tr></table>';
+    var rowsList=(arr,color)=>arr.map((a,i)=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;color:#7c8698;font-size:13px">'+(i+1)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;font-size:13px;font-weight:600">'+esc(a.an)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;font-size:13px;color:#7c8698">'+esc(a.team)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;text-align:right;font-weight:800;color:'+color+';font-family:Arial">'+this.fs1(a.fs)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;text-align:right;font-size:13px">'+this.pct(a.er)+'</td></tr>').join('');
+    var listCard=(title,arr,color)=>'<div style="margin-top:18px"><div style="font-size:14px;font-weight:800;color:#12161c;margin-bottom:6px">'+title+'</div><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #e2e6ec;border-radius:8px;overflow:hidden"><tr style="background:#f2f4f7"><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">#</th><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">Name</th><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">Team</th><th style="padding:7px 10px;text-align:right;font-size:11px;color:#7c8698;text-transform:uppercase">Final</th><th style="padding:7px 10px;text-align:right;font-size:11px;color:#7c8698;text-transform:uppercase">Err rate</th></tr>'+rowsList(arr,color)+'</table></div>';
+    var teamsAgg=this.aggTeams(rws).sort((a,b)=>b.fs-a.fs); var bestTeam=teamsAgg[0], worstTeam=teamsAgg[teamsAgg.length-1];
+    var dvsm=avgFs-med.fs;
+    var pw=this.priorWindow(), trendTxt='', pAvgFs=null;
+    if(pw){ var pr=this.rowsForRange(pw.from,pw.to); if(pr.length){ pAvgFs=pr.reduce((s,r)=>s+r[SD.FS],0)/pr.length; var d=avgFs-pAvgFs; trendTxt=(Math.abs(d)<0.05?'held steady':(d>0?'improved by '+this.fs1(d):'declined by '+this.fs1(Math.abs(d))))+' versus the prior '+pw.days+' days'; } }
+    var belowMed=ans.filter(a=>a.fs<med.fs).length; var belowPct=ans.length?Math.round(belowMed/ans.length*100):0;
+    var topArea=''; if(qrows&&qrows.length){ var Qb=this.Q,Fb=this.QF,pab=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header"}[a]||a),ba={}; qrows.forEach(r=>{var k=pab(Qb.areas[r[Fb.AREA]]);ba[k]=(ba[k]||0)+1;}); var bk=Object.keys(ba).sort((x,y)=>ba[y]-ba[x])[0]; topArea=bk?bk+' ('+Math.round(ba[bk]/qrows.length*100)+'% of mistakes)':''; }
+    var sent=[];
+    sent.push('Across '+ans.length+' people'+(scope.length?' ('+scopeTxt+')':'')+' over '+range.replace('\u2192','to')+', the average final score is '+this.fs1(avgFs)+', '+(dvsm>=0?this.fs1(Math.abs(dvsm))+' above':this.fs1(Math.abs(dvsm))+' below')+' the median of '+this.fs1(med.fs)+', with an average error rate of '+this.pct(avgEr)+'.');
+    if(trendTxt) sent.push('Overall performance has '+trendTxt+'.');
+    sent.push(belowMed+' of '+ans.length+' ('+belowPct+'%) are below the median final score and are the focus for coaching.');
+    if(bestTeam&&worstTeam&&teamsAgg.length>1) sent.push(this.esc(bestTeam.team)+' leads the group at '+this.fs1(bestTeam.fs)+', while '+this.esc(worstTeam.team)+' trails at '+this.fs1(worstTeam.fs)+'.');
+    if(topArea) sent.push('Most mistakes are concentrated in '+topArea+'.');
+    var gist=sent.join(' ');
+    var subject='['+portal+'] '+pageName+' \u2014 '+this.st.from+' to '+this.st.to+(this.st.loc?' \u00b7 '+this.st.loc:'');
+    var html='<div style="font-family:Arial,Helvetica,sans-serif;color:#12161c;max-width:680px">'
+      +'<div style="background:linear-gradient(120deg,#12161c,#243247);color:#fff;padding:20px 24px;border-radius:10px">'
+      +'<div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#aeb9c9;font-weight:700">'+esc(portal)+'</div>'
+      +'<div style="font-size:22px;font-weight:800;margin-top:4px">'+esc(pageName)+'</div>'
+      +'<div style="font-size:13px;color:#c7d3e4;margin-top:6px">'+esc(range)+' &nbsp;\u00b7&nbsp; '+esc(scopeTxt)+' &nbsp;\u00b7&nbsp; '+ans.length+' people</div></div>'
+      +'<div style="margin-top:18px;font-size:14px;line-height:1.6;color:#28303a;background:#f7f9fb;border-left:4px solid #0072CE;border-radius:8px;padding:14px 18px"><b style=\"color:#12161c\">Summary.</b> '+esc(gist)+'</div>'+'<div style="margin-top:16px">'+kpiRow+'</div>'
+      +(areaLine?'<div style="margin-top:16px;font-size:13px;color:#3a4a5c"><b>Mistake mix:</b> '+esc(areaLine)+'</div>':'')
+      +listCard('\u2605 Top performers',top,'#128a57')
+      +listCard('\u26a0 Needs attention (lowest final score)',bottom,'#c0492b')
+      +'<div style="margin-top:20px;font-size:11px;color:#9aa4b2;border-top:1px solid #e2e6ec;padding-top:10px">Generated from the '+esc(portal)+' \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)+'. Figures reflect the selected date range and filters.</div></div>';
+    var line=(s)=>s+'\n';
+    var text=line(subject)+line('')+line(range+' | '+scopeTxt+' | '+ans.length+' people')+line('')+line('SUMMARY: '+gist)+line('')
+      +line('KPIs: Avg final '+this.fs1(avgFs)+' | Avg error rate '+this.pct(avgEr)+' | Avg productivity '+this.fs1(avgProd)+' | Total errors '+totErr)
+      +(areaLine?line('Mistake mix: '+areaLine):'')+line('')
+      +line('TOP PERFORMERS:')+top.map((a,i)=>line('  '+(i+1)+'. '+a.an+' ('+a.team+') \u2014 '+this.fs1(a.fs)+', err '+this.pct(a.er))).join('')
+      +line('')+line('NEEDS ATTENTION:')+bottom.map((a,i)=>line('  '+(i+1)+'. '+a.an+' ('+a.team+') \u2014 '+this.fs1(a.fs)+', err '+this.pct(a.er))).join('');
+    return {subject:subject, html:html, text:text};
+  }
+  showEmailModal(){
+    var p=this.buildEmailPayload(); this._email=p;
+    var root=this.rootRef.current; var old=root.querySelector('#qa-email'); if(old) old.remove();
+    var ov=document.createElement('div'); ov.id='qa-email'; ov.className='qa-modal';
+    ov.innerHTML='<div class="qa-modal-box"><div class="qa-modal-head"><div>Email summary</div><button class="qa-modal-x" data-act="emailclose">\u00d7</button></div>'
+      +'<div class="qa-modal-sub">Subject: <b>'+this.esc(p.subject)+'</b></div>'
+      +'<div class="qa-modal-actions"><button class="sb-mini" data-act="emailrich">Copy formatted email</button><button class="sb-mini" data-act="emailtext">Copy plain text</button><a class="sb-mini" style="text-decoration:none;display:inline-flex;align-items:center" href="mailto:?subject='+encodeURIComponent(p.subject)+'&body='+encodeURIComponent(p.text)+'">Open in mail app</a><span class="qa-copy-note" id="qa-copy-note"></span></div>'
+      +'<div class="qa-modal-scroll">'+p.html+'</div></div>';
+    ov.addEventListener('click',(e)=>{ if(e.target===ov) ov.remove(); });
+    root.appendChild(ov);
+  }
+  copyEmail(kind){
+    var p=this._email; if(!p) return; var note=this.rootRef.current.querySelector('#qa-copy-note');
+    var done=()=>{ if(note){ note.textContent='Copied \u2713'; setTimeout(()=>{if(note)note.textContent='';},2200);} };
+    if(kind==='rich' && window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+      var blobH=new Blob([p.html],{type:'text/html'}), blobT=new Blob([p.text],{type:'text/plain'});
+      navigator.clipboard.write([new ClipboardItem({'text/html':blobH,'text/plain':blobT})]).then(done,()=>this._fallbackCopy(kind==='rich'?p.html:p.text,done));
+    } else { var t=kind==='rich'?p.text:p.text; navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(kind==='rich'?p.text:p.text).then(done,()=>this._fallbackCopy(p.text,done)):this._fallbackCopy(p.text,done); }
+  }
+  _fallbackCopy(str,done){ var ta=document.createElement('textarea'); ta.value=str; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta); done&&done(); }
+
+  exportCSV(){
+    var rws=this.srows(), p=this.st.page, med=this.windowMedians(rws), rows=[], name="qa_"+p+"_"+this.st.from+"_to_"+this.st.to;
+    if(p==="teams"){
+      rows.push(["Rank","Team lead","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median final","Total errors"]);
+      this.aggTeams(rws).sort((a,b)=>b.fs-a.fs).forEach((t,i)=>rows.push([i+1,t.team,t.n,t.fs.toFixed(2),t.er.toFixed(4),t.prod.toFixed(2),(t.fs-med.fs).toFixed(2),t.errs]));
+    } else if(p==="profile" && this.sel.prAnalyst!==""){
+      var login=this.S.analysts[parseInt(this.sel.prAnalyst)], m=this.mistakesFor(login);
+      if(m && m.length){ var Q=this.Q, F=this.QF; name="qa_mistakes_"+login;
+        rows.push(["Date","Area","Variable","Type","Line pos","Entered","Closed","Current","Status","Order link"]);
+        m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.ORG]===0?"Processing":"Post-prod",r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
+      } else { var D=this.SD, aIdx=parseInt(this.sel.prAnalyst); name="qa_dailyscores_"+login;
+        rows.push(["Date","Productivity","Errors","Possible points","Error rate","Final score"]);
+        rws.filter(r=>r[D.AN]===aIdx).sort((a,b)=>a[D.DATE]-b[D.DATE]).forEach(r=>rows.push([this.S.dates[r[D.DATE]],r[D.PROD],r[D.ERRS],r[D.PTS],r[D.ER],r[D.FS]]));
+      }
+    } else if(p==="coaching"){
+      var ds=this.datesInRange(), minDays=Math.max(1,Math.round(ds.length*0.5));
+      rows.push(["Rank","Analyst","Team","Final score","Delta vs median","Error rate","Trend","Top error types"]);
+      this.aggAnalysts(rws).filter(a=>a.days>=minDays && a.fs<med.fs).sort((a,b)=>a.fs-b.fs).forEach((a,i)=>{ var top=this.topErrors(a.an); var te=top===null?"":top.map(t=>t.v+" x"+t.count).join("; "); rows.push([i+1,a.an,a.team,a.fs.toFixed(2),(a.fs-med.fs).toFixed(2),a.er.toFixed(4),a.trend.dir,te]); });
+    } else if(p==="training"){
+      var ds=this.datesInRange(), minDays=Math.max(1,Math.round(ds.length*0.5));
+      var ans=this.aggAnalysts(rws), byTeam={}; ans.forEach(a=>{ (byTeam[a.team]=byTeam[a.team]||[]).push(a); });
+      var picks=Object.keys(byTeam).map(team=>{ var mem=byTeam[team]; var el=mem.filter(a=>a.days>=minDays); if(!el.length)el=mem; return el.slice().sort((a,b)=>a.fs-b.fs)[0]; }).filter(Boolean).sort((a,b)=>a.fs-b.fs);
+      rows.push(["Rank","Team","Nominee","Final score","Delta vs median","Error rate","Days","Trend","Top error types"]);
+      picks.forEach((a,i)=>{ var top=this.topErrors(a.an); var te=top===null?"":top.map(t=>t.v+" x"+t.count).join("; "); rows.push([i+1,a.team,a.an,a.fs.toFixed(2),(a.fs-med.fs).toFixed(2),a.er.toFixed(4),a.days,a.trend.dir,te]); });
+    } else if(p==="ams"){
+      if(!this.AM){ rows.push(["No AM mapping loaded"]); }
+      else { var ar=this.aggByAM(rws); rows.push(["Assistant Manager","Teams","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median","Errors per analyst-day","Total errors","Team list"]); ar.list.sort((a,b)=>b.fs-a.fs).forEach(a=>rows.push([a.am,a.nTeams,a.n,a.fs.toFixed(2),a.er.toFixed(4),a.prod.toFixed(2),(a.fs-med.fs).toFixed(2),a.epd.toFixed(2),a.errs,a.teams.map(t=>t.team+" ("+this.fs1(t.fs)+")").join("; ")])); }
+    } else if(p==="roles"){
+      if(!this.ROLE){ rows.push(["No role mapping loaded"]); }
+      else { var rr=this.aggByRole(this.srows(true)); rows.push(["Role","People","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); rr.list.forEach(L=>rows.push([L.role,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,L.epd.toFixed(2)])); if(rr.unmapped) rows.push(["(unmapped, excluded)","","",rr.unmapped]); }
+    } else if(p==="locations"){
+      if(!this.LOC){ rows.push(["No location mapping loaded"]); }
+      else { var lr=this.aggByLocation(rws); rows.push(["Location","Analysts","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); lr.list.sort((a,b)=>b.n-a.n).forEach(L=>rows.push([L.loc,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,(L.errs/(L.days||1)).toFixed(2)])); if(lr.unmapped) rows.push(["(unmapped, excluded)","","",lr.unmapped]); }
+    } else {
+      var list=this.aggAnalysts(rws), sort=this.sel.lbSort;
+      list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
+      var q=this.sel.lbSearch.toLowerCase();
+      rows.push(["Rank","Analyst","Team","Avg final score","Avg error rate","Avg productivity","Delta vs median final","Errors","Days","Trend"]);
+      list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1).forEach((a,i)=>rows.push([i+1,a.an,a.team,a.fs.toFixed(2),a.er.toFixed(4),a.prod.toFixed(2),(a.fs-med.fs).toFixed(2),a.errs,a.days,a.trend.dir]));
+    }
+    this.downloadCSV(name+".csv", rows);
+  }
+  downloadCSV(filename, rows){
+    var q=(v)=>{ v=String(v==null?"":v); return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    var csv=rows.map(r=>r.map(q).join(",")).join("\r\n");
+    var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}), url=URL.createObjectURL(blob);
+    var a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 120);
+  }
+
+  locationOf(login){ if(!this.LOC) return null; var m=this.LOC.map; return m[login] || m[String(login).toLowerCase()] || null; }
+  aggByLocation(rws){
+    var S=this.S,D=this.SD,m={},unmapped=0;
+    rws.forEach(r=>{ var loc=this.locationOf(S.analysts[r[D.AN]]); if(!loc){unmapped++;return;} if(!m[loc])m[loc]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[loc]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
+    var list=Object.keys(m).map(k=>{ var o=m[k]; return {loc:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,ser:o.ser}; });
+    return {list:list,unmapped:unmapped};
+  }
+  multiLineChart(labels, series, opts){
+    opts=opts||{}; var w=opts.w||680,h=opts.h||250,padL=48,padR=24,padT=24,padB=42,fmt=opts.fmt||(v=>Math.round(v));
+    var all=[]; series.forEach(s=>all=all.concat(s.values.filter(v=>v!=null)));
+    var mx=Math.max.apply(null,all.concat([0.0001]))*1.15, iw=w-padL-padR, ih=h-padT-padB;
+    var ticks="",nT=4; for(var t=0;t<=nT;t++){ var val=mx/1.15*t/nT, y=padT+ih-(val/mx*ih); ticks+='<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/><text x="'+(padL-8)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+fmt(val)+'</text>'; }
+    var body=series.map(s=>{ var pts=s.values.map((v,i)=>{ if(v==null) return null; var x=padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); var y=padT+ih-(v/mx*ih); return [x,y,v]; }).filter(Boolean); var path=""; pts.forEach((p,i)=>{ if(i===0){path="M"+p[0]+","+p[1];return;} var p0=pts[i-1],cx=(p0[0]+p[0])/2; path+=" C"+cx+","+p0[1]+" "+cx+","+p[1]+" "+p[0]+","+p[1]; }); var dots=pts.map((p,pi)=>'<circle class="pt-dot" cx="'+p[0]+'" cy="'+p[1]+'" r="3.2" fill="'+s.color+'"><title>'+this.esc(labels[pi]||'')+' \u00b7 '+this.esc(s.name)+': '+fmt(p[2])+'</title></circle>').join(""); return '<path d="'+path+'" fill="none" stroke="'+s.color+'" stroke-width="2.5" stroke-linecap="round"/>'+dots; }).join("");
+    var xl=labels.map((l,i)=>{ var x=padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); return '<text x="'+x+'" y="'+(padT+ih+16)+'" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+l+'</text>'; }).join("");
+    var leg=series.map(s=>'<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-size:11.5px;font-weight:600"><span style="width:14px;height:3px;background:'+s.color+';border-radius:2px;display:inline-block"></span>'+this.esc(s.name)+'</span>').join("");
+    return '<div style="margin-bottom:10px">'+leg+'</div><svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto">'+ticks+body+xl+'</svg>';
+  }
+
+  comboChart(labels, series, opts){
+    opts=opts||{}; var w=opts.w||800,h=opts.h||350,padL=44,padR=54,padT=30,padB=34;
+    var iw=w-padL-padR, ih=h-padT-padB;
+    var rightS=series.filter(function(s){return s.axis==='right';});
+    var maxOf=function(arr){ var all=[]; arr.forEach(function(s){all=all.concat(s.values.filter(function(v){return v!=null;}));}); return Math.max.apply(null,all.concat([0.0001]))*1.2; };
+    var lMax=maxOf(series.filter(function(s){return s.axis!=='right';})), rMax=maxOf(rightS.length?rightS:series);
+    var xAt=function(i){ return padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); };
+    var grid='',nT=4;
+    for(var t=0;t<=nT;t++){ var y=padT+ih-(t/nT*ih);
+      grid+='<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="1"/>';
+      grid+='<text x="'+(padL-8)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+Math.round(lMax/1.2*t/nT)+'</text>';
+      if(rightS.length) grid+='<text x="'+(w-padR+8)+'" y="'+(y+3.5)+'" text-anchor="start" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+(rMax/1.2*t/nT*100).toFixed(1)+'%</text>';
+    }
+    var body=series.map(function(s){
+      var mx=(s.axis==='right')?rMax:lMax;
+      var pts=s.values.map(function(v,i){ if(v==null)return null; return [xAt(i), padT+ih-(v/mx*ih), v]; }).filter(Boolean);
+      if(!pts.length) return '';
+      var path=''; pts.forEach(function(p,i){ if(i===0){path='M'+p[0]+','+p[1];return;} var p0=pts[i-1],cx=(p0[0]+p[0])/2; path+=' C'+cx+','+p0[1]+' '+cx+','+p[1]+' '+p[0]+','+p[1]; });
+      var area='M'+pts[0][0]+','+(padT+ih)+' '+path.replace(/^M/,'L')+' L'+pts[pts.length-1][0]+','+(padT+ih)+' Z';
+      var dots=pts.map(function(p){ return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.2" fill="'+s.color+'"/><text x="'+p[0]+'" y="'+(p[1]-8)+'" text-anchor="middle" font-size="8.8" font-weight="700" fill="'+s.color+'" font-family="var(--font-num)">'+s.fmt(p[2])+'</text>'; }).join('');
+      return '<path d="'+area+'" fill="'+s.color+'" fill-opacity="0.07" stroke="none"/><path class="me-trend" d="'+path+'" fill="none" stroke="'+s.color+'" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'+dots;
+    }).join('');
+    var xl=labels.map(function(l,i){ return '<text x="'+xAt(i)+'" y="'+(padT+ih+18)+'" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--font-num)">'+l+'</text>'; }).join('');
+    var leg=series.map(function(s){ return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:18px;font-size:12px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:16px;height:3px;background:'+s.color+';border-radius:2px;display:inline-block"></span>'+s.name+(s.axis==='right'?' (right)':'')+'</span>'; }).join('');
+    return '<div style="margin-bottom:12px;text-align:center">'+leg+'</div><svg viewBox="0 0 '+w+' '+h+'" class="me-chart" style="width:100%;height:auto">'+grid+body+xl+'</svg>';
+  }
+
+  pageLocations(rws){
+    var LOCCOLORS=["var(--me-blue)","var(--ube-600)","var(--honey-600)","var(--teal-700)"];
+    if(!this.LOC){
+      return '<div class="card"><div class="card-head">Location compare</div><div class="card-body"><div class="placeholder-msg" style="text-align:left;padding:26px 8px">'
+        +'<div style="font-family:var(--font-display);font-weight:800;font-size:18px;color:var(--text);margin-bottom:10px">Upload a location mapping to compare Dhaka vs Chandigarh</div>'
+        +'<div style="max-width:620px;margin-bottom:16px">The productivity export has no location field, so map each analyst to a site with a small CSV, then load it under <b>Location mapping (CSV)</b> in the sidebar. Every metric below will split by location and recompute for the date range.</div>'
+        +'<div class="meth-card" style="max-width:420px"><div class="m-t">Expected format</div><div class="m-f" style="white-space:pre">analyst_login,location\npritika,Chandigarh\ntaherasova,Dhaka\nshubhammehta,Chandigarh</div><div class="m-d">Header optional \u2014 a plain two-column list (login, location) also works. Logins not listed are counted as \u201cunmapped\u201d.</div></div>'
+        +'</div></div></div>';
+    }
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var r=this.aggByLocation(rws); var list=r.list.sort((a,b)=>b.n-a.n);
+    if(!list.length) return '<div class="card"><div class="placeholder-msg">None of the analysts in this range are in the location mapping. Check the logins in your CSV.</div></div>';
+    var ds=this.datesInRange();
+    list.forEach(L=>L.epd=L.errs/(L.days||1));
+    var best=(vals,hb)=>{ var b=hb?Math.max.apply(null,vals):Math.min.apply(null,vals); return b; };
+    var metric=(label,key,fmt,hb)=>{ var vals=list.map(L=>L[key]); var b=best(vals,hb); return '<tr><td style="font-weight:700;font-family:var(--font-body);color:var(--text)">'+label+'</td>'+list.map(L=>{ var v=L[key], isBest=list.length>1&&v===b; return '<td class="r" style="font-weight:'+(isBest?"800":"600")+';color:'+(isBest?"var(--green)":"var(--text)")+'">'+fmt(v)+(isBest?' \u2713':'')+'</td>'; }).join("")+'</tr>'; };
+    var headCols=list.map((L,i)=>'<th class="r"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:'+LOCCOLORS[i%LOCCOLORS.length]+';display:inline-block"></span>'+this.esc(L.loc)+'</span></th>').join("");
+    var table2='<div class="card"><div class="card-head">Location comparison \u2014 productivity &amp; errors'+(r.unmapped?' \u00b7 '+r.unmapped.toLocaleString()+' unmapped analyst-days excluded':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Metric</th>'+headCols+'</tr></thead><tbody>'
+      +metric("Analysts","n",v=>v,true)
+      +metric("Analyst-days","days",v=>v.toLocaleString(),true)
+      +metric("Avg final score","fs",v=>this.fs1(v),true)
+      +metric("Avg error rate","er",v=>this.pct(v),false)
+      +metric("Avg productivity","prod",v=>this.fs1(v),true)
+      +metric("Total errors","errs",v=>v.toLocaleString(),false)
+      +metric("Errors / analyst-day","epd",v=>this.fs1(v),false)
+      +'</tbody></table></div></div>';
+    var bars="";
+    if(list.length===2){ var A=list[0],B=list[1];
+      bars='<div class="card"><div class="card-head">Head-to-head</div><div class="card-body" style="display:flex;flex-direction:column;gap:16px">'
+        +this.dualBar("Avg final score",A.loc,A.fs,B.loc,B.fs,{dec:true,higherBetter:true})
+        +this.dualBar("Avg error rate",A.loc,A.er,B.loc,B.er,{pct:true,higherBetter:false})
+        +this.dualBar("Avg productivity",A.loc,A.prod,B.loc,B.prod,{dec:true,higherBetter:true})
+        +this.dualBar("Errors / analyst-day",A.loc,A.epd,B.loc,B.epd,{dec:true,higherBetter:false})
+        +'</div></div>';
+    }
+    var series=list.map((L,i)=>({name:L.loc,color:LOCCOLORS[i%LOCCOLORS.length],values:ds.map(d=>{ var di=this.S.dates.indexOf(d); var c=L.ser[di]; return c?c.s/c.n:null; })}));
+    var trend='<div class="card"><div class="card-head">Avg final score per day, by location</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),series,{fmt:v=>this.fs1(v)})+'</div></div>';
+    return table2+bars+trend;
+  }
+
+  pageTraining(rws){
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var med=this.windowMedians(rws);
+    var ds=this.datesInRange(), minDays=Math.max(1,Math.round(ds.length*0.5));
+    var rowFn=(a,i)=>{
+      var dF=a.fs-med.fs, top=this.topErrors(a.an);
+      var chips = top===null ? '<span style="color:var(--muted);font-size:11px">load mistake export</span>'
+        : (top.length ? top.map(t=>'<span class="'+(t.area==="Header"?"tag tag-hdr":t.area==="Line Item"?"tag tag-line":"tag tag-misc")+'">'+this.esc(t.v)+' \u00d7'+t.count+'</span>').join(" ") : '<span style="color:var(--muted);font-size:11px">no mistakes in export</span>');
+      return '<tr><td style="color:var(--muted)">'+(i+1)+'</td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+        +'<td class="r" style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</td>'
+        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td class="r" style="color:var(--muted)">'+a.days+'</td>'
+        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="up"?"var(--green)":"var(--red)")+'</div></td>'
+        +'<td style="white-space:normal;line-height:2">'+chips+'</td>'
+        +'<td><button class="reset-btn" style="font-size:11px" data-act="profile" data-arg="'+this.esc(a.an)+'">Review \u2192</button></td></tr>';
+    };
+    var thead='<thead><tr><th>#</th><th>Team</th><th>Nominee</th><th class="r">Final score</th><th class="r">\u0394 median</th><th class="r">Error rate</th><th class="r">Days</th><th>Trajectory</th><th>Top error types</th><th></th></tr></thead>';
+    var pickFor=(role,n)=>{
+      var ans=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)===role);
+      return ans.sort((a,b)=>a.fs-b.fs).slice(0,n);
+    };
+    var tbl=(role,n)=>{ var picks=pickFor(role,n); return '<div class="card"><div class="card-head">Bottom '+n+' '+role+'s by final score \u2014 worst first \u00b7 '+picks.length+' shown</div>'
+      +'<div style="overflow-x:auto"><table class="tbl">'+thead+'<tbody>'+(picks.length?picks.map(rowFn).join(""):'<tr><td colspan="10" style="color:var(--muted);padding:16px">No '+role+'s in the selected range.</td></tr>')+'</tbody></table></div></div>'; };
+    return tbl("Specialist",10)+tbl("Analyst",15);
+  }
+
+  ROLECOLORS=["var(--me-blue)","var(--honey-600)","var(--ube-600)","var(--teal-700)"];
+  amOf(team){ if(!this.AM) return null; return this.AM.map[team] || null; }
+  aggByAM(rws){
+    var teamsAgg=this.aggTeams(rws);
+    var byAM={}, unmapped=0, unmappedTeams={};
+    teamsAgg.forEach(t=>{ var am=this.amOf(t.team); if(!am){ unmapped+=t.days; unmappedTeams[t.team]=1; return; } if(!byAM[am])byAM[am]={teams:[],days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:0}; var o=byAM[am]; o.teams.push(t); o.days+=t.days; o.sP+=t.prod*t.days; o.sE+=t.er*t.days; o.sF+=t.fs*t.days; o.errs+=t.errs; o.pts+=t.pts; o.mem+=t.n; });
+    var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.fs-a.fs); return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, epd:o.errs/(o.days||1)}; });
+    return {list:list, unmapped:unmapped, unmappedTeams:Object.keys(unmappedTeams).length};
+  }
+  pageAMs(rws){
+    if(!this.AM) return '<div class="card"><div class="card-head">AM overview</div><div class="card-body"><div class="placeholder-msg" style="text-align:left;padding:26px 8px"><div style="font-family:var(--font-display);font-weight:800;font-size:18px;color:var(--text);margin-bottom:10px">Upload an AM \u2192 team mapping</div><div style="max-width:620px">Provide a CSV of <b>team, account_manager</b> and each AM\u2019s teams will roll up here.</div></div></div></div>';
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var r=this.aggByAM(rws);
+    var med={ fs:this.median(r.list.map(a=>a.fs)), er:this.median(r.list.map(a=>a.er)) };
+    var amSort=this.sel.amSort;
+    var list=r.list.sort(amSort==="prodDesc"?(a,b)=>b.prod-a.prod:amSort==="errorAsc"?(a,b)=>a.er-b.er:amSort==="errDayAsc"?(a,b)=>a.epd-b.epd:(a,b)=>b.fs-a.fs);
+    if(!list.length) return '<div class="card"><div class="placeholder-msg">No teams in this range map to an AM.</div></div>';
+    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
+    var summaryRows=list.map((a,i)=>{
+      var dF=a.fs-med.fs;
+      return '<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="am" data-arg="'+this.esc(a.am)+'">'+this.esc(a.am)+'</button></td>'
+        +'<td class="r"><span class="team-count'+(a.nTeams<3?' team-count-lo':'')+'">'+a.nTeams+'</span></td><td class="r">'+a.n+'</td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td class="r">'+this.fs1(a.prod)+'</td>'
+        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
+        +'<td class="r" style="color:var(--proc);font-weight:700">'+this.fs1(a.epd)+'</td>'
+        +'<td class="r" style="color:var(--muted)">'+a.errs.toLocaleString()+'</td></tr>';
+    }).join("");
+    var sortOpt=(v,l)=>'<option value="'+v+'"'+(amSort===v?" selected":"")+'>'+l+'</option>';
+    var sortCtrl='<span style="margin-left:auto" class="ctrl-row"><label>Sort</label><select data-act="amsort">'+sortOpt("finalDesc","Final score / analyst \u2193")+sortOpt("prodDesc","Productivity / analyst \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("errDayAsc","Errors / day \u2191 (best)")+'</select></span>';
+    var summary='<div class="card"><div class="card-head">AM leaderboard \u2014 every column is a <b style="color:var(--accent);font-weight:800">&nbsp;per-analyst average&nbsp;</b>, so team size never affects position'+(r.unmappedTeams?'':'')+sortCtrl+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Assistant Manager</th><th class="r">Teams</th><th class="r">Analysts</th><th class="r">Avg final score<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span></th><th class="r">Avg error rate</th><th class="r">Avg productivity<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span></th><th class="r">\u0394 vs median</th><th class="r" style="color:var(--proc)">Errors / day<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">per analyst</span></th><th class="r">Total errors<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">volume only</span></th></tr></thead><tbody>'+summaryRows+'</tbody></table></div><div class="note-strip" style="border-top:1px solid var(--border)"><b>Fair-view guarantee:</b> ranking and every column except <b>Total errors</b> are per-analyst-day averages \u2014 independent of team count. <b>Harjaspreet Singh</b> and <b>Faria</b> run 2 teams (amber); the rest run 3, yet both out-rank one or more 3-team AMs on productivity. <b>Total errors</b> is raw volume (naturally larger for more analysts) \u2014 use <b>Errors / day</b> to compare error levels fairly.</div></div>';
+    var cards='<div class="am-grid">'+list.map(a=>{
+      var mxTeam=Math.max.apply(null,a.teams.map(t=>t.fs).concat([0.0001]));
+      var teamRows=a.teams.map(t=>{ var col=this.fsColor(t.fs,med.fs); return '<div class="am-team"><span class="am-team-name" title="'+this.esc(t.team)+'"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></span><div class="am-team-bar"><div style="width:'+Math.min(100,t.fs/mxTeam*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+col+'"></div></div><span class="am-team-fs" style="color:'+col+'">'+this.fs1(t.fs)+'</span><span class="am-team-er" style="color:'+this.erColor(t.er,med.er)+'">'+this.pct(t.er)+'</span></div>'; }).join("");
+      return '<div class="card am-card"><div class="am-head"><div><div class="am-name"><button class="team-link" data-act="am" data-arg="'+this.esc(a.am)+'">'+this.esc(a.am)+'</button></div><div class="am-sub">'+(a.nTeams<3?'<span class="team-count team-count-lo" style="margin-right:5px">'+a.nTeams+' teams</span>':a.nTeams+' teams')+' \u00b7 '+a.n+' analysts \u00b7 '+this.fs1(a.epd)+' err/day</div></div><div class="am-fs" style="color:'+this.fsColor(a.fs,med.fs)+'">'+this.fs1(a.fs)+'<span>avg final</span></div></div><div class="am-body"><div class="am-team am-team-hd"><span class="am-team-name">Team</span><span class="am-team-bar"></span><span class="am-team-fs">Final</span><span class="am-team-er">Err%</span></div>'+teamRows+'</div></div>';
+    }).join("")+'</div>';
+    var note = '';
+    return summary+cards+note;
+  }
+  aggByRole(rws){
+    var S=this.S,D=this.SD,m={},unmapped=0;
+    rws.forEach(r=>{ var role=this.roleOf(S.analysts[r[D.AN]]); if(!role){unmapped++;return;} if(!m[role])m[role]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[role]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
+    var order=this.ROLE?this.ROLE.roles:Object.keys(m);
+    var list=order.filter(k=>m[k]).map(k=>{ var o=m[k]; return {role:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,epd:o.errs/(o.days||1),ser:o.ser}; });
+    return {list:list,unmapped:unmapped};
+  }
+  pageRoles(rws){
+    if(!this.ROLE){
+      return '<div class="card"><div class="card-head">By role</div><div class="card-body"><div class="placeholder-msg" style="text-align:left;padding:26px 8px">'
+        +'<div style="font-family:var(--font-display);font-weight:800;font-size:18px;color:var(--text);margin-bottom:10px">Upload a role mapping to compare Leads, Specialists &amp; Analysts</div>'
+        +'<div style="max-width:640px;margin-bottom:16px">The productivity export has no designation field, so map each username to a role with a small CSV, then load it under <b>Role / designation mapping (CSV)</b> in the sidebar. Every metric below splits by role and recomputes for the date range \u2014 and a <b>Role</b> filter appears in the top bar to narrow any page.</div>'
+        +'<div class="meth-card" style="max-width:440px"><div class="m-t">Expected format</div><div class="m-f" style="white-space:pre">analyst_login,designation\npritika,Lead\ntaherasova,Specialist\nshubhammehta,Analyst</div><div class="m-d">Header optional \u2014 a plain two-column list (login, designation) also works. Variants like \u201cTeam Lead\u201d or \u201cQA Specialist\u201d are normalized. Logins not listed are counted as \u201cunmapped\u201d.</div></div>'
+        +'</div></div></div>';
+    }
+    if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
+    var r=this.aggByRole(rws); var list=r.list;
+    if(!list.length) return '<div class="card"><div class="placeholder-msg">None of the analysts in this range are in the role mapping. Check the logins in your CSV.</div></div>';
+    var COL=this.ROLECOLORS, ds=this.datesInRange();
+    var best=(vals,hb)=>hb?Math.max.apply(null,vals):Math.min.apply(null,vals);
+    var metric=(label,key,fmt,hb)=>{ var vals=list.map(L=>L[key]); var b=best(vals,hb); return '<tr><td style="font-weight:700;font-family:var(--font-body);color:var(--text)">'+label+'</td>'+list.map(L=>{ var v=L[key], isBest=list.length>1&&v===b; return '<td class="r" style="font-weight:'+(isBest?"800":"600")+';color:'+(isBest?"var(--green)":"var(--text)")+'">'+fmt(v)+(isBest?' \u2713':'')+'</td>'; }).join("")+'</tr>'; };
+    var headCols=list.map((L,i)=>'<th class="r"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:'+COL[i%COL.length]+';display:inline-block"></span>'+this.esc(L.role)+'</span></th>').join("");
+    var table='<div class="card"><div class="card-head">Productivity &amp; errors by role'+(r.unmapped?' \u00b7 '+r.unmapped.toLocaleString()+' unmapped analyst-days excluded':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Metric</th>'+headCols+'</tr></thead><tbody>'
+      +metric("People","n",v=>v,true)
+      +metric("Analyst-days","days",v=>v.toLocaleString(),true)
+      +metric("Avg final score","fs",v=>this.fs1(v),true)
+      +metric("Avg error rate","er",v=>this.pct(v),false)
+      +metric("Avg productivity","prod",v=>this.fs1(v),true)
+      +metric("Total errors","errs",v=>v.toLocaleString(),false)
+      +metric("Errors / analyst-day","epd",v=>this.fs1(v),false)
+      +'</tbody></table></div><div class="note-strip">\u201cBest\u201d (\u2713) is highlighted per metric \u2014 remember roles differ in expected workload, so read productivity and error rate together, not in isolation.</div></div>';
+    var cards='<div class="kpi-row">'+list.map((L,i)=>'<div class="kpi" style="border-top:3px solid '+COL[i%COL.length]+'"><div class="k-label">'+this.esc(L.role)+'</div><div class="k-val" style="color:'+COL[i%COL.length]+'">'+this.fs1(L.fs)+'</div><div class="k-sub">'+L.n+' people \u00b7 err '+this.pct(L.er)+'</div></div>').join("")+'</div>';
+    var series=list.map((L,i)=>({name:L.role,color:COL[i%COL.length],values:ds.map(d=>{ var di=this.S.dates.indexOf(d); var c=L.ser[di]; return c?c.s/c.n:null; })}));
+    var trend='<div class="card"><div class="card-head">Avg final score per day, by role</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),series,{fmt:v=>this.fs1(v)})+'</div></div>';
+    return cards+table+trend;
+  }
+  startRole(){
+    var inp=this._q("#qa-csv-role"), note=this._q("#qa-note-role");
+    if(!inp.files||!inp.files[0]){ note.textContent="Choose a role mapping CSV (analyst_login, designation) first."; return; }
+    var file=inp.files[0], reader=new FileReader(), self=this;
+    reader.onload=(e)=>{
+      try{
+        var rows=self.parseCSV(e.target.result); if(!rows.length) throw new Error("Empty file.");
+        var h=rows[0].map(x=>x.trim().toLowerCase());
+        var loginKeys=["analyst_login","username","login","user","analyst","user_login","name"];
+        var roleKeys=["designation","role","title","job_title","position","level"];
+        var li=-1,ri=-1; h.forEach((c,i)=>{ if(li<0&&loginKeys.indexOf(c)!==-1)li=i; if(ri<0&&roleKeys.indexOf(c)!==-1)ri=i; });
+        var start=1; if(li<0||ri<0){ li=0; ri=1; start=0; }
+        var norm=(v)=>{ var s=v.trim(); var l=s.toLowerCase(); if(/lead/.test(l))return "Lead"; if(/special/.test(l))return "Specialist"; if(/analyst/.test(l))return "Analyst"; if(/manager|mgr/.test(l))return "Manager"; if(/train/.test(l))return "Trainee"; return s.charAt(0).toUpperCase()+s.slice(1); };
+        var map={}, cnt={}, count=0;
+        for(var i=start;i<rows.length;i++){ var rr=rows[i]; if(rr.length<2) continue; var login=(rr[li]||"").trim(); var role=norm((rr[ri]||"")); if(!login||!role) continue; map[login.toLowerCase()]=role; cnt[role]=(cnt[role]||0)+1; count++; }
+        if(!count) throw new Error("No login,designation pairs found.");
+        var pref=["Lead","Specialist","Analyst","Manager","Trainee"];
+        var roles=Object.keys(cnt).sort((a,b)=>{ var ia=pref.indexOf(a),ib=pref.indexOf(b); if(ia<0)ia=99; if(ib<0)ib=99; return ia-ib||a.localeCompare(b); });
+        self.ROLE={map:map,roles:roles,counts:cnt};
+        self.st.role="";
+        var matched=self.S.analysts.filter(a=>map[a.toLowerCase()]).length;
+        note.textContent="Roles: "+file.name+" \u00b7 "+roles.map(l=>l+" "+cnt[l]).join(", ")+" \u00b7 "+matched+"/"+self.S.analysts.length+" matched";
+        var tr=self.rootRef.current.querySelector(".tb-right"); if(tr && !tr.querySelector(".role-filter")) tr.insertAdjacentHTML("afterbegin", self.roleFilterHTML());
+        self.renderContent();
+      }catch(err){ note.textContent="Could not process file: "+err.message; }
+    };
+    reader.readAsText(file);
+  }
+
+  startLoc(){
+    var inp=this._q("#qa-csv-loc"), note=this._q("#qa-note-loc");
+    if(!inp.files||!inp.files[0]){ note.textContent="Choose a location mapping CSV (analyst_login, location) first."; return; }
+    var file=inp.files[0], reader=new FileReader(), self=this;
+    reader.onload=(e)=>{
+      try{
+        var rows=self.parseCSV(e.target.result); if(!rows.length) throw new Error("Empty file.");
+        var h=rows[0].map(x=>x.trim().toLowerCase());
+        var loginKeys=["analyst_login","username","login","user","analyst","user_login","name"];
+        var locKeys=["location","site","office","city","branch","center","centre","hub"];
+        var li=-1, oi=-1; h.forEach((c,i)=>{ if(li<0&&loginKeys.indexOf(c)!==-1)li=i; if(oi<0&&locKeys.indexOf(c)!==-1)oi=i; });
+        var start=1;
+        if(li<0||oi<0){ li=0; oi=1; start=0; } // no header: assume col0=login, col1=location
+        var map={}, cnt={}, count=0;
+        for(var i=start;i<rows.length;i++){ var r=rows[i]; if(r.length<2) continue; var login=(r[li]||"").trim(); var loc=(r[oi]||"").trim(); if(!login||!loc) continue; map[login]=loc; cnt[loc]=(cnt[loc]||0)+1; count++; }
+        if(!count) throw new Error("No login,location pairs found.");
+        var locs=Object.keys(cnt).sort();
+        self.LOC={map:map,locations:locs,counts:cnt};
+        var matched=self.S.analysts.filter(a=>map[a]).length;
+        note.textContent="Locations: "+file.name+" \u00b7 "+locs.map(l=>l+" "+cnt[l]).join(", ")+" \u00b7 "+matched+"/"+self.S.analysts.length+" analysts matched";
+        var tr=self.rootRef.current.querySelector(".tb-right"); if(tr && !tr.querySelector("[data-act='locfilter']")) tr.insertAdjacentHTML("afterbegin", self.locFilterHTML());
+        self.renderContent();
+      }catch(err){ note.textContent="Could not process file: "+err.message; }
+    };
+    reader.readAsText(file);
+  }
+
+  parseCSV(text){
+    var rows=[],row=[],cur="",inQ=false;
+    for(var i=0;i<text.length;i++){ var ch=text[i];
+      if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else inQ=false; } else cur+=ch; }
+      else { if(ch==='"') inQ=true; else if(ch===","){row.push(cur);cur="";} else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&text[i+1]==="\n")i++; row.push(cur);cur=""; if(row.length>1||row[0]!=="")rows.push(row); row=[]; } else cur+=ch; }
+    }
+    if(cur!==""||row.length){row.push(cur);if(row.length>1||row[0]!=="")rows.push(row);}
+    return rows;
+  }
+  startProcessing(){
+    var inp=this._q("#qa-csv"), note=this._q("#qa-note");
+    if(!inp.files||!inp.files[0]){ note.textContent="Choose a productivity export (CSV) first, then press Load new export."; return; }
+    var file=inp.files[0], reader=new FileReader(), self=this;
+    reader.onload=(e)=>{
+      try{
+        var rows=self.parseCSV(e.target.result);
+        var hdr=rows[0].map(h=>h.trim().toLowerCase()); var col={}; hdr.forEach((h,i)=>col[h]=i);
+        var dateCol=["completed_date","completion_date","date","work_date","score_date","completed date"].find(c=>col[c]!==undefined);
+        if(!dateCol) throw new Error("No date column found (expected completed_date). Columns: "+hdr.join(", "));
+        var need=["analyst_login","productivity_score","error_rate","final_score"];
+        for(var n=0;n<need.length;n++) if(col[need[n]]===undefined) throw new Error("Missing column: "+need[n]+". Columns: "+hdr.join(", "));
+        var raw=[], dset={}, tset={}, anTeam={};
+        for(var i=1;i<rows.length;i++){ var r=rows[i]; if(r.length<hdr.length) continue;
+          var g=(name)=>{ var ix=col[name]; return ix===undefined?"":(r[ix]||"").trim(); };
+          var date=g(dateCol), an=g("analyst_login"); var team=g("team_lead")||g("team_lead_login")||"Unassigned";
+          var _er=parseFloat(g("error_rate"))||0;
+          var _pts=parseInt(g("possible_error_points")||g("total_possible_error_points"))||0;
+          var _errs=parseInt(g("errors")||g("total_errors"));
+          if(isNaN(_errs)) _errs=_pts?Math.round(_er*_pts):0;
+          raw.push({date,an,team,prod:parseFloat(g("productivity_score"))||0,errs:_errs,pts:_pts,er:_er,fs:parseFloat(g("final_score"))||0});
+          dset[date]=1; tset[team]=1; anTeam[an]=anTeam[an]||{}; anTeam[an][team]=(anTeam[an][team]||0)+1;
+        }
+        if(!raw.length) throw new Error("No valid rows found.");
+        var dates=Object.keys(dset).sort(), analysts=Object.keys(anTeam).sort(), teams=Object.keys(tset).sort();
+        var di={},ani={},ti={}; dates.forEach((v,i)=>di[v]=i); analysts.forEach((v,i)=>ani[v]=i); teams.forEach((v,i)=>ti[v]=i);
+        var records=raw.map(x=>[di[x.date],ani[x.an],ti[x.team],x.prod,x.errs,x.pts,x.er,x.fs]);
+        var analyst_team=analysts.map(a=>{ var m=anTeam[a],best="",n=0; Object.keys(m).forEach(t=>{ if(m[t]>n){n=m[t];best=t;} }); return ti[best]; });
+        self.S={dates,analysts,teams,analyst_team,records};
+        self.sel={lbSearch:"",lbSort:"finalDesc",prTeam:"",prAnalyst:"",cmpMode:"analysts",cmpA:"",cmpB:"",showAllMistakes:false};
+        self.st.from=dates[0]; self.st.to=dates[dates.length-1];
+        self.syncDates(); self.setPage("overview");
+        note.textContent="Loaded: "+file.name+" \u00b7 "+records.length.toLocaleString()+" analyst-days \u00b7 "+analysts.length+" analysts \u00b7 "+dates.length+" days";
+      }catch(err){ note.textContent="Could not process file: "+err.message; }
+    };
+    reader.readAsText(file);
+  }
+
+  startMistakes(){
+    var inp=this._q("#qa-csv-mistakes"), note=this._q("#qa-note-mistakes");
+    if(!inp.files||!inp.files[0]){ note.textContent="Choose a Mistake Details CSV first, then press Load mistakes."; return; }
+    var file=inp.files[0], reader=new FileReader(), self=this;
+    reader.onload=(e)=>{
+      try{
+        var rows=self.parseCSV(e.target.result);
+        var hdr=rows[0].map(h=>h.trim().toLowerCase()); var col={}; hdr.forEach((h,i)=>col[h]=i);
+        var need=["mistake_area","mistake_date","analyst_login","variable","differs_from_closed","differs_from_current"];
+        for(var n=0;n<need.length;n++) if(col[need[n]]===undefined) throw new Error("Missing column: "+need[n]);
+        if(col["team_lead"]===undefined && col["team_lead_login"]===undefined) throw new Error("Missing column: team_lead");
+        var url_prefix=(self.Q&&self.Q.url_prefix)||"https://app.marginedge.com/#/orderRedirect/";
+        var dset={},aset={},vset={},anset={},tset={},sset={}, raw=[];
+        for(var i=1;i<rows.length;i++){ var r=rows[i]; if(r.length<hdr.length-1) continue;
+          var g=(name)=>{ var ix=col[name]; return ix===undefined?"":(r[ix]||"").trim(); };
+          var dfc=g("differs_from_closed").toLowerCase()==="true", dfcur=g("differs_from_current").toLowerCase()==="true";
+          var isProc=dfc, isPP=!dfc&&dfcur; if(!isProc&&!isPP) continue;
+          var team=g("team_lead")||g("team_lead_login")||"unassigned", st=g("status")||"\u2014", u=g("order_url");
+          var suffix=u.indexOf(url_prefix)===0?u.slice(url_prefix.length):u;
+          var lp=g("line_position"); lp=lp?String(parseInt(lp)||""):"";
+          raw.push([g("mistake_date"),g("mistake_area"),g("variable"),g("analyst_login"),team,lp,g("entered_value").slice(0,60),g("closed_value").slice(0,60),g("current_value").slice(0,60),st,suffix,isProc?0:1]);
+          dset[g("mistake_date")]=1;aset[g("mistake_area")]=1;vset[g("variable")]=1;anset[g("analyst_login")]=1;tset[team]=1;sset[st]=1;
+        }
+        if(!raw.length) throw new Error("No valid error rows found.");
+        var mk=(s)=>Object.keys(s).sort();
+        var D2={url_prefix:url_prefix,dates:mk(dset),areas:mk(aset),vars:mk(vset),analysts:mk(anset),teams:mk(tset),statuses:mk(sset)};
+        var ix=(arr)=>{ var m={}; arr.forEach((v,i)=>m[v]=i); return m; };
+        var di=ix(D2.dates),ai=ix(D2.areas),vi=ix(D2.vars),ani=ix(D2.analysts),ti=ix(D2.teams),si=ix(D2.statuses);
+        D2.records=raw.map(r=>[di[r[0]],ai[r[1]],vi[r[2]],ani[r[3]],ti[r[4]],r[5],r[6],r[7],r[8],si[r[9]],r[10],r[11]]);
+        self.Q=D2;
+        note.textContent="Mistakes: "+file.name+" \u00b7 "+D2.records.length.toLocaleString()+" rows \u00b7 "+D2.dates[0]+"\u2013"+D2.dates[D2.dates.length-1];
+        if(self.st.page==="profile") self.renderContent();
+      }catch(err){ note.textContent="Could not process file: "+err.message; }
+    };
+    reader.readAsText(file);
+  }
+
+  shellCSS(){
+    return `.qa{--bg:var(--surface-page);--card:#ffffff;--border:var(--border-subtle);--text:var(--text-strong);--muted:var(--text-muted);--accent:var(--me-blue);--accent-soft:var(--blue-100);--sb:#12161c;--sb2:#1b212b;--sb-text:#c4cbd6;--sb-muted:#7c8698;--proc:var(--persimmon-600);--pp:var(--ube-600);--hdr:var(--me-blue);--line:var(--teal-700);--misc:var(--honey-700);--green:var(--teal-700);--gold:var(--honey-700);--red:var(--persimmon-600);--shadow:var(--shadow-sm);color:var(--text);font-family:var(--font-body);font-size:14px;line-height:1.55;}
+.qa *{box-sizing:border-box;margin:0;padding:0;}
+.qa .app{display:flex;min-height:100vh;background:var(--bg);}
+.qa .sidebar{width:248px;background:linear-gradient(180deg,#12161c 0%,#0d1116 100%);color:var(--sb-text);flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid rgba(255,255,255,.06);}
+.qa .sidebar::-webkit-scrollbar{width:7px;}.qa .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:4px;}
+.qa .sb-brand{padding:22px 18px 16px;border-bottom:1px solid rgba(255,255,255,.08);}
+.qa .sb-brand img{height:32px;width:auto;display:block;margin-bottom:12px;}
+.qa .sb-brand .ttl{font-family:var(--font-display);font-weight:800;font-size:15px;color:#fff;letter-spacing:-.01em;white-space:nowrap;}
+.qa .sb-brand .sub{font-size:11px;color:var(--sb-muted);margin-top:3px;}
+.qa .sb-group{padding:14px 12px 4px;}
+.qa .sb-group-label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--sb-muted);padding:0 10px 8px;font-weight:800;}
+.qa .sb-item{position:relative;display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--sb-text);cursor:pointer;user-select:none;margin-bottom:1px;transition:background .13s,color .13s,box-shadow .13s;white-space:nowrap;overflow:hidden;}
+.qa .sb-item span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qa .sb-item:hover{background:rgba(255,255,255,.05);color:#fff;}
+.qa .sb-item.active{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 92%,#000) 0%,var(--accent) 100%);color:#fff;box-shadow:0 2px 10px -2px color-mix(in srgb,var(--accent) 60%,transparent);}
+.qa .sb-item.active::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:60%;border-radius:0 3px 3px 0;background:#fff;}
+.qa .sb-item svg{width:16px;height:16px;flex-shrink:0;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.9;}
+.qa .sb-admin{margin-top:auto;padding:14px;border-top:1px solid rgba(255,255,255,.08);}
+.qa .sb-source{background:rgba(255,255,255,.05);border-radius:10px;padding:12px 13px;margin-bottom:10px;}
+.qa .sb-source .lbl{font-size:11px;font-weight:700;color:#fff;display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.qa .sb-source .lbl svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.qa .sb-source-name{font-size:12px;font-weight:700;color:var(--sb-text);line-height:1.4;}
+.qa .sb-source-link{display:inline-block;margin-top:7px;font-size:11px;font-weight:700;color:#7fb2e6;text-decoration:none;}
+.qa .sb-source-link:hover{color:#a9cef0;text-decoration:underline;}
+.qa .sb-upload{background:rgba(255,255,255,.05);border-radius:10px;padding:11px 12px;margin-bottom:10px;}
+.qa .sb-upload .lbl{font-size:11px;font-weight:700;color:#fff;display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.qa .sb-upload .lbl svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.qa .sb-upload input[type=file]{width:100%;font-size:10.5px;color:var(--sb-muted);}
+.qa .sb-upload input[type=file]::file-selector-button{background:#4a4a47;color:#e6e6e4;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:4px 9px;font-size:10.5px;cursor:pointer;margin-right:7px;font-family:var(--font-body);font-weight:600;}
+.qa .sb-btn{width:100%;padding:9px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.16);background:transparent;color:var(--sb-text);font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--font-body);margin-bottom:8px;transition:background .12s;}
+.qa .sb-btn:hover{background:rgba(255,255,255,.08);}
+.qa .sb-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.qa .sb-btn.primary:hover{background:var(--action-primary-hover);}
+.qa .sb-mini{margin-top:8px;width:100%;padding:6px 10px;border-radius:7px;border:none;background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;cursor:pointer;font-family:var(--font-body);}
+.qa .sb-mini:hover{background:var(--action-primary-hover);}
+.qa .sb-note{font-size:10.5px;color:var(--sb-muted);line-height:1.5;}
+.qa .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.qa .topbar{background:var(--card);border-bottom:1px solid var(--border);padding:15px 28px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:5;box-shadow:var(--shadow-xs);}
+.qa .topbar h1{font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--text);display:flex;align-items:center;gap:10px;}
+.qa .topbar h1 svg{width:22px;height:22px;stroke:var(--accent);stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.qa .tb-right{margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.qa .tb-right label{font-size:12px;color:var(--muted);font-weight:600;}
+.qa input[type=date]{background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12.5px;font-family:var(--font-num);outline:none;}
+.qa input[type=date]:focus{border-color:var(--accent);box-shadow:var(--shadow-focus);}
+.qa .reset-btn{background:transparent;border:none;color:var(--accent);font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--font-body);padding:6px 9px;border-radius:7px;}
+.qa .reset-btn:hover{background:var(--accent-soft);}
+.qa .tb-presets{display:inline-flex;gap:3px;background:var(--neutral-100);border-radius:8px;padding:3px;}
+.qa .preset-btn{border:none;background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:6px;cursor:pointer;font-family:var(--font-body);}
+.qa .preset-btn:hover{color:var(--text);}
+.qa .preset-btn.active{background:var(--card);color:var(--accent);box-shadow:var(--shadow-xs);}
+.qa .team-link{background:none;border:none;padding:0;font:inherit;font-weight:700;color:var(--text);cursor:pointer;text-align:left;border-bottom:1px dotted var(--border-strong,var(--muted));}
+.qa .team-link:hover{color:var(--text);border-bottom-style:solid;}
+.qa .role-filter{display:inline-flex;align-items:center;gap:6px;margin-right:4px;}
+.qa .excl-badge{display:inline-flex;align-items:center;gap:8px;margin-right:8px;padding:6px 6px 6px 12px;font-size:12.5px;font-weight:800;color:var(--text);border:1px solid var(--border);border-radius:var(--radius-pill);white-space:nowrap;}
+.qa .excl-badge-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 7px;background:var(--accent);color:#fff;border-radius:var(--radius-pill);font-family:var(--font-num);font-weight:800;}
+.qa .excl-toggle input{accent-color:var(--accent);cursor:pointer;margin:0;}
+.qa .excl-toggle.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.qa .role-filter label{font-size:12px;color:var(--muted);font-weight:600;}
+.qa .role-filter select{padding:6px 9px;font-size:12.5px;}
+.qa .role-filter.active select{border-color:var(--border-strong,var(--muted));background:var(--card);color:var(--text);font-weight:700;}
+.qa .role-filter.active label{color:var(--text);}
+.qa .title-scope{font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--accent);background:var(--blue-50);border:1px solid var(--blue-200);border-radius:var(--radius-pill);padding:3px 12px;margin-left:4px;text-transform:none;letter-spacing:0;}
+.qa .am-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
+.qa .am-card{display:flex;flex-direction:column;}
+.qa .am-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--border);background:var(--surface-page);}
+.qa .am-name{font-family:var(--font-display);font-weight:800;font-size:16px;color:var(--text);letter-spacing:-.01em;}
+.qa .am-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.qa .am-fs{font-family:var(--font-num);font-weight:800;font-size:24px;text-align:right;line-height:1;display:flex;flex-direction:column;align-items:flex-end;}
+.qa .am-fs span{font-family:var(--font-body);font-weight:600;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;}
+.qa .am-body{padding:10px 18px 16px;}
+.qa .am-team{display:grid;grid-template-columns:110px 1fr 42px 48px;align-items:center;gap:9px;padding:5px 0;font-size:12px;}
+.qa .am-team-hd{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:2px;}
+.qa .am-team-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-num);}
+.qa .am-team-bar{height:8px;background:var(--neutral-200);border-radius:4px;overflow:hidden;}
+.qa .am-team-hd .am-team-bar{background:transparent;}
+.qa .am-team-fs{text-align:right;font-family:var(--font-num);font-weight:700;}
+.qa .am-team-er{text-align:right;font-family:var(--font-num);font-weight:600;}
+.qa .team-count{display:inline-block;min-width:22px;text-align:center;font-family:var(--font-num);font-weight:700;font-size:11px;padding:1px 7px;border-radius:var(--radius-pill);background:var(--neutral-100);color:var(--muted);}
+.qa .team-count-lo{background:var(--honey-100);color:var(--honey-700);}
+.qa .content{padding:24px 28px;display:flex;flex-direction:column;gap:18px;}
+.qa .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow:hidden;}
+.qa .card-head{padding:14px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.qa .card-body{padding:18px 20px;}
+.qa .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
+.qa .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;}
+.qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
+.qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
+.qa .kpi .k-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.qa .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+@media(max-width:1100px){.qa .grid-2{grid-template-columns:1fr;}}
+.qa select,.qa input[type=text]{background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:8px;font-size:13px;font-family:var(--font-body);outline:none;}
+.qa select:focus,.qa input[type=text]:focus{border-color:var(--accent);box-shadow:var(--shadow-focus);}
+.qa .ctrl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.qa .ctrl-row label{font-size:12px;color:var(--muted);font-weight:600;}
+.qa .tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+.qa .tbl th{padding:10px 15px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border);font-weight:700;white-space:nowrap;background:var(--neutral-50);}
+.qa .tbl th.r,.qa .tbl td.r{text-align:right;}
+.qa .tbl td{padding:9px 15px;border-bottom:1px solid var(--border);font-family:var(--font-num);font-variant-numeric:tabular-nums;vertical-align:middle;}
+.qa .tbl tr:last-child td{border-bottom:none;}
+.qa .tbl tbody tr:hover td{background:var(--blue-50);}
+.qa .order-link{color:var(--accent);font-weight:700;text-decoration:none;font-size:11.5px;white-space:nowrap;}
+.qa .order-link:hover{text-decoration:underline;}
+.qa .tag{display:inline-block;font-size:10px;padding:2px 9px;border-radius:var(--radius-pill);font-weight:700;white-space:nowrap;font-family:var(--font-body);}
+.qa .tag-proc{background:var(--persimmon-100);color:var(--proc);}
+.qa .tag-pp{background:var(--ube-100);color:var(--pp);}
+.qa .tag-hdr{background:var(--blue-100);color:var(--hdr);}
+.qa .tag-line{background:var(--teal-100);color:var(--line);}
+.qa .tag-misc{background:var(--honey-100);color:var(--misc);}
+.qa .tag-team{background:var(--blue-50);color:var(--accent);border:1px solid var(--blue-200);}
+.qa .pill-good{background:var(--teal-100);color:var(--green);}
+.qa .pill-bad{background:var(--persimmon-100);color:var(--red);}
+.qa .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:11.5px;font-weight:800;font-family:var(--font-num);}
+.qa .ibar-wrap{display:flex;align-items:center;gap:8px;justify-content:flex-end;}
+.qa .ibar-bg{width:80px;height:7px;background:var(--neutral-200);border-radius:4px;overflow:hidden;flex-shrink:0;}
+.qa .ibar-fill{height:100%;border-radius:4px;background:var(--accent);}
+.qa .placeholder-msg{padding:42px;text-align:center;color:var(--muted);font-size:13px;}
+.qa .note-strip{font-size:11px;color:var(--muted);padding:10px 20px;border-top:1px solid var(--border);font-style:italic;}
+.qa .cmp-dual{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:14px;}
+.qa .cmp-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:7px;}
+.qa .cmp-side-label{font-size:15px;font-weight:800;font-family:var(--font-num);}
+.qa .cmp-bar-wrap{height:10px;background:var(--neutral-200);border-radius:5px;overflow:hidden;}
+.qa .cmp-bar-fill{height:100%;border-radius:5px;}
+.qa .cmp-vs{font-size:10px;color:var(--muted);font-weight:700;}
+.qa .delta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px;}
+.qa .delta-card{background:var(--surface-page);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;text-align:center;}
+.qa .d-label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px;}
+.qa .d-val{font-size:20px;font-weight:800;font-family:var(--font-num);}
+.qa .d-sub{font-size:10.5px;color:var(--muted);}
+.qa .delta-pos{color:var(--green);}.qa .delta-neg{color:var(--red);}.qa .delta-neu{color:var(--muted);}
+.qa .footer{padding:16px 28px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);text-align:center;background:var(--card);}
+.qa .chart-note{font-size:10.5px;color:var(--muted);margin-top:10px;font-style:italic;}
+.qa .chart-sub{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+.qa .catbars{display:flex;flex-direction:column;gap:17px;}
+.qa .catbar{display:flex;align-items:center;gap:12px;}
+.qa .catbar-rank{flex-shrink:0;width:24px;height:24px;border-radius:7px;background:var(--neutral-100);color:var(--muted);font-family:var(--font-num);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+.qa .catbar:nth-child(1) .catbar-rank{background:var(--honey-600,#c98a00);color:#fff;}
+.qa .catbar-main{flex:1;min-width:0;}
+.qa .catbar-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:7px;}
+.qa .catbar-lbl{font-family:var(--font-display);font-size:13.5px;font-weight:700;letter-spacing:-.01em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qa .catbar-val{display:inline-flex;align-items:baseline;gap:7px;font-family:var(--font-num);font-size:15px;font-weight:800;color:var(--text);flex-shrink:0;}
+.qa .catbar-pct{font-family:var(--font-num);font-size:11px;font-weight:800;color:var(--muted);background:var(--neutral-100);border-radius:var(--radius-pill);padding:1px 8px;}
+.qa .catbar-track{height:13px;background:var(--neutral-200);border-radius:7px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,22,36,.08);}
+.qa .catbar-fill{height:100%;border-radius:7px;transform-origin:left center;box-shadow:0 1px 4px -1px rgba(15,22,36,.28);}
+.qa .qa-modal{position:fixed;inset:0;background:rgba(15,22,36,.55);backdrop-filter:blur(2px);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;}
+.qa .qa-modal-box{background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 30px 70px -20px rgba(15,22,36,.6);overflow:hidden;}
+.qa .qa-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;background:#12161c;color:#fff;font-weight:800;font-size:16px;}
+.qa .qa-modal-x{background:none;border:none;color:#aeb9c9;font-size:24px;line-height:1;cursor:pointer;padding:0 4px;}
+.qa .qa-modal-x:hover{color:#fff;}
+.qa .qa-modal-sub{padding:12px 22px 0;font-size:12.5px;color:var(--muted);}
+.qa .qa-modal-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--border);}
+.qa .qa-modal-actions .sb-mini{cursor:pointer;}
+.qa .qa-copy-note{font-size:12.5px;color:var(--green);font-weight:700;}
+.qa .qa-modal-scroll{padding:22px;max-height:60vh;overflow:auto;background:var(--surface-page);}
+.qa .shout-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px;}
+@media(max-width:1100px){.qa .shout-grid{grid-template-columns:repeat(2,1fr);}}
+.qa .so-card{background:linear-gradient(155deg,#2b3543 0%,#1b232d 100%);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius-lg);padding:15px 18px;box-shadow:0 12px 30px -18px rgba(15,22,36,.7);animation:me-fly .55s cubic-bezier(.22,.61,.36,1) both;}
+.qa .so-name{font-family:var(--font-display);font-weight:800;font-size:18px;color:#fff;letter-spacing:-.01em;line-height:1.12;margin-bottom:8px;word-break:break-word;}
+.qa .so-namebtn{font-family:inherit;font-weight:inherit;font-size:inherit;color:#fff;letter-spacing:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left;}
+.qa .so-namebtn:hover{color:var(--teal-300,#7fe0d4);text-decoration:underline;}
+.qa .so-star{color:var(--gold);font-size:12px;vertical-align:1px;}
+.qa .so-role{font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--gold);margin-bottom:8px;}
+.qa .so-stat{font-size:12px;font-weight:600;color:#aeb9c9;font-family:var(--font-num);}
+.qa .mm-arearow{display:flex;gap:14px;flex-wrap:wrap;}
+.qa .mm-area{background:var(--neutral-50,#f9fafb);border:1px solid var(--border);border-left:3px solid #2563EB;border-radius:var(--radius-md,8px);padding:15px 18px;min-width:130px;}
+.qa .mm-area-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:7px;}
+.qa .mm-area-val{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;letter-spacing:-.02em;color:var(--text);line-height:1;}
+.qa .mm-area-sub{font-size:11px;color:var(--muted);margin-top:6px;}
+.qa .mx-grid{display:flex;flex-direction:column;gap:7px;}
+.qa .mx-row{display:grid;grid-template-columns:130px repeat(3,1fr);gap:7px;align-items:center;}
+.qa .mx-head .mx-col-h{font-size:10px;font-weight:600;letter-spacing:.03em;color:var(--muted);text-align:center;}
+.qa .mx-lbl{font-family:var(--font-num);font-size:11.5px;font-weight:600;color:var(--text2,#3d434d);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qa .mx-cell{height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;}
+.qa .team-tag-link{border:1px solid var(--border);cursor:pointer;font-family:var(--font-body);}
+.qa .team-tag-link:hover{background:var(--accent-soft,#eef3ff);color:var(--accent);border-color:var(--accent);}
+.qa .mx-empty{background:var(--neutral-100,#f3f4f6);}
+.qa svg .dn-seg{transition:opacity .14s,stroke-width .14s;cursor:pointer;}
+.qa svg:hover .dn-seg{opacity:.4;}
+.qa svg .dn-seg:hover{opacity:1;stroke-width:34;}
+.qa svg .pt-dot,.qa .me-chart circle{cursor:pointer;transition:r .12s;}
+.qa svg .pt-dot:hover,.qa .me-chart circle:hover{r:6;}
+.qa .me-chart rect:hover{filter:brightness(1.12);cursor:pointer;}
+@keyframes me-fly{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes me-draw{from{stroke-dashoffset:2600}to{stroke-dashoffset:0}}
+.qa .me-chart path.me-trend{stroke-dasharray:2600;animation:me-draw 1.1s cubic-bezier(.65,.02,.35,1) forwards;}
+@keyframes me-growy{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.qa .me-chart rect.me-growy{animation:me-growy .7s cubic-bezier(.22,.61,.36,1) both;}
+@keyframes me-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.qa .me-grow{transform-origin:left center;animation:me-grow .8s cubic-bezier(.22,.61,.36,1) both;}
+.qa .exec-hero{position:relative;overflow:hidden;background:linear-gradient(120deg,#12161c 0%,#1b2430 46%,#243247 100%);color:#fff;border-radius:var(--radius-lg);padding:30px 34px;display:flex;align-items:center;justify-content:space-between;gap:24px;box-shadow:0 18px 40px -18px rgba(15,23,36,.7);flex-wrap:wrap;border:1px solid rgba(255,255,255,.07);}
+.qa .exec-hero::before{content:"";position:absolute;top:-40%;right:-6%;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) 42%,transparent) 0%,transparent 68%);pointer-events:none;}
+.qa .exec-hero::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 30%,transparent));}
+.qa .exec-hero-l{position:relative;z-index:1;}
+.qa .exec-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#dbe4f0;font-weight:800;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);padding:4px 11px;border-radius:var(--radius-pill);}
+.qa .exec-period{font-family:var(--font-num);font-size:15px;color:#aeb9c9;margin-top:12px;font-weight:600;letter-spacing:.01em;}
+.qa .exec-verdict{font-family:var(--font-display);font-weight:800;font-size:19px;letter-spacing:-.01em;margin-top:14px;max-width:640px;line-height:1.35;display:flex;align-items:baseline;gap:10px;}
+.qa .exec-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;transform:translateY(-1px);box-shadow:0 0 0 4px color-mix(in srgb,currentColor 22%,transparent);}
+.qa .exec-hero-r{position:relative;z-index:1;text-align:right;padding-left:26px;border-left:1px solid rgba(255,255,255,.12);}
+.qa .exec-big{font-family:var(--font-num);font-weight:800;font-size:62px;line-height:1;letter-spacing:-.03em;background:linear-gradient(180deg,#ffffff,#c7d3e4);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.qa .exec-big-lbl{font-size:12px;color:#aeb9c9;margin-top:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
+.qa .d-chip{display:inline-block;font-family:var(--font-num);font-weight:700;font-size:11px;padding:1px 8px;border-radius:var(--radius-pill);border:1px solid transparent;}
+.qa .d-up{background:color-mix(in srgb,var(--green) 12%,transparent);color:var(--green);border-color:color-mix(in srgb,var(--green) 26%,transparent);}
+.qa .d-down{background:color-mix(in srgb,var(--red) 11%,transparent);color:var(--red);border-color:color-mix(in srgb,var(--red) 24%,transparent);}
+.qa .d-neu{background:var(--neutral-100);color:var(--muted);border-color:var(--border);}
+.qa .exec-big-lbl .d-chip{background:rgba(255,255,255,.16);color:#fff;font-size:12px;border-color:rgba(255,255,255,.22);backdrop-filter:blur(2px);}
+.qa .hl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;}
+.qa .hl-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.qa .hl-row{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:12.5px;}
+.qa .hl-rank{width:18px;text-align:center;font-family:var(--font-num);font-size:11px;color:var(--muted);font-weight:700;flex-shrink:0;}
+.qa .hl-name{flex:1;font-family:var(--font-num);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qa .hl-val{font-family:var(--font-num);font-weight:800;}
+.qa .meth-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+.qa .meth-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:15px 16px;background:var(--surface-page);}
+.qa .meth-card .m-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:9px;}
+.qa .meth-card .m-f{font-family:var(--font-num);font-size:13px;font-weight:700;color:var(--text);background:var(--blue-50);border:1px solid var(--blue-200);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:9px;line-height:1.4;}
+.qa .meth-card .m-d{font-size:11.5px;color:var(--muted);line-height:1.55;}
+.qa .meth-note{font-size:11.5px;color:var(--muted);line-height:1.65;border-top:1px solid var(--border);padding-top:13px;}
+.qa .meth-note b{color:var(--text);font-weight:700;}
+@keyframes me-draw{from{stroke-dashoffset:2600}to{stroke-dashoffset:0}}
+@keyframes me-fade{from{opacity:0}to{opacity:1}}
+@keyframes me-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes me-fly{from{opacity:0;transform:translateY(20px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes me-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.qa .anim-chart path.me-trend,.qa .me-chart path.me-trend{stroke-dasharray:2600;animation:me-draw 1.15s cubic-bezier(.65,.02,.35,1) forwards;}
+.qa .anim-chart circle,.qa .anim-chart text,.qa .me-chart circle,.qa .me-chart text{animation:me-fade .7s .55s ease-out both;}
+.qa .me-chart .me-area{animation:me-fade .8s .5s ease-out both;}
+.qa .me-grow{transform-origin:left center;animation:me-grow .85s cubic-bezier(.22,.61,.36,1) both;}
+.qa .cmp-bar-wrap[style*="rtl"] .me-grow{transform-origin:right center;}
+.qa #qa-content>.card,.qa #qa-content>.grid-2>.card,.qa #qa-content>.kpi-row{animation:me-fly .5s cubic-bezier(.22,.61,.36,1) both;}
+.qa #qa-content>.card:nth-child(1),.qa #qa-content>.kpi-row:nth-child(1){animation-delay:.02s}
+.qa #qa-content>.card:nth-child(2),.qa #qa-content>.kpi-row:nth-child(2){animation-delay:.08s}
+.qa #qa-content>.card:nth-child(3){animation-delay:.14s}
+.qa #qa-content>.card:nth-child(4){animation-delay:.2s}
+.qa #qa-content>.card:nth-child(5){animation-delay:.26s}
+.qa #qa-content>.grid-2{animation:me-fly .5s .14s cubic-bezier(.22,.61,.36,1) both;}
+@media(prefers-reduced-motion:reduce){.qa .me-trend,.qa .me-grow,.qa .me-chart circle,.qa .me-chart text,.qa .me-area,.qa #qa-content>.card,.qa #qa-content>.grid-2,.qa #qa-content>.grid-2>.card,.qa #qa-content>.kpi-row{animation:none!important;}}
+.qa .anim-kpi .kpi{animation:me-rise .5s ease-out both;}
+.qa .anim-kpi .kpi:nth-child(1){animation-delay:.02s}.qa .anim-kpi .kpi:nth-child(2){animation-delay:.08s}.qa .anim-kpi .kpi:nth-child(3){animation-delay:.14s}.qa .anim-kpi .kpi:nth-child(4){animation-delay:.2s}.qa .anim-kpi .kpi:nth-child(5){animation-delay:.26s}.qa .anim-kpi .kpi:nth-child(6){animation-delay:.32s}
+@media(max-width:840px){.qa .app{flex-direction:column;}.qa .sidebar{width:100%;height:auto;position:static;}.qa .content,.qa .topbar{padding-left:16px;padding-right:16px;}}`;
+  }
+}
+</script>
+</body>
+</html>
