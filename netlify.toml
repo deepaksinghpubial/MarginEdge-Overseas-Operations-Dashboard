@@ -2,11 +2,24 @@
   publish = "."
   command = ""
 
+# Ensure fonts and CSS are served with correct types (Netlify usually infers
+# these, but being explicit avoids fallback-font flashes on first load).
 [[headers]]
-  for = "/*"
+  for = "/ds/*.css"
   [headers.values]
-    X-Frame-Options = "SAMEORIGIN"
-    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Type = "text/css; charset=utf-8"
+
+[[headers]]
+  for = "/ds/tokens/*.css"
+  [headers.values]
+    Content-Type = "text/css; charset=utf-8"
+
+[[headers]]
+  for = "/*.woff2"
+  [headers.values]
+    Content-Type = "font/woff2"
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
   for = "/*.html"
