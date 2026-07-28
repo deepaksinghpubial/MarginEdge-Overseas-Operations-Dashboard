@@ -1,0 +1,17 @@
+/* ==========================================================================
+   MarginEdge — Fonts
+   --------------------------------------------------------------------------
+   SUBSTITUTION NOTE (flag to brand team):
+   The MarginEdge brand uses two licensed typefaces that are not bundled here:
+     • Obviously  (Oh no Type Co.)  — headlines: louder, confident, wide
+     • Proxima Nova (Mark Simonson) — everything else / body / UI
+   Neither ships with a free web license, so this system substitutes the
+   closest freely-available Google Fonts until the real webfont files are
+   provided:
+     • Obviously    → Archivo    (wide grotesque; use heavier weights + width)
+     • Proxima Nova → Montserrat (the brand's own documented free alternative)
+   Drop the licensed .woff2 files into assets/fonts/ and replace this @import
+   with @font-face rules to go pixel-accurate.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800&display=swap');
