@@ -15,6 +15,20 @@
  *    /exec?tabs=A|B        -> only those tabs (delimiter is | so tab names may contain commas)
  *    /exec?tabs=A&offset=0&limit=10000  -> a page of rows (for large tabs)
  *    add &callback=fn to any of the above for JSONP.
+ *
+ *  PERFORMANCE NOTE (2026-08): the original version called
+ *  sh.getDataRange().getValues() on every single request, reading the WHOLE
+ *  tab into memory even when only one page of rows was asked for. As the
+ *  Mistakes tabs grow with each month of data, that full-sheet read gets
+ *  slower on every page (page 1, 2, 3… all re-read the entire, ever-larger
+ *  sheet), and eventually a single doGet() call runs past Apps Script's
+ *  execution time limit. The client (sheet-loader.js) retries 3 times and
+ *  then gives up, so window.QA_DATA never populates and every view derived
+ *  from the Mistakes tab — including the order link column — goes blank,
+ *  even though the daily-score views (a much smaller tab) keep working fine.
+ *  This version uses getLastRow()/getLastColumn() (cheap metadata calls) plus
+ *  a targeted getRange() read for just the requested page, so response time
+ *  no longer grows with total sheet size.
  * ============================================================================
  */
 
@@ -41,9 +55,10 @@ function doGet(e) {
   }
   function isDateHeader(h) { return /date/i.test(h); }
 
-  // Find the real header row. Some tabs have a merged banner title on row 1
-  // (only 1-2 non-empty cells). Scan the first few rows and pick the one with
-  // the most non-empty cells as the header; data starts on the next row.
+  // Find the real header row from a SMALL sample of rows (not the whole tab).
+  // Some tabs have a merged banner title on row 1 (only 1-2 non-empty cells).
+  // Scan the first few rows and pick the one with the most non-empty cells as
+  // the header; data starts on the next row.
   function headerRowIndex(values) {
     var scan = Math.min(5, values.length), best = 0, bestN = -1;
     for (var r = 0; r < scan; r++) {
@@ -54,6 +69,23 @@ function doGet(e) {
       if (n > bestN) { bestN = n; best = r; }
     }
     return best;
+  }
+
+  // Cheap metadata about a sheet: header row index/headers + total data-row
+  // count, using getLastRow()/getLastColumn() and a tiny getRange() scan
+  // instead of reading every cell in the tab.
+  function sheetInfo(sh) {
+    var lastRow = sh.getLastRow();
+    var lastCol = sh.getLastColumn();
+    if (lastRow === 0 || lastCol === 0) {
+      return { lastRow: 0, lastCol: 0, hr: 0, headers: [], totalRows: 0 };
+    }
+    var scanRows = Math.min(5, lastRow);
+    var scanValues = sh.getRange(1, 1, scanRows, lastCol).getValues();
+    var hr = headerRowIndex(scanValues);
+    var headers = scanValues[hr].map(function (h) { return String(h).trim(); });
+    var totalRows = Math.max(0, lastRow - 1 - hr); // data rows count, excludes banner/header rows
+    return { lastRow: lastRow, lastCol: lastCol, hr: hr, headers: headers, totalRows: totalRows };
   }
 
   function send(obj) {
@@ -67,13 +99,12 @@ function doGet(e) {
   if (p.meta) {
     var meta = {};
     ss.getSheets().forEach(function (sh) {
-      var vals = sh.getDataRange().getValues();
-      var hr = vals.length ? headerRowIndex(vals) : 0;
-      meta[sh.getName()] = {
-        rows: Math.max(0, vals.length - 1 - hr),
-        headers: vals.length ? vals[hr].map(function (h) { return String(h).trim(); }) : [],
-        sample: vals.length > hr + 1 ? vals[hr + 1] : []
-      };
+      var info = sheetInfo(sh);
+      var sample = [];
+      if (info.totalRows > 0) {
+        sample = sh.getRange(info.hr + 2, 1, 1, info.lastCol).getValues()[0];
+      }
+      meta[sh.getName()] = { rows: info.totalRows, headers: info.headers, sample: sample };
     });
     return send({ meta: meta, tabNames: Object.keys(meta) });
   }
@@ -88,28 +119,33 @@ function doGet(e) {
     var name = sh.getName();
     if (only && only.indexOf(name) === -1) return;
 
-    var values = sh.getDataRange().getValues();
-    if (!values.length) { out[name] = []; totals[name] = 0; return; }
+    var info = sheetInfo(sh);
+    if (info.totalRows === 0) { out[name] = []; totals[name] = 0; return; }
 
-    var hr = headerRowIndex(values);
-    var headers = values[hr].map(function (h) { return String(h).trim(); });
-    var lastRow = values.length - 1 - hr;            // data rows count
-    totals[name] = lastRow;
-    var start = hr + 1 + Math.max(0, offset);
-    var end = limit > 0 ? Math.min(values.length, start + limit) : values.length;
+    totals[name] = info.totalRows;
+    var headers = info.headers;
+
+    // First data row (1-based, for getRange) after the header row + offset.
+    var firstDataRow1based = info.hr + 2 + Math.max(0, offset);
+    var remaining = info.lastRow - firstDataRow1based + 1;
+    var numRows = limit > 0 ? Math.min(remaining, limit) : remaining;
+
     var rows = [];
-    for (var r = start; r < end; r++) {
-      var o = {}, blank = true;
-      for (var c = 0; c < headers.length; c++) {
-        if (!headers[c]) continue;
-        var v = values[r][c];
-        if (v instanceof Date || isDateHeader(headers[c])) {
-          v = isoDate(v);
+    if (numRows > 0) {
+      var values = sh.getRange(firstDataRow1based, 1, numRows, info.lastCol).getValues();
+      for (var r = 0; r < values.length; r++) {
+        var o = {}, blank = true;
+        for (var c = 0; c < headers.length; c++) {
+          if (!headers[c]) continue;
+          var v = values[r][c];
+          if (v instanceof Date || isDateHeader(headers[c])) {
+            v = isoDate(v);
+          }
+          o[headers[c]] = v;
+          if (v !== "" && v !== null) blank = false;
         }
-        o[headers[c]] = v;
-        if (v !== "" && v !== null) blank = false;
+        if (!blank) rows.push(o);
       }
-      if (!blank) rows.push(o);
     }
     out[name] = rows;
   });
