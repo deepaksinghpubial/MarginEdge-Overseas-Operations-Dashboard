@@ -164,6 +164,7 @@ class Component extends DCLogic {
     host.addEventListener("change", this.onChange);
     host.addEventListener("input", this.onInput);
   }
+  scrollToMistakeDetail(){ var el=this.rootRef.current&&this.rootRef.current.querySelector("#mistake-detail-anchor"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }
   onClick = (e) => {
     var t = e.target.closest("[data-act]"); if(!t) return;
     var act=t.dataset.act, arg=t.dataset.arg;
@@ -185,6 +186,8 @@ class Component extends DCLogic {
     else if(act==="emailrich") this.copyEmail("rich");
     else if(act==="emailtext") this.copyEmail("text");
     else if(act==="showall"){ this.sel.showAllMistakes=true; this.renderContent(); }
+    else if(act==="mistfilter"){ this.sel.mistFilterKind=t.dataset.kind; this.sel.mistFilterValue=arg; this.renderContent(); this.scrollToMistakeDetail(); }
+    else if(act==="mistfilterclear"){ this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
   };
   onChange = (e) => {
     var t=e.target, act=t.dataset.act; if(!act) return;
@@ -195,11 +198,11 @@ class Component extends DCLogic {
     else if(act==="cmpa"){ this.sel.cmpA=t.value; this.renderContent(); }
     else if(act==="cmpb"){ this.sel.cmpB=t.value; this.renderContent(); }
     else if(act==="prteam"){ this.sel.prTeam=t.value; this.sel.prAnalyst=""; this.renderContent(); }
-    else if(act==="pranalyst"){ this.sel.prAnalyst=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="pranalyst"){ this.sel.prAnalyst=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="spteam"){ this.sel.spTeam=t.value; this.sel.spAnalyst=""; this.renderContent(); }
-    else if(act==="spanalyst"){ this.sel.spAnalyst=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="spanalyst"){ this.sel.spAnalyst=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="anteam"){ this.sel.anTeamK=t.value; this.sel.anAnalystK=""; this.renderContent(); }
-    else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.renderContent(); }
+    else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="rolefilter"){ this.st.role=t.value; var rf=t.closest(".role-filter"); if(rf) rf.classList.toggle("active", !!t.value); this.setTitle(); this.renderContent(); }
     else if(act==="locfilter"){ this.st.loc=t.value; var lf=t.closest(".role-filter"); if(lf) lf.classList.toggle("active", !!t.value); this.renderContent(); }
     else if(act==="exclusive"){ this.st.exclusiveOnly=t.checked; var el=t.closest(".excl-toggle"); if(el){ el.classList.toggle("active", t.checked); var cn=el.querySelector(".excl-count"); if(cn){ var allN=this.S.teams.filter(x=>x!=="Unassigned").length; var exN=Object.keys(this.exclusiveTeamIdx()).length; cn.textContent=(t.checked?exN:allN)+" teams shown"; } } this.renderContent(); }
@@ -693,21 +696,32 @@ class Component extends DCLogic {
       {name:'Error rate',color:'#d97706',values:vEr,fmt:(v)=>(v*100).toFixed(1)+"%",axis:'right'}
     ];
     var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, productivity &amp; error rate</div><div class="card-body">'+(labs.length?wrap(this.comboChart(labs,comboSeries)):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
-    return ctrl+kpi+charts+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login))+this.mistakeDetail(login);
+    return ctrl+kpi+charts+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
   }
 
   mistakeDetail(login){
     var F=this.QF, m=this.mistakesFor(login);
-    if(m===null) return '<div class="card"><div class="card-head">Mistake detail</div><div class="placeholder-msg">Mistake Details export (order links) not loaded.</div></div>';
-    if(!m.length) return '<div class="card"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
+    if(m===null) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail</div><div class="placeholder-msg">Mistake Details export (order links) not loaded.</div></div>';
+    if(!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
     var Q=this.Q, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
+    var fk=this.sel.mistFilterKind, fv=this.sel.mistFilterValue, full=m;
+    if(fk){
+      m=m.filter(r=>{
+        if(fk==="area") return prettyArea(Q.areas[r[F.AREA]])===fv;
+        if(fk==="type") return (Q.statuses[r[F.ST]]||"")===fv;
+        if(fk==="var") return (Q.vars[r[F.VAR]]||"\u2014")===fv;
+        return true;
+      });
+    }
+    var filterChip=fk?' <button class="reset-btn" style="font-size:11px" data-act="mistfilterclear" title="Clear filter">Filtered: '+this.esc(fv)+' \u2715</button>':'';
+    if(fk&&!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links'+filterChip+'</div><div class="placeholder-msg">No mistakes match this filter for '+this.esc(login)+' in the selected range.</div></div>';
     var cap=this.sel.showAllMistakes?m.length:200;
     var rowsH=m.slice(0,cap).map((r,i)=>{
       var org=r[F.ORG]===0?'<span class="tag tag-proc">Processing</span>':'<span class="tag tag-pp">Post-prod</span>';
       var area=Q.areas[r[F.AREA]];
       return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+'</a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join("");
-    return '<div class="card"><div class="card-head">Mistake detail &mdash; order links ('+m.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th><th>Date</th><th>Area</th><th>Variable</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th><th>Date</th><th>Area</th><th>Variable</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
@@ -799,21 +813,26 @@ class Component extends DCLogic {
     return mixCard+'<div class="grid-2"><div class="card"><div class="card-head">Top mistake variables \u2014 frequency (Pareto)</div><div class="card-body">'+pareto+'</div></div>'+matrix+'</div>';
   }
 
-  donutChart(items, total, colors){
+  donutChart(items, total, colors, actKind){
     var size=210, r=78, sw=30, cx=size/2, cy=size/2, C=2*Math.PI*r;
+    var esc=(x)=>this.esc(x);
     var off=0, segs=items.map(function(it,i){
       var frac=it.value/(total||1), len=frac*C;
-      var s='<circle class="dn-seg" cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="'+sw+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"><title>'+it.label+': '+it.value.toLocaleString()+' ('+Math.round(frac*100)+'%)</title></circle>';
+      var actAttr=actKind?' class="dn-seg mist-clickable" data-act="mistfilter" data-kind="'+actKind+'" data-arg="'+esc(it.label)+'"':' class="dn-seg"';
+      var s='<circle'+actAttr+' cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="'+sw+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"><title>'+it.label+': '+it.value.toLocaleString()+' ('+Math.round(frac*100)+'%)'+(actKind?' \u2014 click to filter':'')+'</title></circle>';
       off+=len; return s;
     }).join('');
-    var leg=items.map(function(it,i){ return '<span style="display:inline-flex;align-items:center;gap:7px;margin:0 12px;font-size:12px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:9px;height:9px;border-radius:50%;background:'+colors[i%colors.length]+';display:inline-block"></span>'+it.label+'</span>'; }).join('');
+    var leg=items.map(function(it,i){
+      var actAttr=actKind?' class="mist-clickable" data-act="mistfilter" data-kind="'+actKind+'" data-arg="'+esc(it.label)+'"':'';
+      return '<span'+actAttr+' style="display:inline-flex;align-items:center;gap:7px;margin:0 12px;font-size:12px;font-weight:600;color:var(--text2,#3d434d)"><span style="width:9px;height:9px;border-radius:50%;background:'+colors[i%colors.length]+';display:inline-block"></span>'+it.label+'</span>';
+    }).join('');
     return '<div style="display:flex;justify-content:center"><svg viewBox="0 0 '+size+' '+size+'" style="width:210px;height:210px">'+segs
       +'<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" font-size="27" font-weight="800" fill="var(--text)" font-family="var(--font-num)">'+total.toLocaleString()+'</text>'
       +'<text x="'+cx+'" y="'+(cy+18)+'" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-body)">total</text></svg></div>'
       +'<div style="text-align:center;margin-top:12px;display:flex;justify-content:center;flex-wrap:wrap;gap:4px 0">'+leg+'</div>';
   }
 
-  paretoBig(items, total){
+  paretoBig(items, total, actKind){
     if(!items||!items.length) return '<div class="placeholder-msg">No data.</div>';
     var esc=(x)=>this.esc(x);
     var w=1080,h=420,padL=64,padR=26,padT=26,padB=104, iw=w-padL-padR, ih=h-padT-padB;
@@ -829,7 +848,8 @@ class Component extends DCLogic {
       var cx=padL+i*gap+gap/2, bh=it.value/mx*ih, y=padT+ih-bh, x=cx-bw/2;
       cum+=it.value; pts.push([cx, padT+ih-(cum/sum*ih)]);
       var sv=it.label.length>11?it.label.slice(0,10)+'\u2026':it.label;
-      return '<rect class="me-growy" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="3" fill="url(#pgrad)" style="transform-origin:'+cx.toFixed(1)+'px '+(padT+ih)+'px;animation-delay:'+(i*0.045).toFixed(2)+'s"><title>'+esc(it.label)+': '+it.value.toLocaleString()+' ('+(it.value/sum*100).toFixed(1)+'% of all errors)</title></rect>'
+      var actAttr=actKind?' class="me-growy mist-clickable" data-act="mistfilter" data-kind="'+actKind+'" data-arg="'+esc(it.label)+'"':' class="me-growy"';
+      return '<rect'+actAttr+' x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="3" fill="url(#pgrad)" style="transform-origin:'+cx.toFixed(1)+'px '+(padT+ih)+'px;animation-delay:'+(i*0.045).toFixed(2)+'s"><title>'+esc(it.label)+': '+it.value.toLocaleString()+' ('+(it.value/sum*100).toFixed(1)+'% of all errors)'+(actKind?' \u2014 click to filter':'')+'</title></rect>'
         +'<text x="'+cx.toFixed(1)+'" y="'+(y-9).toFixed(1)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--text)" font-family="var(--font-num)">'+it.value.toLocaleString()+'</text>'
         +'<text x="'+cx.toFixed(1)+'" y="'+(padT+ih+20)+'" text-anchor="end" font-size="12" fill="var(--muted)" font-family="var(--font-body)" transform="rotate(-32 '+cx.toFixed(1)+' '+(padT+ih+20)+')">'+esc(sv)+'</text>';
     }).join('');
@@ -843,7 +863,7 @@ class Component extends DCLogic {
       +'<path class="me-trend" d="'+path+'" fill="none" stroke="#e8890c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'+dots+'</svg>';
   }
 
-  mistakeExecCards(qrows,subtitle){
+  mistakeExecCards(qrows,subtitle,interactive){
     if(qrows===null) return '';
     var lbl=subtitle?' \u2014 '+subtitle:'';
     if(!qrows.length) return '<div class="card"><div class="card-head">Mistakes'+lbl+'</div><div class="placeholder-msg">No mistakes on record in this range.</div></div>';
@@ -857,11 +877,11 @@ class Component extends DCLogic {
     var AC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'], TC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'];
     var areaItems=srt(byArea), typeItems=srt(byType);
     var donuts='<div class="grid-2">'
-      +'<div class="card"><div class="card-head">Mistakes by area'+lbl+' \u2014 '+total.toLocaleString()+'</div><div class="card-body">'+this.donutChart(areaItems,total,AC)+'</div></div>'
-      +(typeItems.length?'<div class="card"><div class="card-head">Mistakes by type'+lbl+'</div><div class="card-body">'+this.donutChart(typeItems,typeItems.reduce((s,i)=>s+i.value,0),TC)+'</div></div>':'')
+      +'<div class="card"><div class="card-head">Mistakes by area'+lbl+' \u2014 '+total.toLocaleString()+'</div><div class="card-body">'+this.donutChart(areaItems,total,AC,interactive?'area':null)+'</div></div>'
+      +(typeItems.length?'<div class="card"><div class="card-head">Mistakes by type'+lbl+'</div><div class="card-body">'+this.donutChart(typeItems,typeItems.reduce((s,i)=>s+i.value,0),TC,interactive?'type':null)+'</div></div>':'')
       +'</div>';
     var varItems=srt(byVar).slice(0,12);
-    var pareto='<div class="card"><div class="card-head">Top mistake variables'+lbl+'</div><div class="card-body">'+this.paretoBig(varItems,total)+'</div></div>';
+    var pareto='<div class="card"><div class="card-head">Top mistake variables'+lbl+'</div><div class="card-body">'+this.paretoBig(varItems,total,interactive?'var':null)+'</div></div>';
     return donuts+pareto;
   }
 
@@ -1573,7 +1593,10 @@ class Component extends DCLogic {
 @media(prefers-reduced-motion:reduce){.qa .me-trend,.qa .me-grow,.qa .me-chart circle,.qa .me-chart text,.qa .me-area,.qa #qa-content>.card,.qa #qa-content>.grid-2,.qa #qa-content>.grid-2>.card,.qa #qa-content>.kpi-row{animation:none!important;}}
 .qa .anim-kpi .kpi{animation:me-rise .5s ease-out both;}
 .qa .anim-kpi .kpi:nth-child(1){animation-delay:.02s}.qa .anim-kpi .kpi:nth-child(2){animation-delay:.08s}.qa .anim-kpi .kpi:nth-child(3){animation-delay:.14s}.qa .anim-kpi .kpi:nth-child(4){animation-delay:.2s}.qa .anim-kpi .kpi:nth-child(5){animation-delay:.26s}.qa .anim-kpi .kpi:nth-child(6){animation-delay:.32s}
-@media(max-width:840px){.qa .app{flex-direction:column;}.qa .sidebar{width:100%;height:auto;position:static;}.qa .content,.qa .topbar{padding-left:16px;padding-right:16px;}}`;
+@media(max-width:840px){.qa .app{flex-direction:column;}.qa .sidebar{width:100%;height:auto;position:static;}.qa .content,.qa .topbar{padding-left:16px;padding-right:16px;}}
+.qa .mist-clickable{cursor:pointer;}
+.qa .mist-clickable:hover{opacity:.8;}
+.qa .dn-seg.mist-clickable:hover{stroke-width:34;}`;
   }
 }
 </script>
