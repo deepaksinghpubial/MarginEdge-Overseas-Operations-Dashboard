@@ -188,6 +188,7 @@ class Component extends DCLogic {
     else if(act==="showall"){ this.sel.showAllMistakes=true; this.renderContent(); }
     else if(act==="mistfilter"){ this.sel.mistFilterKind=t.dataset.kind; this.sel.mistFilterValue=arg; this.renderContent(); this.scrollToMistakeDetail(); }
     else if(act==="mistfilterclear"){ this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
+    else if(act==="mistsort"){ if(this.sel.mistSortCol===arg){ this.sel.mistSortDir=this.sel.mistSortDir==="asc"?"desc":"asc"; } else { this.sel.mistSortCol=arg; this.sel.mistSortDir="asc"; } this.renderContent(); }
   };
   onChange = (e) => {
     var t=e.target, act=t.dataset.act; if(!act) return;
@@ -715,13 +716,44 @@ class Component extends DCLogic {
     }
     var filterChip=fk?' <button class="reset-btn" style="font-size:11px" data-act="mistfilterclear" title="Clear filter">Filtered: '+this.esc(fv)+' \u2715</button>':'';
     if(fk&&!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links'+filterChip+'</div><div class="placeholder-msg">No mistakes match this filter for '+this.esc(login)+' in the selected range.</div></div>';
+    var sortCol=this.sel.mistSortCol, sortDir=this.sel.mistSortDir||"asc";
+    var sortVal=(r,col)=>{
+      switch(col){
+        case "date": return Q.dates[r[F.DATE]]||"";
+        case "area": return prettyArea(Q.areas[r[F.AREA]])||"";
+        case "var": return Q.vars[r[F.VAR]]||"";
+        case "type": return r[F.ORG]===0?"Processing":"Post-prod";
+        case "lp": return r[F.LP]||"";
+        case "ent": return r[F.ENT]||"";
+        case "clo": return r[F.CLO]||"";
+        case "cur": return r[F.CUR]||"";
+        case "status": return Q.statuses[r[F.ST]]||"";
+        default: return "";
+      }
+    };
+    var isNumStr=(v)=>{ var s=String(v).trim(); return s!==""&&isFinite(parseFloat(s))&&/^-?\d+(\.\d+)?$/.test(s); };
+    if(sortCol){
+      m=m.slice().sort((a,b)=>{
+        var av=sortVal(a,sortCol), bv=sortVal(b,sortCol);
+        var aNum=isNumStr(av), bNum=isNumStr(bv), c;
+        if(aNum&&bNum) c=parseFloat(av)-parseFloat(bv);
+        else if(aNum&&!bNum) c=-1;
+        else if(!aNum&&bNum) c=1;
+        else c=String(av).toLowerCase().localeCompare(String(bv).toLowerCase());
+        return sortDir==="desc"?-c:c;
+      });
+    }
+    var th=(label,col,right)=>{
+      var arrow=sortCol===col?' <span class="sort-arrow">'+(sortDir==="asc"?"\u25B2":"\u25BC")+'</span>':'';
+      return '<th class="mist-th mist-clickable'+(right?" r":"")+'" data-act="mistsort" data-arg="'+col+'">'+label+arrow+'</th>';
+    };
     var cap=this.sel.showAllMistakes?m.length:200;
     var rowsH=m.slice(0,cap).map((r,i)=>{
       var org=r[F.ORG]===0?'<span class="tag tag-proc">Processing</span>':'<span class="tag tag-pp">Post-prod</span>';
       var area=Q.areas[r[F.AREA]];
       return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+'</a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join("");
-    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th><th>Date</th><th>Area</th><th>Variable</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+th("Type","type")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
@@ -1596,7 +1628,10 @@ class Component extends DCLogic {
 @media(max-width:840px){.qa .app{flex-direction:column;}.qa .sidebar{width:100%;height:auto;position:static;}.qa .content,.qa .topbar{padding-left:16px;padding-right:16px;}}
 .qa .mist-clickable{cursor:pointer;}
 .qa .mist-clickable:hover{opacity:.8;}
-.qa .dn-seg.mist-clickable:hover{stroke-width:34;}`;
+.qa .dn-seg.mist-clickable:hover{stroke-width:34;}
+.qa th.mist-th{user-select:none;}
+.qa th.mist-th:hover{color:var(--accent);}
+.qa .sort-arrow{font-size:9px;color:var(--accent);}`;
   }
 }
 </script>
