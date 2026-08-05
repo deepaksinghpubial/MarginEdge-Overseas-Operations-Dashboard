@@ -644,6 +644,16 @@ class Component extends DCLogic {
     var F=this.QF; return this.Q.records.filter(r=>r[F.AN]===idx);
   }
 
+  dailyRecords(mine,login,teamName){
+    var S=this.S, D=this.SD;
+    if(!mine||!mine.length) return "";
+    var sorted=mine.slice().sort((a,b)=>a[D.DATE]-b[D.DATE]);
+    var rowsH=sorted.map(r=>{
+      return '<tr><td>'+S.dates[r[D.DATE]]+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td></tr>';
+    }).join("");
+    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Total tasks</th><th class="r">Error rate</th><th class="r">Final score</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+  }
+
   pageProfile(rws){ return this._profile(rws,{teamKey:"prTeam",anKey:"prAnalyst",teamAct:"prteam",anAct:"pranalyst",title:"Analyst drill-down"}); }
 
   _profile(rws,cfg){
@@ -691,21 +701,21 @@ class Component extends DCLogic {
       {name:'Error rate',color:'#d97706',values:vEr,fmt:(v)=>(v*100).toFixed(1)+"%",axis:'right'}
     ];
     var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, productivity &amp; error rate</div><div class="card-body">'+(labs.length?wrap(this.comboChart(labs,comboSeries)):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
-    return ctrl+kpi+charts+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login))+this.mistakeDetail(login);
+    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login))+this.mistakeDetail(login);
   }
 
   mistakeDetail(login){
     var F=this.QF, m=this.mistakesFor(login);
     if(m===null) return '<div class="card"><div class="card-head">Mistake detail</div><div class="placeholder-msg">Mistake Details export (order links) not loaded.</div></div>';
     if(!m.length) return '<div class="card"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
-    var Q=this.Q, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
+    var Q=this.Q, S=this.S, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
     var cap=this.sel.showAllMistakes?m.length:200;
     var rowsH=m.slice(0,cap).map(r=>{
       var org=r[F.ORG]===0?'<span class="tag tag-proc">Processing</span>':'<span class="tag tag-pp">Post-prod</span>';
       var area=Q.areas[r[F.AREA]];
-      return '<tr><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+'</a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
+      return '<tr><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+'</a></td><td>'+this.esc(S.analysts[r[F.AN]]||"\u2014")+'</td><td>'+this.esc(S.teams[r[F.TEAM]]||"\u2014")+'</td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td><td style="font-family:var(--font-body)">'+(r[F.URL]?'<a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener">'+this.esc(r[F.URL])+'</a>':"\u2014")+'</td></tr>';
     }).join("");
-    return '<div class="card"><div class="card-head">Mistake detail &mdash; order links ('+m.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Area</th><th>Variable</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    return '<div class="card"><div class="card-head">Mistake detail &mdash; order links ('+m.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Area</th><th>Variable</th><th>Analyst</th><th>Team</th><th>Type</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th><th>Order URL</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
