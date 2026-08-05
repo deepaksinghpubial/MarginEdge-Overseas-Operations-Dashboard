@@ -650,6 +650,16 @@ class Component extends DCLogic {
     var F=this.QF; return this.Q.records.filter(r=>r[F.AN]===idx);
   }
 
+  dailyRecords(mine,login,teamName){
+    var S=this.S, D=this.SD;
+    if(!mine||!mine.length) return "";
+    var sorted=mine.slice().sort((a,b)=>a[D.DATE]-b[D.DATE]);
+    var rowsH=sorted.map(r=>{
+      return '<tr><td>'+S.dates[r[D.DATE]]+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td></tr>';
+    }).join("");
+    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Points</th><th class="r">Error rate</th><th class="r">Final score</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+  }
+
   pageProfile(rws){ return this._profile(rws,{teamKey:"prTeam",anKey:"prAnalyst",teamAct:"prteam",anAct:"pranalyst",title:"Analyst drill-down"}); }
 
   _profile(rws,cfg){
@@ -697,7 +707,7 @@ class Component extends DCLogic {
       {name:'Error rate',color:'#d97706',values:vEr,fmt:(v)=>(v*100).toFixed(1)+"%",axis:'right'}
     ];
     var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, productivity &amp; error rate</div><div class="card-body">'+(labs.length?wrap(this.comboChart(labs,comboSeries)):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
-    return ctrl+kpi+charts+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
+    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
   }
 
   mistakeDetail(login){
