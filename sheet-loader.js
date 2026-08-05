@@ -390,18 +390,21 @@
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
   var PAGE = 12000;
+  // How many pages to have in flight at once after the first page tells us
+  // the total row count. Apps Script tolerates a modest amount of concurrent
+  // execution per user; 4 is a conservative starting point. If you start
+  // seeing "JSONP timeout"/"JSONP failed to load" warnings in bulk, lower
+  // this rather than raising PAGE.
+  var PAGE_CONCURRENCY = 4;
+
   function fetchPaged(tab, onProgress) {
-    var all = [];
-    function page(offset, total) {
+    function fetchOne(offset) {
       var q = "tabs=" + encodeURIComponent(tab) + "&offset=" + offset + "&limit=" + PAGE;
       function attempt(n) {
         return jsonpFull(q, 120000).then(function (j) {
           var rows = (j.tabs && j.tabs[tab]) || [];
-          var tot = (j.totals && j.totals[tab] != null) ? j.totals[tab] : (total != null ? total : rows.length);
-          all = all.concat(rows);
-          if (onProgress) onProgress(all.length, tot);
-          if (all.length < tot && rows.length > 0) return page(all.length, tot);
-          return all;
+          var tot = (j.totals && j.totals[tab] != null) ? j.totals[tab] : null;
+          return { rows: rows, total: tot };
         }).catch(function (e) {
           if (n < 3) return attempt(n + 1);
           throw e;
@@ -409,7 +412,43 @@
       }
       return attempt(0);
     }
-    return page(0, null);
+
+    // Phase 1: fetch the first page alone so we learn the true total row
+    // count (and so a totally empty/missing tab short-circuits immediately).
+    return fetchOne(0).then(function (first) {
+      var total = first.total != null ? first.total : first.rows.length;
+      var loaded = first.rows.length;
+      if (onProgress) onProgress(loaded, total);
+      if (loaded >= total || first.rows.length === 0) return first.rows;
+
+      // Phase 2: fetch every remaining page in parallel, throttled to
+      // PAGE_CONCURRENCY in-flight requests at a time. Results are slotted
+      // back into offset order before being concatenated, so the merged
+      // array is identical to what the old sequential fetch produced.
+      var offsets = [];
+      for (var off = PAGE; off < total; off += PAGE) offsets.push(off);
+      var results = new Array(offsets.length);
+      var next = 0;
+
+      function worker() {
+        if (next >= offsets.length) return Promise.resolve();
+        var i = next++;
+        return fetchOne(offsets[i]).then(function (res) {
+          results[i] = res.rows;
+          loaded += res.rows.length;
+          if (onProgress) onProgress(loaded, total);
+          return worker();
+        });
+      }
+
+      var workers = [];
+      for (var w = 0; w < Math.min(PAGE_CONCURRENCY, offsets.length); w++) workers.push(worker());
+      return Promise.all(workers).then(function () {
+        var all = first.rows;
+        for (var k = 0; k < results.length; k++) all = all.concat(results[k] || []);
+        return all;
+      });
+    });
   }
 
   if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); return; }
