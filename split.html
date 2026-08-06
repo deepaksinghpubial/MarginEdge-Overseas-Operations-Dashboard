@@ -83,6 +83,7 @@ class Component extends DCLogic {
     var prevSt = this._booted ? this.st : null;
     this._booted = true;
     this.S = window.SCORES;
+    this._sourceLoading = !!window.__QA_LOADING;
     this.Q = window.QA_DATA || null;
     this.st = { page:"summary", from:this.S.dates[0], to:this.S.dates[this.S.dates.length-1] };
     this.st.preset = "all";
@@ -159,7 +160,8 @@ class Component extends DCLogic {
     var cur=this.sel.dataSource||"live";
     var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
     var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
-    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource">'+opts+'</select></div>';
+    var busy=this._sourceLoading;
+    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span>':'')+'</div>';
   }
   sbSourceHTML(liveName,liveHref){
     var sources=window.__QA_SOURCES||{};
@@ -236,6 +238,7 @@ class Component extends DCLogic {
     else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="datasource"){
       this.sel.dataSource=t.value;
+      this._sourceLoading=true;
       var df=t.closest(".data-source-filter"); if(df) df.classList.toggle("archive", t.value!=="live");
       if(window.__QA_LOAD_SOURCE) window.__QA_LOAD_SOURCE(t.value);
       this.renderContent();
@@ -1575,6 +1578,9 @@ class Component extends DCLogic {
 .qa .data-source-filter.archive{background:linear-gradient(135deg,#7a3e05,#b5650a);}
 .qa .data-source-filter.archive label{color:#ffe9c7;}
 .qa .data-source-filter.archive select{border-color:#ffd58a;color:#7a3e05;}
+.qa .data-source-filter select:disabled{opacity:.6;cursor:wait;}
+.qa .ds-spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:ds-spin .7s linear infinite;flex:0 0 auto;}
+@keyframes ds-spin{to{transform:rotate(360deg);}}
 .qa .title-scope{font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--accent);background:var(--blue-50);border:1px solid var(--blue-200);border-radius:var(--radius-pill);padding:3px 12px;margin-left:4px;text-transform:none;letter-spacing:0;}
 .qa .am-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
 .qa .am-card{display:flex;flex-direction:column;}

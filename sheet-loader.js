@@ -390,13 +390,16 @@
   }
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
-  var PAGE = 12000;
+  var PAGE = 18000;
   // How many pages to have in flight at once after the first page tells us
   // the total row count. Apps Script tolerates a modest amount of concurrent
-  // execution per user; 4 is a conservative starting point. If you start
+  // execution per user; 6 is a moderately aggressive setting (raised from 4
+  // — the org's Workspace account has a generous per-execution time budget,
+  // and each page already retries 3x on failure, so a stray timeout here
+  // just costs one retry rather than breaking the load). If you start
   // seeing "JSONP timeout"/"JSONP failed to load" warnings in bulk, lower
-  // this rather than raising PAGE.
-  var PAGE_CONCURRENCY = 4;
+  // this back down rather than raising PAGE further.
+  var PAGE_CONCURRENCY = 6;
 
   function fetchPaged(tab, onProgress, sheetId) {
     function fetchOne(offset) {
@@ -461,11 +464,28 @@
   };
   window.__QA_SOURCES = SOURCES;
   window.__QA_ACTIVE_SOURCE_KEY = "live";
+  window.__QA_LOADING = false;
 
   var loadSeq = 0;
+  // Archived months never change once created, so once one is fully loaded
+  // we keep it in memory for the rest of the session — switching back to it
+  // later is instant instead of re-fetching everything over JSONP again.
+  // "live" is deliberately never cached: it updates through the day, so it
+  // always gets a fresh fetch.
+  var ARCHIVE_CACHE = {};
 
-  function runLoad(sheetId) {
+  function runLoad(sheetId, sourceKey) {
     var mySeq = ++loadSeq;
+    var cached = sourceKey && sourceKey !== "live" ? ARCHIVE_CACHE[sourceKey] : null;
+    if (cached) {
+      window.SCORES = cached.SCORES; window.QA_DATA = cached.QA_DATA;
+      window.ROLES = cached.ROLES; window.LOCATIONS = cached.LOCATIONS; window.AMS = cached.AMS; window.TEAM_SETS = cached.TEAM_SETS;
+      window.__QA_LOADING = false;
+      console.log("[sheet-loader] " + sourceKey + " served from in-memory cache — instant.");
+      if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+      return Promise.resolve();
+    }
+    window.__QA_LOADING = true;
     var CORE = {};
     var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
     var phase1Tabs = (TARGET === "split"
@@ -481,7 +501,7 @@
       } else {
         daily = tabs[cfg.daily.tab] || [];
       }
-      if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); return null; }
+      if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); window.__QA_LOADING = false; return null; }
       CORE.daily = daily;
       CORE.role = tabs[SHARED.role.tab] || []; CORE.loc = tabs[SHARED.location.tab] || []; CORE.team = tabs[SHARED.teams.tab] || []; CORE.fr = tabs[SHARED.fr.tab] || [];
       var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr);
@@ -509,31 +529,41 @@
         window.SCORES = g2.SCORES; window.QA_DATA = g2.QA_DATA;
         window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
         console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
+        window.__QA_LOADING = false;
+        if (sourceKey && sourceKey !== "live") {
+          ARCHIVE_CACHE[sourceKey] = { SCORES: g2.SCORES, QA_DATA: g2.QA_DATA, ROLES: g2.ROLES, LOCATIONS: g2.LOCATIONS, AMS: g2.AMS, TEAM_SETS: g2.TEAM_SETS };
+          console.log("[sheet-loader] cached " + sourceKey + " for instant re-selection later this session.");
+        }
         if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       }).catch(function (e) {
         if (mySeq !== loadSeq) return;
+        window.__QA_LOADING = false;
         console.warn("[sheet-loader] mistakes did not load (" + e.message + ") — scores/dates are live; mistake views stay empty.");
+        if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       });
     }).catch(function (e) {
       if (mySeq !== loadSeq) return;
+      window.__QA_LOADING = false;
       console.warn("[sheet-loader] could not load sheet (" + e.message + ") — using bundled data.");
     });
   }
 
   // Called by the dashboard's data-source dropdown to switch between the
   // live sheet and an archived month snapshot. Re-runs the full load
-  // pipeline against the chosen spreadsheet; window.__QA_RELOAD() (set up by
-  // the dashboard component) fires the same way it does on initial load.
+  // pipeline against the chosen spreadsheet (or serves it from the
+  // in-memory cache if this session already loaded it once);
+  // window.__QA_RELOAD() (set up by the dashboard component) fires the same
+  // way it does on initial load.
   window.__QA_LOAD_SOURCE = function (key) {
     var src = SOURCES[key];
     if (!src) return;
     window.__QA_ACTIVE_SOURCE_KEY = key;
     console.log("[sheet-loader] switching data source -> " + src.label);
-    runLoad(src.sheetId);
+    runLoad(src.sheetId, key);
   };
 
   if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); } else {
     console.log("[sheet-loader] target=" + TARGET + " — loading from sheet …");
-    runLoad(null);
+    runLoad(null, "live");
   }
 })();
