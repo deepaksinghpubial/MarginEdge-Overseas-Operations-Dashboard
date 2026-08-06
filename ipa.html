@@ -157,7 +157,7 @@ class Component extends DCLogic {
     var cur=this.sel.dataSource||"live";
     var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
     var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
-    return '<div class="role-filter'+(cur!=="live"?' active':'')+'"><label>Data</label><select data-act="datasource">'+opts+'</select></div>';
+    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource">'+opts+'</select></div>';
   }
   sbSourceHTML(liveName,liveHref){
     var sources=window.__QA_SOURCES||{};
@@ -234,7 +234,7 @@ class Component extends DCLogic {
     else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="datasource"){
       this.sel.dataSource=t.value;
-      var df=t.closest(".role-filter"); if(df) df.classList.toggle("active", t.value!=="live");
+      var df=t.closest(".data-source-filter"); if(df) df.classList.toggle("archive", t.value!=="live");
       if(window.__QA_LOAD_SOURCE) window.__QA_LOAD_SOURCE(t.value);
       this.renderContent();
     }
@@ -1557,6 +1557,13 @@ class Component extends DCLogic {
 .qa .role-filter select{padding:6px 9px;font-size:12.5px;}
 .qa .role-filter.active select{border-color:var(--border-strong,var(--muted));background:var(--card);color:var(--text);font-weight:700;}
 .qa .role-filter.active label{color:var(--text);}
+.qa .data-source-filter{display:inline-flex;align-items:center;gap:8px;margin-right:8px;padding:4px 10px 4px 12px;border-radius:9px;background:linear-gradient(135deg,#0f2942,#1a3a5c);box-shadow:0 1px 4px rgba(15,41,66,.35);}
+.qa .data-source-filter label{font-size:10.5px;color:#f4c78a;font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
+.qa .data-source-filter select{padding:5px 10px;font-size:12.5px;font-weight:800;background:#fff;color:#0f2942;border:1.5px solid var(--honey-600,#e07012);border-radius:6px;cursor:pointer;}
+.qa .data-source-filter select:focus{outline:2px solid var(--honey-600,#e07012);outline-offset:1px;}
+.qa .data-source-filter.archive{background:linear-gradient(135deg,#7a3e05,#b5650a);}
+.qa .data-source-filter.archive label{color:#ffe9c7;}
+.qa .data-source-filter.archive select{border-color:#ffd58a;color:#7a3e05;}
 .qa .title-scope{font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--accent);background:var(--blue-50);border:1px solid var(--blue-200);border-radius:var(--radius-pill);padding:3px 12px;margin-left:4px;text-transform:none;letter-spacing:0;}
 .qa .am-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
 .qa .am-card{display:flex;flex-direction:column;}
