@@ -44,7 +44,7 @@
       mistakes: { tab: "IPA Mistakes", cols: {
         date: "mistake_date", area: "mistake_area", variable: "variable",
         username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
-        ent: "imported_value", clo: "closed_value", cur: "current_value",
+        ent: "proposed_value", clo: "closed_value", cur: "current_value",
         st: "task_type", url: "order_url", org: "flow_type" } }
     }
   };
