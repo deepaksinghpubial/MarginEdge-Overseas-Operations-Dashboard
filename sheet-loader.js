@@ -370,7 +370,7 @@
     };
   }
 
-  function jsonpFull(tabList, timeoutMs) {
+  function jsonpFull(tabList, timeoutMs, sheetId) {
     // Returns the full JSONP payload object (tabs + totals), not just .tabs.
     return new Promise(function (resolve, reject) {
       var cbName = "__qaSheet_" + TARGET + "_" + Math.random().toString(36).slice(2);
@@ -380,12 +380,13 @@
       window[cbName] = function (j) { cleanup(); resolve(j || {}); };
       s.onerror = function () { cleanup(); reject(new Error("JSONP failed to load")); };
       s.src = WEBAPP_URL + (WEBAPP_URL.indexOf("?") < 0 ? "?" : "&") + tabList +
+        (sheetId ? "&sheetId=" + encodeURIComponent(sheetId) : "") +
         "&callback=" + cbName + "&_=" + Date.now();
       document.head.appendChild(s);
     });
   }
-  function jsonp(tabList, timeoutMs) {
-    return jsonpFull("tabs=" + encodeURIComponent(tabList.join(",")), timeoutMs).then(function (j) { return (j && j.tabs) || {}; });
+  function jsonp(tabList, timeoutMs, sheetId) {
+    return jsonpFull("tabs=" + encodeURIComponent(tabList.join(",")), timeoutMs, sheetId).then(function (j) { return (j && j.tabs) || {}; });
   }
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
@@ -397,11 +398,11 @@
   // this rather than raising PAGE.
   var PAGE_CONCURRENCY = 4;
 
-  function fetchPaged(tab, onProgress) {
+  function fetchPaged(tab, onProgress, sheetId) {
     function fetchOne(offset) {
       var q = "tabs=" + encodeURIComponent(tab) + "&offset=" + offset + "&limit=" + PAGE;
       function attempt(n) {
-        return jsonpFull(q, 120000).then(function (j) {
+        return jsonpFull(q, 120000, sheetId).then(function (j) {
           var rows = (j.tabs && j.tabs[tab]) || [];
           var tot = (j.totals && j.totals[tab] != null) ? j.totals[tab] : null;
           return { rows: rows, total: tot };
@@ -451,57 +452,88 @@
     });
   }
 
-  if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); return; }
-  console.log("[sheet-loader] target=" + TARGET + " — loading from sheet …");
+  // ---- Data sources: the live sheet (bound to this Apps Script deployment)
+  // plus any archived month snapshots (separate spreadsheet files, same tab
+  // layout). Add an entry here each time a month gets archived.
+  var SOURCES = {
+    live: { label: "Live Dashboard Data", sheetId: null },
+    archive_jul2026: { label: "Archive \u2014 Jul 2026", sheetId: "1uCFShcJrAG41WU50z-VAFaxucM1k3GbXR44vpuqTMdk" }
+  };
+  window.__QA_SOURCES = SOURCES;
+  window.__QA_ACTIVE_SOURCE_KEY = "live";
 
-  var CORE = {};
-  // Phase 1: daily + the three detail tabs (roster, roles, AMs, team leads,
-  // locations, platform membership, DATE RANGE). Split loads BOTH daily feeds.
-  var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
-  var phase1Tabs = (TARGET === "split"
-    ? [CONFIG.legacy.daily.tab, CONFIG.ipa.daily.tab]
-    : [cfg.daily.tab]).concat(detailTabs);
-  jsonp(phase1Tabs, 120000).then(function (tabs) {
-    var daily;
-    if (TARGET === "split") {
-      var lg = (tabs[CONFIG.legacy.daily.tab] || []).map(function (r) { return normDaily(r, "legacy"); });
-      var ip = (tabs[CONFIG.ipa.daily.tab] || []).map(function (r) { return normDaily(r, "ipa"); });
-      daily = lg.concat(ip);
-    } else {
-      daily = tabs[cfg.daily.tab] || [];
-    }
-    if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); return null; }
-    CORE.daily = daily;
-    CORE.role = tabs[SHARED.role.tab] || []; CORE.loc = tabs[SHARED.location.tab] || []; CORE.team = tabs[SHARED.teams.tab] || []; CORE.fr = tabs[SHARED.fr.tab] || [];
-    var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr);
-    window.SCORES = g.SCORES; window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
-    console.log("[sheet-loader] phase 1: " + g.SCORES.analysts.length + " people, " + g.SCORES.records.length +
-      " analyst-days through " + g.SCORES.dates[g.SCORES.dates.length - 1] + " — mistakes loading…");
-    window.QA_DATA = null;
-    if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
-    // Phase 2: mistakes (largest) — paginated. Split loads both mistake tabs.
-    var mistPromise;
-    if (TARGET === "split") {
-      mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); })
-        .then(function (lm) {
-          return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); })
-            .then(function (im) {
-              return lm.map(function (r) { return normMist(r, "legacy"); }).concat(im.map(function (r) { return normMist(r, "ipa"); }));
-            });
-        });
-    } else {
-      mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); });
-    }
-    return mistPromise.then(function (mist) {
-      var g2 = build(CORE.daily, mist, CORE.role, CORE.loc, CORE.team, CORE.fr);
-      window.SCORES = g2.SCORES; window.QA_DATA = g2.QA_DATA;
-      window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
-      console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
+  var loadSeq = 0;
+
+  function runLoad(sheetId) {
+    var mySeq = ++loadSeq;
+    var CORE = {};
+    var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
+    var phase1Tabs = (TARGET === "split"
+      ? [CONFIG.legacy.daily.tab, CONFIG.ipa.daily.tab]
+      : [cfg.daily.tab]).concat(detailTabs);
+    return jsonp(phase1Tabs, 120000, sheetId).then(function (tabs) {
+      if (mySeq !== loadSeq) return; // a newer source switch superseded this load
+      var daily;
+      if (TARGET === "split") {
+        var lg = (tabs[CONFIG.legacy.daily.tab] || []).map(function (r) { return normDaily(r, "legacy"); });
+        var ip = (tabs[CONFIG.ipa.daily.tab] || []).map(function (r) { return normDaily(r, "ipa"); });
+        daily = lg.concat(ip);
+      } else {
+        daily = tabs[cfg.daily.tab] || [];
+      }
+      if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); return null; }
+      CORE.daily = daily;
+      CORE.role = tabs[SHARED.role.tab] || []; CORE.loc = tabs[SHARED.location.tab] || []; CORE.team = tabs[SHARED.teams.tab] || []; CORE.fr = tabs[SHARED.fr.tab] || [];
+      var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr);
+      window.SCORES = g.SCORES; window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
+      console.log("[sheet-loader] phase 1: " + g.SCORES.analysts.length + " people, " + g.SCORES.records.length +
+        " analyst-days through " + g.SCORES.dates[g.SCORES.dates.length - 1] + " — mistakes loading…");
+      window.QA_DATA = null;
       if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+      // Phase 2: mistakes (largest) — paginated. Split loads both mistake tabs.
+      var mistPromise;
+      if (TARGET === "split") {
+        mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); }, sheetId)
+          .then(function (lm) {
+            return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); }, sheetId)
+              .then(function (im) {
+                return lm.map(function (r) { return normMist(r, "legacy"); }).concat(im.map(function (r) { return normMist(r, "ipa"); }));
+              });
+          });
+      } else {
+        mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); }, sheetId);
+      }
+      return mistPromise.then(function (mist) {
+        if (mySeq !== loadSeq) return;
+        var g2 = build(CORE.daily, mist, CORE.role, CORE.loc, CORE.team, CORE.fr);
+        window.SCORES = g2.SCORES; window.QA_DATA = g2.QA_DATA;
+        window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
+        console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
+        if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+      }).catch(function (e) {
+        if (mySeq !== loadSeq) return;
+        console.warn("[sheet-loader] mistakes did not load (" + e.message + ") — scores/dates are live; mistake views stay empty.");
+      });
     }).catch(function (e) {
-      console.warn("[sheet-loader] mistakes did not load (" + e.message + ") — scores/dates are live; mistake views stay empty.");
+      if (mySeq !== loadSeq) return;
+      console.warn("[sheet-loader] could not load sheet (" + e.message + ") — using bundled data.");
     });
-  }).catch(function (e) {
-    console.warn("[sheet-loader] could not load sheet (" + e.message + ") — using bundled data.");
-  });
+  }
+
+  // Called by the dashboard's data-source dropdown to switch between the
+  // live sheet and an archived month snapshot. Re-runs the full load
+  // pipeline against the chosen spreadsheet; window.__QA_RELOAD() (set up by
+  // the dashboard component) fires the same way it does on initial load.
+  window.__QA_LOAD_SOURCE = function (key) {
+    var src = SOURCES[key];
+    if (!src) return;
+    window.__QA_ACTIVE_SOURCE_KEY = key;
+    console.log("[sheet-loader] switching data source -> " + src.label);
+    runLoad(src.sheetId);
+  };
+
+  if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); } else {
+    console.log("[sheet-loader] target=" + TARGET + " — loading from sheet …");
+    runLoad(null);
+  }
 })();

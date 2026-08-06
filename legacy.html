@@ -97,7 +97,7 @@ class Component extends DCLogic {
     this.EXCL = {};
     this.st.role = "";
     if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
-    this.sel = { lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false };
+    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false };
     if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
     this.noteText = "Scores: legacy_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
     this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
@@ -141,19 +141,35 @@ class Component extends DCLogic {
       +   '<div class="sb-group"><div class="sb-group-label">Deep dive</div>'+nav("spprofile","Individual Specialist Performance")+nav("anprofile","Individual Analyst Performance")+'</div>'
       +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
       +   '<div class="sb-admin">'
-      +     '<div class="sb-source"><div class="lbl">'+this.ic("doc")+'Data source</div><div class="sb-source-name">Legacy Productivity &middot; Google Sheet</div><a class="sb-source-link" href="https://docs.google.com/spreadsheets/d/16GBOjwfzCdJBASuSqr_8A-TCJPjEMZxK3EWWcz3ETmo/edit" target="_blank" rel="noopener">Open sheet \u2197</a></div>'
+      +     this.sbSourceHTML("Legacy Productivity","https://docs.google.com/spreadsheets/d/16GBOjwfzCdJBASuSqr_8A-TCJPjEMZxK3EWWcz3ETmo/edit")
       +     '<div class="sb-note" id="qa-note">'+this.esc(this.noteText)+'</div>'
       +   '</div>'
       + '</aside>'
       + '<div class="main">'
       +   '<div class="topbar"><h1 id="qa-title"></h1>'
-      +     '<div class="tb-right">'+this.locFilterHTML()+this.roleFilterHTML()+'<div class="tb-presets"><button class="preset-btn" data-act="preset" data-arg="7">7d</button><button class="preset-btn" data-act="preset" data-arg="14">14d</button><button class="preset-btn" data-act="preset" data-arg="all">All</button></div><label>from</label><input type="date" id="qa-from" data-act="datefrom"><label>to</label><input type="date" id="qa-to" data-act="dateto"><button class="reset-btn" data-act="reset">Reset</button><button class="reset-btn" data-act="email" title="Build a presentable email from this view">\u2709 Email summary</button><button class="reset-btn" data-act="export" title="Export the current view to CSV">\u2913 Export CSV</button></div>'
+      +     '<div class="tb-right">'+this.sourceFilterHTML()+this.locFilterHTML()+this.roleFilterHTML()+'<div class="tb-presets"><button class="preset-btn" data-act="preset" data-arg="7">7d</button><button class="preset-btn" data-act="preset" data-arg="14">14d</button><button class="preset-btn" data-act="preset" data-arg="all">All</button></div><label>from</label><input type="date" id="qa-from" data-act="datefrom"><label>to</label><input type="date" id="qa-to" data-act="dateto"><button class="reset-btn" data-act="reset">Reset</button><button class="reset-btn" data-act="email" title="Build a presentable email from this view">\u2709 Email summary</button><button class="reset-btn" data-act="export" title="Export the current view to CSV">\u2913 Export CSV</button></div>'
       +   '</div>'
       +   '<div class="content" id="qa-content"></div>'
       +   '<div class="footer">Source: legacy_analyst_daily_scores mart (per analyst, per day). Higher final score &amp; lower error rate are better. Median &amp; \u0394 recompute across every analyst-day row in the selected range. Mistake detail (order links) comes from the Mistake Details export.</div>'
       + '</div></div></div>';
   }
 
+  sourceFilterHTML(){
+    var sources=window.__QA_SOURCES; if(!sources) return '';
+    var cur=this.sel.dataSource||"live";
+    var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
+    var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
+    return '<div class="role-filter'+(cur!=="live"?' active':'')+'"><label>Data</label><select data-act="datasource">'+opts+'</select></div>';
+  }
+  sbSourceHTML(liveName,liveHref){
+    var sources=window.__QA_SOURCES||{};
+    var key=this.sel.dataSource||"live";
+    var src=sources[key];
+    var isLive=!src||!src.sheetId;
+    var name=isLive?liveName:(src.label+" (archived snapshot)");
+    var href=isLive?liveHref:("https://docs.google.com/spreadsheets/d/"+src.sheetId+"/edit");
+    return '<div class="sb-source"><div class="lbl">'+this.ic("doc")+'Data source</div><div class="sb-source-name">'+this.esc(name)+' &middot; Google Sheet</div><a class="sb-source-link" href="'+this.esc(href)+'" target="_blank" rel="noopener">Open sheet \u2197</a></div>';
+  }
   locFilterHTML(){ if(!this.LOC) return ''; var active=!!this.st.loc; var opts='<option value="">All Locations</option>'+this.LOC.locations.map(l=>'<option value="'+this.esc(l)+'"'+(this.st.loc===l?' selected':'')+'>'+this.esc(l)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Location</label><select data-act="locfilter">'+opts+'</select></div>'; }
   roleFilterHTML(){ if(!this.ROLE) return ''; var active=!!this.st.role; var opts='<option value="">All roles</option>'+this.ROLE.roles.map(r=>'<option value="'+this.esc(r)+'"'+(this.st.role===r?' selected':'')+'>'+this.esc(r)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Role</label><select data-act="rolefilter">'+opts+'</select></div>'; }
   exclusiveToggleHTML(){ var tgt=window.__SHEET_TARGET==="ipa"?"IPA":"Legacy"; var n=this.exclusiveTeamIdx?Object.keys(this.exclusiveTeamIdx()).length:0; return '<div class="excl-badge"><span class="excl-badge-main">'+tgt+' teams</span><span class="excl-badge-count">'+n+'</span></div>'; }
@@ -218,6 +234,12 @@ class Component extends DCLogic {
     else if(act==="spanalyst"){ this.sel.spAnalyst=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
     else if(act==="anteam"){ this.sel.anTeamK=t.value; this.sel.anAnalystK=""; this.renderContent(); }
     else if(act==="ananalyst"){ this.sel.anAnalystK=t.value; this.sel.showAllMistakes=false; this.sel.mistFilterKind=null; this.sel.mistFilterValue=null; this.renderContent(); }
+    else if(act==="datasource"){
+      this.sel.dataSource=t.value;
+      var df=t.closest(".role-filter"); if(df) df.classList.toggle("active", t.value!=="live");
+      if(window.__QA_LOAD_SOURCE) window.__QA_LOAD_SOURCE(t.value);
+      this.renderContent();
+    }
     else if(act==="rolefilter"){ this.st.role=t.value; var rf=t.closest(".role-filter"); if(rf) rf.classList.toggle("active", !!t.value); this.setTitle(); this.renderContent(); }
     else if(act==="locfilter"){ this.st.loc=t.value; var lf=t.closest(".role-filter"); if(lf) lf.classList.toggle("active", !!t.value); this.renderContent(); }
     else if(act==="exclusive"){ this.st.exclusiveOnly=t.checked; var el=t.closest(".excl-toggle"); if(el){ el.classList.toggle("active", t.checked); var cn=el.querySelector(".excl-count"); if(cn){ var allN=this.S.teams.filter(x=>x!=="Unassigned").length; var exN=Object.keys(this.exclusiveTeamIdx()).length; cn.textContent=(t.checked?exN:allN)+" teams shown"; } } this.renderContent(); }

@@ -12,7 +12,8 @@
  *  ENDPOINTS
  *    /exec                 -> {"tabs":{tab:[rows...]}, "tabNames":[...], "totals":{tab:n}}
  *    /exec?meta=1          -> {"meta":{tab:{rows,headers,sample}}, "tabNames":[...]}  (tiny)
- *    /exec?tabs=A|B        -> only those tabs (delimiter is | so tab names may contain commas)
+ *    /exec?tabs=A|B        -> only those tabs (delimiter is | or , so tab names may
+ *                              contain the other character)
  *    /exec?tabs=A&offset=0&limit=10000  -> a page of rows (for large tabs)
  *    add &callback=fn to any of the above for JSONP.
  *
@@ -29,12 +30,26 @@
  *  This version uses getLastRow()/getLastColumn() (cheap metadata calls) plus
  *  a targeted getRange() read for just the requested page, so response time
  *  no longer grows with total sheet size.
+ *
+ *  BUGFIX (2026-08): the dashboard's own client code (sheet-loader.js) joins
+ *  requested tab names with commas ("tabs=Sheet A,Sheet B"), but this file was
+ *  splitting on "|" only. With no "|" present, the whole comma-joined string
+ *  was treated as a single (unmatched) tab name, so EVERY tab silently came
+ *  back empty and the dashboard fell back to the bundled static data. Now
+ *  splits on either "," or "|".
+ *
+ *  ARCHIVE MONTHS (2026-08): add &sheetId=<spreadsheet id> to any request to
+ *  read from a DIFFERENT spreadsheet (e.g. an archived month's snapshot)
+ *  instead of the one this script is bound to. The script runs as you, so
+ *  this only works for spreadsheets you own or have at least view access to.
+ *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
+ *  before — this is fully backward compatible with existing calls.
  * ============================================================================
  */
 
 function doGet(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var p = (e && e.parameter) || {};
+  var ss = p.sheetId ? SpreadsheetApp.openById(p.sheetId) : SpreadsheetApp.getActiveSpreadsheet();
   var cb = p.callback;
   var tz = ss.getSpreadsheetTimeZone();
 
@@ -109,7 +124,7 @@ function doGet(e) {
     return send({ meta: meta, tabNames: Object.keys(meta) });
   }
 
-  var only = p.tabs ? p.tabs.split("|").map(function (s) { return s.trim(); }) : null;
+  var only = p.tabs ? p.tabs.split(/[|,]/).map(function (s) { return s.trim(); }) : null;
   var offset = p.offset ? parseInt(p.offset, 10) : 0;   // 0-based data-row offset (excludes header)
   var limit = p.limit ? parseInt(p.limit, 10) : 0;      // 0 = all remaining rows
 
