@@ -390,16 +390,15 @@
   }
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
-  var PAGE = 18000;
+  var PAGE = 24000;
   // How many pages to have in flight at once after the first page tells us
   // the total row count. Apps Script tolerates a modest amount of concurrent
-  // execution per user; 6 is a moderately aggressive setting (raised from 4
-  // — the org's Workspace account has a generous per-execution time budget,
-  // and each page already retries 3x on failure, so a stray timeout here
-  // just costs one retry rather than breaking the load). If you start
-  // seeing "JSONP timeout"/"JSONP failed to load" warnings in bulk, lower
-  // this back down rather than raising PAGE further.
-  var PAGE_CONCURRENCY = 6;
+  // execution per user; the org's Workspace account has a generous
+  // per-execution time budget, and each page already retries 3x on failure,
+  // so a stray timeout here just costs one retry rather than breaking the
+  // load. If you start seeing "JSONP timeout"/"JSONP failed to load"
+  // warnings in bulk, lower this back down rather than raising PAGE further.
+  var PAGE_CONCURRENCY = 8;
 
   function fetchPaged(tab, onProgress, sheetId) {
     function fetchOne(offset) {
@@ -465,27 +464,77 @@
   window.__QA_SOURCES = SOURCES;
   window.__QA_ACTIVE_SOURCE_KEY = "live";
   window.__QA_LOADING = false;
+  window.__QA_LOAD_PROGRESS = null; // {loaded, total} while a big tab paginates
+
+  var SNAPSHOT_VERSION = 1;
+  var LIVE_TTL_MS = 3 * 60 * 1000; // re-fetch Live at most once every 3 minutes
+  var LS_PREFIX = "qaCache_" + TARGET + "_";
+  var LS_MAX_CHARS = 4500000; // ~4.5MB guard so we never trip a QuotaExceededError
 
   var loadSeq = 0;
-  // Archived months never change once created, so once one is fully loaded
-  // we keep it in memory for the rest of the session — switching back to it
-  // later is instant instead of re-fetching everything over JSONP again.
-  // "live" is deliberately never cached: it updates through the day, so it
-  // always gets a fresh fetch.
-  var ARCHIVE_CACHE = {};
+  // In-memory cache for THIS page load (any source). Archived months never
+  // change, so they're cached indefinitely; "live" gets a short TTL since it
+  // updates through the day — good enough to make repeated toggling within a
+  // few minutes instant, without ever showing meaningfully stale numbers.
+  var MEM_CACHE = {};
+
+  function lsGet(key) {
+    try {
+      var raw = localStorage.getItem(LS_PREFIX + key);
+      if (!raw) return null;
+      var obj = JSON.parse(raw);
+      return obj && obj.v === SNAPSHOT_VERSION ? obj : null;
+    } catch (e) { return null; }
+  }
+  function lsSet(key, obj) {
+    try {
+      var raw = JSON.stringify(obj);
+      if (raw.length > LS_MAX_CHARS) {
+        console.log("[sheet-loader] " + key + " snapshot too large for localStorage (" + (raw.length / 1e6).toFixed(1) + "MB) — kept in memory only, will refetch after a page reload.");
+        return;
+      }
+      localStorage.setItem(LS_PREFIX + key, raw);
+    } catch (e) {
+      console.log("[sheet-loader] could not persist " + key + " to localStorage (" + e.message + ") — kept in memory only.");
+    }
+  }
+  function applySnapshot(s) {
+    window.SCORES = s.SCORES; window.QA_DATA = s.QA_DATA;
+    window.ROLES = s.ROLES; window.LOCATIONS = s.LOCATIONS; window.AMS = s.AMS; window.TEAM_SETS = s.TEAM_SETS;
+  }
 
   function runLoad(sheetId, sourceKey) {
     var mySeq = ++loadSeq;
-    var cached = sourceKey && sourceKey !== "live" ? ARCHIVE_CACHE[sourceKey] : null;
-    if (cached) {
-      window.SCORES = cached.SCORES; window.QA_DATA = cached.QA_DATA;
-      window.ROLES = cached.ROLES; window.LOCATIONS = cached.LOCATIONS; window.AMS = cached.AMS; window.TEAM_SETS = cached.TEAM_SETS;
+    var key = sourceKey || "live";
+    var isLive = key === "live";
+
+    // 1) In-memory cache — instant, covers repeated toggling within this page load.
+    var mem = MEM_CACHE[key];
+    if (mem && (!isLive || (Date.now() - mem.ts) < LIVE_TTL_MS)) {
+      applySnapshot(mem);
       window.__QA_LOADING = false;
-      console.log("[sheet-loader] " + sourceKey + " served from in-memory cache — instant.");
+      console.log("[sheet-loader] " + key + " served from in-memory cache — instant.");
       if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       return Promise.resolve();
     }
+
+    // 2) localStorage — archives only, survives a full page reload (a fresh
+    //    tab/refresh always wipes MEM_CACHE, so this is what actually fixes
+    //    "every reload re-fetches the whole archive from scratch").
+    if (!isLive) {
+      var stored = lsGet(key);
+      if (stored) {
+        MEM_CACHE[key] = stored;
+        applySnapshot(stored);
+        window.__QA_LOADING = false;
+        console.log("[sheet-loader] " + key + " restored from localStorage — instant, no reload needed.");
+        if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+        return Promise.resolve();
+      }
+    }
+
     window.__QA_LOADING = true;
+    window.__QA_LOAD_PROGRESS = null;
     var CORE = {};
     var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
     var phase1Tabs = (TARGET === "split"
@@ -512,16 +561,21 @@
       if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       // Phase 2: mistakes (largest) — paginated. Split loads both mistake tabs.
       var mistPromise;
+      var reportProgress = function (loaded, total) {
+        if (mySeq !== loadSeq) return;
+        window.__QA_LOAD_PROGRESS = { loaded: loaded, total: total };
+      };
       if (TARGET === "split") {
-        mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); }, sheetId)
+        mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); }, sheetId)
           .then(function (lm) {
-            return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); }, sheetId)
+            window.__QA_LOAD_PROGRESS = null;
+            return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); }, sheetId)
               .then(function (im) {
                 return lm.map(function (r) { return normMist(r, "legacy"); }).concat(im.map(function (r) { return normMist(r, "ipa"); }));
               });
           });
       } else {
-        mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); }, sheetId);
+        mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { reportProgress(loaded, total); console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); }, sheetId);
       }
       return mistPromise.then(function (mist) {
         if (mySeq !== loadSeq) return;
@@ -530,20 +584,27 @@
         window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
         console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
         window.__QA_LOADING = false;
-        if (sourceKey && sourceKey !== "live") {
-          ARCHIVE_CACHE[sourceKey] = { SCORES: g2.SCORES, QA_DATA: g2.QA_DATA, ROLES: g2.ROLES, LOCATIONS: g2.LOCATIONS, AMS: g2.AMS, TEAM_SETS: g2.TEAM_SETS };
-          console.log("[sheet-loader] cached " + sourceKey + " for instant re-selection later this session.");
+        window.__QA_LOAD_PROGRESS = null;
+        var snapshot = { v: SNAPSHOT_VERSION, ts: Date.now(), SCORES: g2.SCORES, QA_DATA: g2.QA_DATA, ROLES: g2.ROLES, LOCATIONS: g2.LOCATIONS, AMS: g2.AMS, TEAM_SETS: g2.TEAM_SETS };
+        MEM_CACHE[key] = snapshot;
+        if (!isLive) {
+          lsSet(key, snapshot);
+          console.log("[sheet-loader] cached " + key + " (memory + localStorage) — instant next time, even after a reload.");
+        } else {
+          console.log("[sheet-loader] live cached in memory for " + (LIVE_TTL_MS / 60000) + " min — instant if you toggle back within that window.");
         }
         if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       }).catch(function (e) {
         if (mySeq !== loadSeq) return;
         window.__QA_LOADING = false;
+        window.__QA_LOAD_PROGRESS = null;
         console.warn("[sheet-loader] mistakes did not load (" + e.message + ") — scores/dates are live; mistake views stay empty.");
         if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       });
     }).catch(function (e) {
       if (mySeq !== loadSeq) return;
       window.__QA_LOADING = false;
+      window.__QA_LOAD_PROGRESS = null;
       console.warn("[sheet-loader] could not load sheet (" + e.message + ") — using bundled data.");
     });
   }

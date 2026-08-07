@@ -120,6 +120,19 @@ class Component extends DCLogic {
       if (ni >= 0) this.sel.teamReport = ni; else this.st.page = "teams";
     }
     this.wire(); this.syncDates(); this.setActiveNav(); this.setTitle(); this.renderContent();
+    this.watchLoadProgress();
+  }
+
+  watchLoadProgress(){
+    if(this._loadPollTimer){ clearInterval(this._loadPollTimer); this._loadPollTimer=null; }
+    if(!this._sourceLoading) return;
+    var self=this;
+    this._loadPollTimer=setInterval(function(){
+      if(!window.__QA_LOADING){ clearInterval(self._loadPollTimer); self._loadPollTimer=null; return; }
+      var el=self._q("#qa-ds-progress");
+      var p=window.__QA_LOAD_PROGRESS;
+      if(el) el.textContent = p&&p.total ? Math.round(p.loaded/p.total*100)+"%" : "…";
+    }, 350);
   }
 
   _q(s){ return this.rootRef.current ? this.rootRef.current.querySelector(s) : null; }
@@ -159,7 +172,7 @@ class Component extends DCLogic {
     var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
     var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
     var busy=this._sourceLoading;
-    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span>':'')+'</div>';
+    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span><span id="qa-ds-progress" class="ds-progress"></span>':'')+'</div>';
   }
   sbSourceHTML(liveName,liveHref){
     var sources=window.__QA_SOURCES||{};
@@ -240,6 +253,7 @@ class Component extends DCLogic {
       var df=t.closest(".data-source-filter"); if(df) df.classList.toggle("archive", t.value!=="live");
       if(window.__QA_LOAD_SOURCE) window.__QA_LOAD_SOURCE(t.value);
       this.renderContent();
+      this.watchLoadProgress();
     }
     else if(act==="rolefilter"){ this.st.role=t.value; var rf=t.closest(".role-filter"); if(rf) rf.classList.toggle("active", !!t.value); this.setTitle(); this.renderContent(); }
     else if(act==="locfilter"){ this.st.loc=t.value; var lf=t.closest(".role-filter"); if(lf) lf.classList.toggle("active", !!t.value); this.renderContent(); }
@@ -1569,6 +1583,7 @@ class Component extends DCLogic {
 .qa .data-source-filter.archive select{border-color:#ffd58a;color:#7a3e05;}
 .qa .data-source-filter select:disabled{opacity:.6;cursor:wait;}
 .qa .ds-spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:ds-spin .7s linear infinite;flex:0 0 auto;}
+.qa .ds-progress{font-size:10.5px;font-weight:800;color:#fff;min-width:22px;}
 @keyframes ds-spin{to{transform:rotate(360deg);}}
 .qa .title-scope{font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--accent);background:var(--blue-50);border:1px solid var(--blue-200);border-radius:var(--radius-pill);padding:3px 12px;margin-left:4px;text-transform:none;letter-spacing:0;}
 .qa .am-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
