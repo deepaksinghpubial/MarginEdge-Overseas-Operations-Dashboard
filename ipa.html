@@ -332,13 +332,45 @@ class Component extends DCLogic {
     return '<div><div class="cmp-title">'+title+'</div><div class="cmp-dual"><div><div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="cmp-side-label" style="color:'+aC+'">'+f(aV)+'</span><span style="font-size:10px;color:var(--muted)">'+this.esc(aName)+'</span></div><div class="cmp-bar-wrap"><div class="cmp-bar-fill me-grow" style="width:'+(Math.abs(aV)/mx*100).toFixed(1)+'%;background:'+aC+'"></div></div></div><div class="cmp-vs">vs</div><div><div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;flex-direction:row-reverse"><span class="cmp-side-label" style="color:'+bC+'">'+f(bV)+'</span><span style="font-size:10px;color:var(--muted)">'+this.esc(bName)+'</span></div><div class="cmp-bar-wrap" style="direction:rtl"><div class="cmp-bar-fill me-grow" style="width:'+(Math.abs(bV)/mx*100).toFixed(1)+'%;background:'+bC+'"></div></div></div></div></div>';
   }
 
+
+  enhanceKpiFx(root){
+    if(!root) return;
+    var FX={
+      "Avg final score":["Avg final score","Productivity \u00d7 (1 \u2212 error rate)\u00b2, averaged across every analyst-day in range."],
+      "Avg error rate":["Avg error rate","Total errors \u00f7 total possible error points, averaged across analyst-days in range."],
+      "Avg productivity":["Avg productivity","Points reviewed per analyst-day, averaged across the selected range."],
+      "Errors / day":["Errors / day","Total errors in range \u00f7 number of days in the selected range."],
+      "Errors / points":["Errors / points","This person's total errors \u00f7 total possible error points in the selected range."],
+      "Analysts":["Analysts","Distinct analysts with at least one scored day in the selected range."],
+      "Analyst-days":["Analyst-days","Count of scored analyst-day rows (one per analyst per day) in the selected range."],
+      "Total errors":["Total errors","Sum of errors across every analyst-day row in the selected range."],
+      "Total possible errors":["Total possible errors","Sum of possible error points (7 per IR/Recon \u00b7 4 per line item \u00b7 4 per Recon-misc) across all reviewed rows."],
+      "\u0394 vs median":["\u0394 vs median","This score minus the full-population median for the same metric and date range."]
+    };
+    var cards=root.querySelectorAll(".kpi");
+    for(var i=0;i<cards.length;i++){
+      var card=cards[i];
+      if(card.querySelector(".kpi-fx")) continue;
+      var lab=card.querySelector(".k-label");
+      if(!lab) continue;
+      var f=FX[lab.textContent.trim()];
+      if(!f) continue;
+      var badge=document.createElement("span");
+      badge.className="kpi-fx"; badge.textContent="fx"; badge.title="Show formula";
+      var tip=document.createElement("div");
+      tip.className="kpi-tip";
+      tip.innerHTML="<b>"+this.esc(f[0])+"</b>"+this.esc(f[1]);
+      card.appendChild(badge); card.appendChild(tip);
+    }
+  }
+
   renderContent(){
     var el=this._q("#qa-content"); if(!el) return;
     var rws=this.srows(), p=this.st.page, html="";
-    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); return; }
-    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); return; }
-    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); return; }
-    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); return; }
+    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); return; }
+    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); return; }
+    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); return; }
     if(p==="summary") html=this.pageSummary(rws);
     else if(p==="overview") html=this.pageOverview(rws);
     else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
@@ -353,6 +385,7 @@ class Component extends DCLogic {
     else if(p==="coaching") html=this.pageCoaching(rws);
     else if(p==="compare") html=this.pageCompare(rws);
     el.innerHTML=html;
+    this.enhanceKpiFx(el);
     if(this._caret!=null){ var s=this._q(this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
   }
 
@@ -1628,7 +1661,13 @@ class Component extends DCLogic {
 .qa .card-head{padding:14px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .qa .card-body{padding:18px 20px;}
 .qa .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
-.qa .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;}
+.qa .kpi{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;}
+.qa .kpi-fx{position:absolute;top:10px;right:10px;width:20px;height:20px;border-radius:6px;background:var(--neutral-100);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;font-style:italic;cursor:help;line-height:1;}
+.qa .kpi:hover .kpi-fx{background:var(--accent-soft,var(--accent));color:#fff;}
+.qa .kpi-tip{display:none;position:absolute;top:34px;right:8px;width:230px;background:#0f1620;color:#fff;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.45;font-weight:500;z-index:60;box-shadow:0 10px 28px rgba(0,0,0,.28);text-align:left;}
+.qa .kpi-tip b{display:block;margin-bottom:4px;font-size:12.5px;}
+.qa .kpi:hover .kpi-tip{display:block;}
+
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
 .qa .kpi .k-sub{font-size:11px;color:var(--muted);margin-top:3px;}
