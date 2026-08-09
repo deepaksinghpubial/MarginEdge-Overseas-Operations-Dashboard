@@ -51,8 +51,9 @@ class Component extends DCLogic {
   rootRef = React.createRef();
   SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
   QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11};
-  PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
+  PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
+    errorexplorer:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
     overview:'<path d="M3 3v18h18"/><path d="M7 16v2"/><path d="M12 11v7"/><path d="M17 6v12"/>',
     summary:'<path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>',
     leaderboard:'<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v1.5a3 3 0 0 1-3 3"/><path d="M7 5H4v1.5a3 3 0 0 0 3 3"/>',
@@ -153,7 +154,7 @@ class Component extends DCLogic {
       +   '<div class="sb-brand"><img src="'+((window.__resources&&window.__resources.meLogo)||"assets/me-white.png")+'" alt="MarginEdge"><div class="ttl">Analyst Scoring</div><div class="sub">Split-Time Leads Portal \u00b7 Dhaka &amp; Chandigarh Operations</div></div>'
       +   '<div class="sb-group"><div class="sb-group-label">Insights</div>'+nav("summary","Executive Summary")+nav("ams","AM Performance")+nav("teams","Team Lead Performance")+nav("specialist","Specialist Performance")+nav("leaderboard","Analyst Performance")+'</div>'
       +   '<div class="sb-group"><div class="sb-group-label">Deep dive</div>'+nav("spprofile","Individual Specialist Performance")+nav("anprofile","Individual Analyst Performance")+'</div>'
-      +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
+      +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("errorexplorer","Error Explorer")+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
       +   '<div class="sb-admin">'
       +     this.sbSourceHTML("Legacy Productivity","https://docs.google.com/spreadsheets/d/16GBOjwfzCdJBASuSqr_8A-TCJPjEMZxK3EWWcz3ETmo/edit")
       +     '<div class="sb-note" id="qa-note">'+this.esc(this.noteText)+'</div>'
@@ -227,6 +228,7 @@ class Component extends DCLogic {
       this.sel.tblSort[tid]=(cur&&cur.col===col)?{col:col,dir:cur.dir==="asc"?"desc":"asc"}:{col:col,dir:"asc"};
       this.renderContent();
     }
+    else if(act==="errdim"){ this.sel.errDim=arg; this.renderContent(); }
     else if(act==="chartall"){
       var parts=arg.split("::"), cid=parts[0], mode=parts[1], n=parseInt(parts[2],10)||0;
       this.sel.chartHidden=this.sel.chartHidden||{};
@@ -382,6 +384,7 @@ class Component extends DCLogic {
     else if(p==="ams") html=this.pageAMs(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
     else if(p==="locations") html=this.pageLocations(rws);
     else if(p==="roles") html=this.pageRoles(rws);
+    else if(p==="errorexplorer") html=this.pageErrorExplorer(rws);
     else if(p==="training") html=this.pageTraining(rws);
     else if(p==="profile") html=this.pageProfile(rws);
     else if(p==="coaching") html=this.pageCoaching(rws);
@@ -549,6 +552,68 @@ class Component extends DCLogic {
       +'<div class="card"><div class="card-head" style="color:var(--red)">Needs coaching \u2014 lowest final score</div><div class="card-body">'+this.rankBars(bottom.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--red)")+'<div class="chart-note">Lowest scorers active \u2265'+minDays+' days \u2014 candidates for training.</div></div></div>'
       +'</div>';
     return kpi+trend+errTrend+performers+this.methodPanel();
+  }
+
+
+  fxInline(title,text){
+    return '<span class="fx-inline"><span class="kpi-fx">fx</span><div class="kpi-tip"><b>'+this.esc(title)+'</b>'+this.esc(text)+'</div></span>';
+  }
+
+
+  pageErrorExplorer(rws){
+    var F=this.QF;
+    var dims=[
+      {key:"type",label:"By Error Type",col:"Error type"},
+      {key:"area",label:"By Mistake Area",col:"Mistake area"},
+      {key:"restaurant",label:"By Restaurant",col:"Restaurant"},
+      {key:"lead",label:"By Lead",col:"Lead"},
+      {key:"am",label:"By Assistant Manager",col:"Assistant Manager"},
+      {key:"analyst",label:"By Analyst",col:"Analyst"},
+      {key:"day",label:"By Day",col:"Day"}
+    ];
+    var dim=this.sel.errDim||"area";
+    var pillsH=dims.map(d=>'<button class="dim-pill'+(dim===d.key?' active':'')+'" data-act="errdim" data-arg="'+d.key+'">'+d.label+'</button>').join('');
+    var fx=this.fxInline("Error Explorer","Counts every row in the Mistake Details export that matches the filters above (location, role, date range), grouped by the dimension you pick below.");
+    var mrows=this.Q?(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[]):null;
+    var total=mrows?mrows.length:0;
+    var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' \u2014 '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
+      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate. The last column splits each row into errors caught during processing vs reported after production.</div>'
+      +'<div class="dim-pills">'+pillsH+'</div>';
+    if(this.Q===null) return openHead+'<div class="placeholder-msg">Mistake Details export not loaded.</div></div></div>';
+    if(!total) return openHead+'<div class="placeholder-msg">No mistakes on record in this range.</div></div></div>';
+    if(dim==="restaurant") return openHead+'<div class="placeholder-msg">Restaurant-level detail isn\u2019t available yet \u2014 the Mistake Details export doesn\u2019t currently include a restaurant/client column. Add one to the sheet to enable this view.</div></div></div>';
+
+    var Q=this.Q;
+    var keyer = dim==="type" ? (r=>Q.vars[r[F.VAR]]||"\u2014")
+      : dim==="area" ? (r=>Q.areas[r[F.AREA]]||"\u2014")
+      : dim==="lead" ? (r=>this.S.teams[r[F.TEAM]]||"Unassigned")
+      : dim==="am" ? (r=>this.amOf(this.S.teams[r[F.TEAM]])||"Unmapped")
+      : dim==="analyst" ? (r=>Q.analysts[r[F.AN]]||"\u2014")
+      : (r=>Q.dates[r[F.DATE]]||"\u2014");
+    var hasOrg=mrows.some(r=>r[F.ORG]!==""&&r[F.ORG]!=null);
+    var buckets={};
+    mrows.forEach(r=>{
+      var k=keyer(r);
+      var b=buckets[k]||(buckets[k]={label:k,count:0,proc:0,post:0});
+      b.count++;
+      if(hasOrg){ if(r[F.ORG]===0) b.proc++; else b.post++; }
+    });
+    var list=Object.keys(buckets).map(k=>buckets[k]);
+    var CAP=30, shown;
+    if(dim==="day"){ list.sort((a,b)=>a.label<b.label?-1:1); shown=list.slice(Math.max(0,list.length-CAP)); }
+    else { list.sort((a,b)=>b.count-a.count); shown=list.slice(0,CAP); }
+    var mx=Math.max.apply(null,shown.map(b=>b.count).concat([1]));
+    var rowsH=shown.map(b=>{
+      var share=total?(b.count/total*100):0;
+      var w=(b.count/mx*100).toFixed(1);
+      var pp=hasOrg?(b.proc.toLocaleString()+' / '+b.post.toLocaleString()):'\u2014';
+      return '<tr><td class="dim-label">'+this.esc(b.label)+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
+    }).join('');
+    var colLabel=dims.filter(d=>d.key===dim)[0].col;
+    var capNote=list.length>shown.length?'<div class="dim-cap-note">Showing '+shown.length+' of '+list.length.toLocaleString()+(dim==="day"?' days (most recent)':' \u2014 sorted by error count')+'.</div>':'';
+    var orgNote=hasOrg?'':'<div class="dim-cap-note">Processing vs. post-production isn\u2019t tracked in this portal\u2019s Mistake Details export, so the last column reads \u2014.</div>';
+    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    return openHead+table+capNote+orgNote+'</div></div>';
   }
 
   methodPanel(){
@@ -1678,6 +1743,20 @@ class Component extends DCLogic {
 .qa .kpi-tip{display:none;position:absolute;top:34px;right:8px;width:230px;background:#0f1620;color:#fff;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.45;font-weight:500;z-index:60;box-shadow:0 10px 28px rgba(0,0,0,.28);text-align:left;}
 .qa .kpi-tip b{display:block;margin-bottom:4px;font-size:12.5px;}
 .qa .kpi:hover .kpi-tip{display:block;}
+.qa .fx-inline{position:relative;display:inline-flex;vertical-align:middle;margin-left:8px;}
+.qa .fx-inline .kpi-fx{position:static;}
+.qa .fx-inline .kpi-tip{top:26px;right:0;left:auto;}
+.qa .fx-inline:hover .kpi-tip{display:block;}
+.qa .dim-note{font-size:12.5px;color:var(--muted);font-style:italic;margin-bottom:14px;}
+.qa .dim-pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.qa .dim-pill{border:none;background:var(--neutral-100);color:var(--text);font-size:12.5px;font-weight:700;padding:9px 18px;border-radius:20px;cursor:pointer;font-family:var(--font-body);}
+.qa .dim-pill.active{background:var(--accent);color:#fff;}
+.qa .dim-label{font-weight:700;font-family:var(--font-body);}
+.qa .dim-bar{min-width:140px;}
+.qa .dim-bar-bg{background:var(--neutral-200);border-radius:5px;height:14px;overflow:hidden;}
+.qa .dim-bar-fill{height:100%;background:var(--accent);border-radius:5px 0 0 5px;}
+.qa .dim-errs{color:var(--accent);font-weight:800;}
+.qa .dim-cap-note{font-size:11.5px;color:var(--muted);margin-top:10px;}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
