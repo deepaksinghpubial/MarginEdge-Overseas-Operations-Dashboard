@@ -600,8 +600,22 @@ class Component extends DCLogic {
     if(!sp.length) return '<div class="card"><div class="placeholder-msg">No Specialist analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
     var med=this.windowMedians(sp);
     var tblId="sp";
-    var fr=(this.S&&this.S.frByIdx)||{};
-    var list=this.aggAnalysts(sp).map(a=>{ a.fr=(fr[a.anIdx]!=null?fr[a.anIdx]:null); return a; });
+    var frDaily=(this.S&&this.S.frDaily)||{}, frTotal=(this.S&&this.S.frTotal)||{};
+    var frFrom=this.st.from, frTo=this.st.to, FR_MIN=50;
+    var list=this.aggAnalysts(sp).map(a=>{
+      var daily=frDaily[a.anIdx];
+      if(daily){
+        var vals=Object.keys(daily).filter(d=>d>=frFrom&&d<=frTo).map(d=>daily[d]).filter(v=>v>=FR_MIN);
+        a.frDays=vals.length;
+        a.frSum=vals.reduce((s,v)=>s+v,0);
+        a.fr=vals.length?a.frSum/vals.length:null;
+      } else if(frTotal[a.anIdx]!=null){
+        a.frDays=null; a.frSum=frTotal[a.anIdx]; a.fr=frTotal[a.anIdx];
+      } else {
+        a.frDays=null; a.frSum=0; a.fr=null;
+      }
+      return a;
+    });
     var maxFr=Math.max.apply(null,list.map(a=>a.fr||0).concat([0.0001]));
     var hasFr=list.some(a=>a.fr!=null);
     // FR-blended position score: final score rewarded by Final-Review volume (up to +25%).
@@ -617,7 +631,7 @@ class Component extends DCLogic {
       var rk=i+1, top3=(!hdrSort&&sort==="posDesc"&&rk<=3);
       var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
       var dF=a.delta;
-      var frBar=a.fr!=null?'<div class="ibar-wrap"><span style="color:var(--me-blue);font-weight:800;font-family:var(--font-num)">'+a.fr.toLocaleString()+'</span><div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,(a.fr/maxFr*100)).toFixed(1)+'%;background:var(--me-blue)"></div></div></div>':'<span style="color:var(--neutral-300)">\u2014</span>';
+      var frBar=a.fr!=null?'<div class="ibar-wrap"><span style="color:var(--me-blue);font-weight:800;font-family:var(--font-num)">'+this.fs1(a.fr)+'</span>'+(a.frDays!=null?' <span style="color:var(--neutral-300);font-size:10.5px">('+a.frDays+'d\u226550)</span>':'')+'<div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,(a.fr/maxFr*100)).toFixed(1)+'%;background:var(--me-blue)"></div></div></div>':'<span style="color:var(--neutral-300)">\u2014</span>';
       return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
         +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
         +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
@@ -632,11 +646,11 @@ class Component extends DCLogic {
         +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
-    var totFr=list.reduce((s,a)=>s+(a.fr||0),0);
-    return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews':'')
-      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Final reviews \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
-      +(hasFr?'<div class="note-strip">Position score blends avg final score with Final-Review (FR) volume \u2014 a specialist\u2019s standing is lifted by up to 25% by their FR count relative to the top reviewer.</div>':'')
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"FR count","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+    var totFr=list.reduce((s,a)=>s+(a.frSum||0),0);
+    return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews in range':'')
+      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Avg FR/day \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
+      +(hasFr?'<div class="note-strip">Position score blends avg final score with average daily Final-Review (FR) volume \u2014 a specialist\u2019s standing is lifted by up to 25% by their avg FR/day relative to the top reviewer. Avg FR/day only counts days with 50 or more FRs, averaged over the selected date range (where day-by-day FR data is available; older archives without daily FR data show a flat total instead).</div>':'')
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
       +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' specialists.</div>':'')+'</div>';
   }
   gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
@@ -748,15 +762,21 @@ class Component extends DCLogic {
     return this.Q.records.filter(r=>{ if(r[F.AN]!==idx) return false; var d=Q.dates[r[F.DATE]]; return d>=from && d<=to; });
   }
 
-  dailyRecords(mine,login,teamName){
+  dailyRecords(mine,login,teamName,anIdx,role){
     var S=this.S, D=this.SD;
     if(!mine||!mine.length) return "";
     var sorted=mine.slice().sort((a,b)=>a[D.DATE]-b[D.DATE]);
+    var showFr=role==="Specialist";
+    var frDaily=(showFr&&this.S.frDaily&&this.S.frDaily[anIdx])||{};
     var rowsH=sorted.map(r=>{
-      return '<tr><td class="mist-clickable" data-act="mistfilter" data-kind="date" data-arg="'+S.dates[r[D.DATE]]+'" title="Click to see this day\u2019s mistakes">'+S.dates[r[D.DATE]]+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td></tr>';
+      var d=S.dates[r[D.DATE]];
+      var frCell=showFr?'<td class="r">'+(frDaily[d]!=null?frDaily[d].toLocaleString():"\u2014")+'</td>':'';
+      return '<tr><td class="mist-clickable" data-act="mistfilter" data-kind="date" data-arg="'+d+'" title="Click to see this day\u2019s mistakes">'+d+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td>'+frCell+'</tr>';
     }).join("");
-    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Total tasks</th><th class="r">Error rate</th><th class="r">Final score</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    var frTh=showFr?'<th class="r">Final Review count</th>':'';
+    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Total tasks</th><th class="r">Error rate</th><th class="r">Final score</th>'+frTh+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
   }
+
 
   pageProfile(rws){ return this._profile(rws,{teamKey:"prTeam",anKey:"prAnalyst",teamAct:"prteam",anAct:"pranalyst",title:"Analyst drill-down"}); }
 
@@ -806,7 +826,7 @@ class Component extends DCLogic {
       {name:'Points lost to errors',color:'#dc2626',values:vPtsLost,fmt:(v)=>this.fs1(v)}
     ];
     var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, errors &amp; points lost<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body"><div class="note-strip" style="margin-bottom:12px">Final score = Productivity \u00d7 (1 \u2212 error rate)\u00b2 \u00b7 Points lost to errors = |Productivity| \u2212 |Final score| (the productivity magnitude lost to the error penalty)</div>'+(labs.length?wrap(this.normTrendChart(labs,trendSeries,"profile")):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
-    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
+    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName,aIdx,role)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
   }
 
   mistakeDetail(login){

@@ -141,6 +141,23 @@
     return out.sort();
   };
 
+  // FR Details is a "wide" tab: column A is the login, then one column PER
+  // CALENDAR DATE ("1 Aug 2026", "2 Aug 2026", …) holding that day's Final
+  // Review count. Recognize a header as a date column and normalize it to
+  // ISO yyyy-mm-dd; anything else (like a literal "Final Review" total
+  // column, used by older archived sheets before this layout existed) is
+  // left alone and handled separately as a flat fallback total.
+  var FR_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  var frDateHeaderIso = function (h) {
+    var m = String(h == null ? "" : h).trim().match(/^(\d{1,2})\s+([A-Za-z]{3,9})[a-z]*\.?\s+(\d{4})$/);
+    if (!m) return null;
+    var mo = FR_MONTHS[m[2].slice(0, 3).toLowerCase()];
+    if (!mo) return null;
+    var d = +m[1];
+    if (d < 1 || d > 31) return null;
+    return m[3] + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
+  };
+
   function build(daily, mist, roleRows, locRows, teamRows, frRows) {
     var C = cfg.daily.cols, M = cfg.mistakes.cols;
     DOMINANT_MONTH = computeDominantMonth(daily, C.date) || computeDominantMonth(mist, M.date);
@@ -238,14 +255,42 @@
     var analysts = order.map(function (u) { return disp[u]; });
     var loginIdx = idx(order);
 
-    // --- FR Details: Final Review count per login (Specialists) ---
-    var frByLogin = {};
+    // --- FR Details: Final Review counts (Specialists). Two possible sheet
+    // shapes are supported:
+    //   1) "wide" (current live sheet, 2026-08+): one column per calendar
+    //      date holding that day's count — gives a true daily breakdown.
+    //   2) "flat" (older/archived sheets): a single "Final Review" column
+    //      with one running total per login — no date breakdown possible,
+    //      kept as frTotalByLogin so old archives still show a number.
+    var frDateCols = [];
+    if (frRows && frRows.length) {
+      Object.keys(frRows[0]).forEach(function (h) {
+        var iso = frDateHeaderIso(h);
+        if (iso) frDateCols.push({ header: h, iso: iso });
+      });
+    }
+    var frDailyByLogin = {}, frTotalByLogin = {};
     (frRows || []).forEach(function (r) {
       var u = String(r[SHARED.fr.user] || "").trim().toLowerCase();
-      if (u) frByLogin[u] = num(r[SHARED.fr.count]);
+      if (!u) return;
+      if (frDateCols.length) {
+        var day = (frDailyByLogin[u] = frDailyByLogin[u] || {});
+        frDateCols.forEach(function (c) {
+          var v = r[c.header];
+          if (v === "" || v == null) return;
+          day[c.iso] = num(v);
+        });
+      } else {
+        frTotalByLogin[u] = num(r[SHARED.fr.count]);
+      }
     });
-    var frByIdx = {};
-    order.forEach(function (u) { var v = frByLogin[u.toLowerCase()]; if (v != null && !isNaN(v)) frByIdx[loginIdx[u]] = v; });
+    var frDaily = {}, frTotal = {};
+    order.forEach(function (u) {
+      var lu = u.toLowerCase();
+      if (frDailyByLogin[lu]) frDaily[loginIdx[u]] = frDailyByLogin[lu];
+      if (frTotalByLogin[lu] != null && !isNaN(frTotalByLogin[lu])) frTotal[loginIdx[u]] = frTotalByLogin[lu];
+    });
+    var frDates = uniqSort(frDateCols.map(function (c) { return c.iso; }));
 
     // --- teams = distinct allowlisted team-lead logins of the kept members ---
     var teamLogins = uniqSort(order.map(function (u) { return mgrOf[u]; }).filter(inAllow));
@@ -300,7 +345,7 @@
       records.push([ sdi[d], an, analyst_team[an], +num(r[C.productivity]).toFixed(2),
                      errs, pts, +er.toFixed(5), +num(r[C.finalScore]).toFixed(2) ]);
     });
-    var SCORES = { dates: sdates, analysts: analysts, teams: teams, analyst_team: analyst_team, records: records, frByIdx: frByIdx };
+    var SCORES = { dates: sdates, analysts: analysts, teams: teams, analyst_team: analyst_team, records: records, frDaily: frDaily, frTotal: frTotal, frDates: frDates };
 
     // --- Split portal: per-analyst per-platform breakdown (Legacy vs IPA) ---
     if (TARGET === "split") {
