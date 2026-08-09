@@ -577,26 +577,38 @@ class Component extends DCLogic {
     var mrows=this.Q?(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[]):null;
     var total=mrows?mrows.length:0;
     var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' \u2014 '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
-      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate. The last column splits each row into errors caught during processing vs reported after production.</div>'
+      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate.</div>'
       +'<div class="dim-pills">'+pillsH+'</div>';
     if(this.Q===null) return openHead+'<div class="placeholder-msg">Mistake Details export not loaded.</div></div></div>';
     if(!total) return openHead+'<div class="placeholder-msg">No mistakes on record in this range.</div></div></div>';
-    if(dim==="restaurant") return openHead+'<div class="placeholder-msg">Restaurant-level detail isn\u2019t available yet \u2014 the Mistake Details export doesn\u2019t currently include a restaurant/client column. Add one to the sheet to enable this view.</div></div></div>';
 
     var Q=this.Q;
-    var keyer = dim==="type" ? (r=>Q.vars[r[F.VAR]]||"\u2014")
-      : dim==="area" ? (r=>Q.areas[r[F.AREA]]||"\u2014")
-      : dim==="lead" ? (r=>this.S.teams[r[F.TEAM]]||"Unassigned")
-      : dim==="am" ? (r=>this.amOf(this.S.teams[r[F.TEAM]])||"Unmapped")
-      : dim==="analyst" ? (r=>Q.analysts[r[F.AN]]||"\u2014")
-      : (r=>Q.dates[r[F.DATE]]||"\u2014");
-    var hasOrg=mrows.some(r=>r[F.ORG]!==""&&r[F.ORG]!=null);
+    function parseTenant(url){
+      if(!url) return null;
+      var m=/[?&]tenantId=([^&]+)/.exec(url);
+      if(!m) return null;
+      var val; try{ val=decodeURIComponent(m[1]); }catch(_){ val=m[1]; }
+      var us=val.lastIndexOf("_");
+      if(us<0) return {slug:val,id:val};
+      var idPart=val.slice(us+1), slugPart=val.slice(0,us);
+      if(!/^\d+$/.test(idPart)) return {slug:val,id:val};
+      return {slug:slugPart,id:idPart};
+    }
+    var prettySlug=(s)=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
+    var keyer;
+    if(dim==="type") keyer=r=>{ var v=Q.vars[r[F.VAR]]||"\u2014"; return {key:v,label:v}; };
+    else if(dim==="area") keyer=r=>{ var v=Q.areas[r[F.AREA]]||"\u2014"; return {key:v,label:v}; };
+    else if(dim==="restaurant") keyer=r=>{ var t=parseTenant((Q.url_prefix||"")+(r[F.URL]||"")); if(!t) return {key:"__unknown__",label:"Unknown / no order link"}; return {key:t.id,label:prettySlug(t.slug),sub:t.id}; };
+    else if(dim==="lead") keyer=r=>{ var v=this.S.teams[r[F.TEAM]]||"Unassigned"; return {key:v,label:v}; };
+    else if(dim==="am") keyer=r=>{ var v=this.amOf(this.S.teams[r[F.TEAM]])||"Unmapped"; return {key:v,label:v}; };
+    else if(dim==="analyst") keyer=r=>{ var v=Q.analysts[r[F.AN]]||"\u2014"; return {key:v,label:v}; };
+    else keyer=r=>{ var v=Q.dates[r[F.DATE]]||"\u2014"; return {key:v,label:v}; };
+
     var buckets={};
     mrows.forEach(r=>{
-      var k=keyer(r);
-      var b=buckets[k]||(buckets[k]={label:k,count:0,proc:0,post:0});
+      var kv=keyer(r);
+      var b=buckets[kv.key]||(buckets[kv.key]={label:kv.label,sub:kv.sub||null,count:0});
       b.count++;
-      if(hasOrg){ if(r[F.ORG]===0) b.proc++; else b.post++; }
     });
     var list=Object.keys(buckets).map(k=>buckets[k]);
     var CAP=30, shown;
@@ -606,14 +618,14 @@ class Component extends DCLogic {
     var rowsH=shown.map(b=>{
       var share=total?(b.count/total*100):0;
       var w=(b.count/mx*100).toFixed(1);
-      var pp=hasOrg?(b.proc.toLocaleString()+' / '+b.post.toLocaleString()):'\u2014';
-      return '<tr><td class="dim-label">'+this.esc(b.label)+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
+      var labelH=this.esc(b.label)+(b.sub?' <span class="dim-sub">#'+this.esc(b.sub)+'</span>':'');
+      return '<tr><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td></tr>';
     }).join('');
     var colLabel=dims.filter(d=>d.key===dim)[0].col;
     var capNote=list.length>shown.length?'<div class="dim-cap-note">Showing '+shown.length+' of '+list.length.toLocaleString()+(dim==="day"?' days (most recent)':' \u2014 sorted by error count')+'.</div>':'';
-    var orgNote=hasOrg?'':'<div class="dim-cap-note">Processing vs. post-production isn\u2019t tracked in this portal\u2019s Mistake Details export, so the last column reads \u2014.</div>';
-    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
-    return openHead+table+capNote+orgNote+'</div></div>';
+    var restNote=dim==="restaurant"?'<div class="dim-cap-note">Restaurant name is the abbreviated tenant slug embedded in each order\u2019s link (may be truncated vs. the restaurant\u2019s full name) \u2014 the # is the exact tenant ID for a precise lookup. Restaurant type isn\u2019t available in the connected sheet.</div>':'';
+    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    return openHead+table+capNote+restNote+'</div></div>';
   }
 
   methodPanel(){
@@ -1757,6 +1769,7 @@ class Component extends DCLogic {
 .qa .dim-bar-fill{height:100%;background:var(--accent);border-radius:5px 0 0 5px;}
 .qa .dim-errs{color:var(--accent);font-weight:800;}
 .qa .dim-cap-note{font-size:11.5px;color:var(--muted);margin-top:10px;}
+.qa .dim-sub{color:var(--muted);font-weight:600;font-size:11px;font-family:var(--font-num);}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
