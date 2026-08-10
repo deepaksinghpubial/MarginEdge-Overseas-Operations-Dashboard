@@ -926,7 +926,32 @@ class Component extends DCLogic {
     var specs=members.filter(a=>this.roleOf(a.an)==="Specialist");
     var anas=members.filter(a=>this.roleOf(a.an)==="Analyst");
     var others=members.filter(a=>{ var r=this.roleOf(a.an); return r!=="Specialist"&&r!=="Analyst"; });
-    var roster=rosterTbl("Specialists",specs)+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
+    // Specialists get the same FR-adjusted "Final points" ranking as the main
+    // Specialist Performance leaderboard, instead of plain avg final score.
+    var frDailyT=(this.S&&this.S.frDaily)||{};
+    var fpSumT={}, fpDaysT={};
+    mine.forEach(r=>{
+      if(this.roleOf(S.analysts[r[D.AN]])!=="Specialist") return;
+      var an=r[D.AN], d=S.dates[r[D.DATE]];
+      var daily=frDailyT[an];
+      var frv=(daily&&daily[d]!=null)?daily[d]:0;
+      fpSumT[an]=(fpSumT[an]||0)+(frv*2+r[D.FS]);
+      fpDaysT[an]=(fpDaysT[an]||0)+1;
+    });
+    specs.forEach(a=>{ a.fp=fpDaysT[a.anIdx]?fpSumT[a.anIdx]/fpDaysT[a.anIdx]:a.fs; });
+    specs.sort((a,b)=>b.fp-a.fp);
+    var mxFsSp=Math.max.apply(null,specs.map(a=>a.fs).concat([0.0001]));
+    var rowFnSp=(a,i)=>'<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
+      +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+      +'<td class="r" style="font-weight:800;color:var(--honey-600);font-family:var(--font-num)">'+this.fs1(a.fp)+'</td>'
+      +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,a.fs/mxFsSp*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+      +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+      +'<td class="r">'+this.fs1(a.prod)+'</td>'
+      +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
+      +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
+    var fpFxT=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0).");
+    var specRoster=specs.length?'<div class="card"><div class="card-head">Specialists \u2014 '+specs.length+', ranked by Final Points after considering FR counts'+fpFxT+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Final points after FR</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+specs.map(rowFnSp).join("")+'</tbody></table></div></div>':'';
+    var roster=specRoster+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
     if(!specs.length&&!anas.length&&!others.length) roster=rosterTbl("Team roster",members);
     var mcat=this.mistakeExecCards(this.qaRowsForLogins(members.map(a=>a.an)),"this team");
     return back+kpi+roster+charts+charts2+mcat;
