@@ -229,6 +229,10 @@ class Component extends DCLogic {
       this.renderContent();
     }
     else if(act==="errdim"){ this.sel.errDim=arg; this.renderContent(); }
+    else if(act==="tblexport"){
+      var xcard=t.closest(".card"); var xtable=xcard&&xcard.querySelector("table.tbl"); var xhead=xcard&&xcard.querySelector(".card-head");
+      if(xtable) this.exportTableEl(xtable,xhead);
+    }
     else if(act==="chartall"){
       var parts=arg.split("::"), cid=parts[0], mode=parts[1], n=parseInt(parts[2],10)||0;
       this.sel.chartHidden=this.sel.chartHidden||{};
@@ -349,7 +353,8 @@ class Component extends DCLogic {
       "Analyst-days":["Analyst-days","Count of scored analyst-day rows (one per analyst per day) in the selected range."],
       "Total errors":["Total errors","Sum of errors across every analyst-day row in the selected range."],
       "Total possible errors":["Total possible errors","Sum of possible error points (7 per IR/Recon \u00b7 4 per line item \u00b7 4 per Recon-misc) across all reviewed rows."],
-      "\u0394 vs median":["\u0394 vs median","This score minus the full-population median for the same metric and date range."]
+      "\u0394 vs median":["\u0394 vs median","This score minus the full-population median for the same metric and date range."],
+      "Final points (FR-adj.)":["Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0)."]
     };
     var cards=root.querySelectorAll(".kpi");
     for(var i=0;i<cards.length;i++){
@@ -371,10 +376,10 @@ class Component extends DCLogic {
   renderContent(){
     var el=this._q("#qa-content"); if(!el) return;
     var rws=this.srows(), p=this.st.page, html="";
-    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); return; }
-    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); return; }
-    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); return; }
-    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); return; }
+    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
+    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
+    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
     if(p==="summary") html=this.pageSummary(rws);
     else if(p==="overview") html=this.pageOverview(rws);
     else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
@@ -391,6 +396,7 @@ class Component extends DCLogic {
     else if(p==="compare") html=this.pageCompare(rws);
     el.innerHTML=html;
     this.enhanceKpiFx(el);
+    this.enhanceTableExport(el);
     if(this._caret!=null){ var s=this._q(this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
   }
 
@@ -628,6 +634,41 @@ class Component extends DCLogic {
     return openHead+table+capNote+restNote+'</div></div>';
   }
 
+
+  exportTableEl(table, headEl){
+    var ths=table.querySelectorAll("thead th");
+    var headers=Array.prototype.map.call(ths,function(th){ return th.textContent.replace(/[\u25B2\u25BC]/g,"").trim().replace(/\s+/g," "); });
+    var rows=[];
+    var trs=table.querySelectorAll("tbody tr");
+    for(var i=0;i<trs.length;i++){
+      var tds=trs[i].querySelectorAll("td");
+      if(!tds.length) continue;
+      rows.push(Array.prototype.map.call(tds,function(td){ return td.textContent.trim().replace(/\s+/g," "); }));
+    }
+    var titleTxt="table";
+    if(headEl){
+      var clone=headEl.cloneNode(true);
+      var kill=clone.querySelectorAll(".tbl-export-btn,.ctrl-row");
+      for(var k=0;k<kill.length;k++) kill[k].parentNode.removeChild(kill[k]);
+      titleTxt=clone.textContent.split("\u2014")[0].trim()||"table";
+    }
+    var slug=titleTxt.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,50)||"table";
+    var name="qa_"+slug+"_"+this.st.from+"_to_"+this.st.to+".csv";
+    this.downloadCSV(name,[headers].concat(rows));
+  }
+  enhanceTableExport(root){
+    if(!root) return;
+    var cards=root.querySelectorAll(".card");
+    for(var i=0;i<cards.length;i++){
+      var card=cards[i];
+      var table=card.querySelector("table.tbl");
+      if(!table) continue;
+      var head=card.querySelector(".card-head");
+      if(!head || head.querySelector(".tbl-export-btn")) continue;
+      head.insertAdjacentHTML("beforeend",'<button type="button" class="tbl-export-btn reset-btn" data-act="tblexport" title="Export this table to CSV">\u2913 CSV</button>');
+    }
+  }
+
   methodPanel(){
     var mcard=(t,f,d)=>'<div class="meth-card"><div class="m-t">'+t+'</div><div class="m-f">'+f+'</div><div class="m-d">'+d+'</div></div>';
     return '<div class="card"><div class="card-head">How the scores work</div><div class="card-body" style="display:flex;flex-direction:column;gap:16px"><div class="meth-grid">'
@@ -766,9 +807,9 @@ class Component extends DCLogic {
       return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
         +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
         +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
+        +'<td class="r" style="font-weight:800;color:var(--honey-600);font-family:var(--font-num)">'+this.fs1(a.fp)+'</td>'
         +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
         +'<td class="r">'+frBar+'</td>'
-        +'<td class="r" style="font-weight:800;color:var(--honey-600);font-family:var(--font-num)">'+this.fs1(a.fp)+'</td>'
         +'<td class="r" style="color:var(--muted)">'+this.fs1(a.pos)+'</td>'
         +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
         +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
@@ -782,7 +823,7 @@ class Component extends DCLogic {
     return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews in range':'')
       +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("fpDesc","Final points (FR) \u2193")+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Avg FR/day \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
       +(hasFr?'<div class="note-strip">Ranked by Final Points after considering FR counts'+fpFx+' \u2014 FR count \u00d7 2 + final score, averaged per day. Position score (shown alongside) instead blends avg final score with average daily FR volume, lifting standing by up to 25% relative to the top reviewer. Avg FR/day only counts days with 50 or more FRs; older archives without daily FR data show a flat total instead.</div>':'')
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
       +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' specialists.</div>':'')+'</div>';
   }
   gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
@@ -952,11 +993,10 @@ class Component extends DCLogic {
       var fpSum=mine.reduce((s,r)=>{ var d=S.dates[r[D.DATE]]; var frv=frDailyForAn[d]!=null?frDailyForAn[d]:0; return s+(frv*2+r[D.FS]); },0);
       avgFp=fpSum/days;
     }
-    var fpFx=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0).");
     var kpi='<div class="kpi-row'+(anim?' anim-kpi':'')+'">'
       +'<div class="kpi"><div class="k-label">'+this.esc(noun.charAt(0).toUpperCase()+noun.slice(1))+'</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)">'+this.esc(login)+'</div><div class="k-sub">'+(role?this.esc(role)+' \u00b7 ':'')+'team: <button class="team-link" style="font-weight:700" data-act="teamname" data-arg="'+this.esc(teamName)+'">'+this.esc(teamName)+'</button>'+(this.amOf(teamName)?' \u00b7 AM: <button class="team-link" style="font-weight:700" data-act="am" data-arg="'+this.esc(this.amOf(teamName))+'">'+this.esc(this.amOf(teamName))+'</button>':'')+'</div></div>'
+      +(showFp?'<div class="kpi"><div class="k-label">Final points (FR-adj.)</div><div class="k-val" style="color:var(--honey-600)">'+this.fs1(avgFp)+'</div><div class="k-sub">avg per day \u00b7 FR\u00d72 + final score</div></div>':'')
       +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:'+this.fsColor(avgFs,med.fs)+'">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
-      +(showFp?'<div class="kpi"><div class="k-label">Final points (FR-adj.)'+fpFx+'</div><div class="k-val" style="color:var(--honey-600)">'+this.fs1(avgFp)+'</div><div class="k-sub">avg per day \u00b7 FR\u00d72 + final score</div></div>':'')
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
       +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">'+days+' active days</div></div>'
@@ -1795,6 +1835,7 @@ class Component extends DCLogic {
 .qa .dim-bar-fill{height:100%;background:var(--accent);border-radius:5px 0 0 5px;}
 .qa .dim-errs{color:var(--accent);font-weight:800;}
 .qa .dim-cap-note{font-size:11.5px;color:var(--muted);margin-top:10px;}
+.qa .tbl-export-btn{margin-left:auto;font-size:11px;padding:4px 8px;white-space:nowrap;flex-shrink:0;}
 .qa .dim-sub{color:var(--muted);font-weight:600;font-size:11px;font-family:var(--font-num);}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
