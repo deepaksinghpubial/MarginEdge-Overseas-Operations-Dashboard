@@ -197,6 +197,7 @@ class Component extends DCLogic {
     host.addEventListener("input", this.onInput);
   }
   scrollToMistakeDetail(){ var el=this.rootRef.current&&this.rootRef.current.querySelector("#mistake-detail-anchor"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }
+  scrollToErrDrill(){ var el=this.rootRef.current&&this.rootRef.current.querySelector("#err-drill-anchor"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }
   onClick = (e) => {
     var t = e.target.closest("[data-act]"); if(!t) return;
     var act=t.dataset.act, arg=t.dataset.arg;
@@ -228,7 +229,25 @@ class Component extends DCLogic {
       this.sel.tblSort[tid]=(cur&&cur.col===col)?{col:col,dir:cur.dir==="asc"?"desc":"asc"}:{col:col,dir:"asc"};
       this.renderContent();
     }
-    else if(act==="errdim"){ this.sel.errDim=arg; this.renderContent(); }
+    else if(act==="errdim"){ this.sel.errDim=arg; this.sel.errSearch=""; this.sel.errDrill=null; this.sel.errDrillShow=100; this.renderContent(); }
+    else if(act==="errdrill"){
+      var edim=t.dataset.dim||this.sel.errDim||"area";
+      var cur=this.sel.errDrill;
+      if(cur&&cur.dim===edim&&String(cur.key)===String(arg)){ this.sel.errDrill=null; this.renderContent(); }
+      else { this.sel.errDrill={dim:edim,key:arg}; this.sel.errDrillShow=100; this.renderContent(); this.scrollToErrDrill(); }
+    }
+    else if(act==="errdrillclose"){ this.sel.errDrill=null; this.renderContent(); }
+    else if(act==="errdrillmore"){ this.sel.errDrillShow=(arg==="all")?1e9:((this.sel.errDrillShow||100)+(parseInt(arg,10)||200)); this.renderContent(); }
+    else if(act==="errmore"||act==="errall"||act==="errless"){
+      var rdim=t.dataset.dim||this.sel.errDim||"area";
+      this.sel.errShow=this.sel.errShow||{};
+      var curN=this.sel.errShow[rdim]||30;
+      if(act==="errmore") this.sel.errShow[rdim]=curN+(parseInt(arg,10)||50);
+      else if(act==="errall") this.sel.errShow[rdim]=1e9;
+      else this.sel.errShow[rdim]=30;
+      this.renderContent();
+    }
+    else if(act==="errsearchclear"){ this.sel.errSearch=""; this.renderContent(); }
     else if(act==="tblexport"){
       var xcard=t.closest(".card"); var xtable=xcard&&xcard.querySelector("table.tbl"); var xhead=xcard&&xcard.querySelector(".card-head");
       if(xtable) this.exportTableEl(xtable,xhead);
@@ -278,6 +297,12 @@ class Component extends DCLogic {
     var t=e.target;
     if(t.dataset.act==="lbsearch"){ this.sel.lbSearch=t.value; this._caret=t.selectionStart; this.renderContent(); this._caret=null; }
     else if(t.dataset.act==="spsearch"){ this.sel.spSearch=t.value; this._caret=t.selectionStart; this._caretSp=true; this.renderContent(); this._caret=null; this._caretSp=false; }
+    else if(t.dataset.act==="errsearch"){
+      this.sel.errSearch=t.value;
+      var pos=t.selectionStart, self=this;
+      if(this._errSearchT) clearTimeout(this._errSearchT);
+      this._errSearchT=setTimeout(function(){ self._errSearchT=null; self._caret=pos; self._caretErr=true; self.renderContent(); self._caret=null; self._caretErr=false; },140);
+    }
   };
 
   setActiveNav(){ this.rootRef.current.querySelectorAll(".sb-item").forEach(it=>it.classList.toggle("active", it.dataset.arg===this.st.page)); }
@@ -397,7 +422,7 @@ class Component extends DCLogic {
     el.innerHTML=html;
     this.enhanceKpiFx(el);
     this.enhanceTableExport(el);
-    if(this._caret!=null){ var s=this._q(this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
+    if(this._caret!=null){ var s=this._q(this._caretErr?"#qa-errsearch":this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
   }
 
   pageSummary(rws){
@@ -566,76 +591,208 @@ class Component extends DCLogic {
   }
 
 
+  errDims(){
+    return [
+      {key:"type",label:"By Error Type",col:"Error type",noun:"error type"},
+      {key:"area",label:"By Mistake Area",col:"Mistake area",noun:"mistake area"},
+      {key:"restaurant",label:"By Restaurant",col:"Restaurant",noun:"restaurant"},
+      {key:"lead",label:"By Lead",col:"Lead",noun:"lead"},
+      {key:"am",label:"By Assistant Manager",col:"Assistant Manager",noun:"assistant manager"},
+      {key:"analyst",label:"By Analyst",col:"Analyst",noun:"analyst"},
+      {key:"day",label:"By Day",col:"Day",noun:"day"}
+    ];
+  }
+  parseTenantUrl(url){
+    if(!url) return null;
+    var m=/[?&]tenantId=([^&]+)/.exec(url);
+    if(!m) return null;
+    var val; try{ val=decodeURIComponent(m[1]); }catch(_){ val=m[1]; }
+    var us=val.lastIndexOf("_");
+    if(us<0) return {slug:val,id:val};
+    var idPart=val.slice(us+1), slugPart=val.slice(0,us);
+    if(!/^\d+$/.test(idPart)) return {slug:val,id:val};
+    return {slug:slugPart,id:idPart};
+  }
+  prettyTenantSlug(s){ return s?String(s).charAt(0).toUpperCase()+String(s).slice(1):s; }
+  // One keyer per dimension, shared by the dimension table and every drill-down
+  // cross-tab so a row and its detail panel can never disagree.
+  errKeyer(dim){
+    var F=this.QF, Q=this.Q, self=this;
+    if(dim==="type") return function(r){ var v=Q.vars[r[F.VAR]]||"—"; return {key:v,label:v}; };
+    if(dim==="area") return function(r){ var v=Q.areas[r[F.AREA]]||"—"; return {key:v,label:v}; };
+    if(dim==="restaurant") return function(r){ var t=self.parseTenantUrl((Q.url_prefix||"")+(r[F.URL]||"")); if(!t) return {key:"__unknown__",label:"Unknown / no order link"}; return {key:t.id,label:self.prettyTenantSlug(t.slug),sub:t.id}; };
+    if(dim==="lead") return function(r){ var v=self.S.teams[r[F.TEAM]]||"Unassigned"; return {key:v,label:v}; };
+    if(dim==="am") return function(r){ var v=self.amOf(self.S.teams[r[F.TEAM]])||"Unmapped"; return {key:v,label:v}; };
+    if(dim==="analyst") return function(r){ var v=Q.analysts[r[F.AN]]||"—"; return {key:v,label:v}; };
+    return function(r){ var v=Q.dates[r[F.DATE]]||"—"; return {key:v,label:v}; };
+  }
+  errBuckets(mrows,dim,hasDiff){
+    var F=this.QF, keyer=this.errKeyer(dim), map={}, out=[];
+    for(var i=0;i<mrows.length;i++){
+      var r=mrows[i], kv=keyer(r), mk="k"+kv.key, b=map[mk];
+      if(!b){ b=map[mk]={key:kv.key,label:kv.label,sub:kv.sub||null,count:0,proc:0,post:0}; out.push(b); }
+      b.count++;
+      if(hasDiff){ if(r[F.DIFFCLO]===true) b.proc++; else if(r[F.DIFFCLO]===false) b.post++; }
+    }
+    return out;
+  }
+  errRowLimit(dim){ var m=this.sel.errShow||{}; return Math.max(1, m[dim]||this.errRowsBase()); }
+  errRowsBase(){ return 30; }
+
   pageErrorExplorer(rws){
     var F=this.QF;
-    var dims=[
-      {key:"type",label:"By Error Type",col:"Error type"},
-      {key:"area",label:"By Mistake Area",col:"Mistake area"},
-      {key:"restaurant",label:"By Restaurant",col:"Restaurant"},
-      {key:"lead",label:"By Lead",col:"Lead"},
-      {key:"am",label:"By Assistant Manager",col:"Assistant Manager"},
-      {key:"analyst",label:"By Analyst",col:"Analyst"},
-      {key:"day",label:"By Day",col:"Day"}
-    ];
+    var dims=this.errDims();
     var dim=this.sel.errDim||"area";
+    if(!dims.some(function(d){ return d.key===dim; })) dim="area";
+    var dimDef=dims.filter(function(d){ return d.key===dim; })[0];
     var pillsH=dims.map(d=>'<button class="dim-pill'+(dim===d.key?' active':'')+'" data-act="errdim" data-arg="'+d.key+'">'+d.label+'</button>').join('');
     var fx=this.fxInline("Error Explorer","Counts every row in the Mistake Details export that matches the filters above (location, role, date range), grouped by the dimension you pick below.");
     var mrows=this.Q?(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[]):null;
     var total=mrows?mrows.length:0;
-    var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' \u2014 '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
-      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate. The last column splits each row into errors caught during processing vs reported after production.</div>'
+    var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' — '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
+      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate, then click any row — its name or its error count — to open every mistake behind it. The last column splits each row into errors caught during processing vs reported after production.</div>'
       +'<div class="dim-pills">'+pillsH+'</div>';
     if(this.Q===null) return openHead+'<div class="placeholder-msg">Mistake Details export not loaded.</div></div></div>';
     if(!total) return openHead+'<div class="placeholder-msg">No mistakes on record in this range.</div></div></div>';
 
-    var Q=this.Q;
-    function parseTenant(url){
-      if(!url) return null;
-      var m=/[?&]tenantId=([^&]+)/.exec(url);
-      if(!m) return null;
-      var val; try{ val=decodeURIComponent(m[1]); }catch(_){ val=m[1]; }
-      var us=val.lastIndexOf("_");
-      if(us<0) return {slug:val,id:val};
-      var idPart=val.slice(us+1), slugPart=val.slice(0,us);
-      if(!/^\d+$/.test(idPart)) return {slug:val,id:val};
-      return {slug:slugPart,id:idPart};
-    }
-    var prettySlug=(s)=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
-    var keyer;
-    if(dim==="type") keyer=r=>{ var v=Q.vars[r[F.VAR]]||"\u2014"; return {key:v,label:v}; };
-    else if(dim==="area") keyer=r=>{ var v=Q.areas[r[F.AREA]]||"\u2014"; return {key:v,label:v}; };
-    else if(dim==="restaurant") keyer=r=>{ var t=parseTenant((Q.url_prefix||"")+(r[F.URL]||"")); if(!t) return {key:"__unknown__",label:"Unknown / no order link"}; return {key:t.id,label:prettySlug(t.slug),sub:t.id}; };
-    else if(dim==="lead") keyer=r=>{ var v=this.S.teams[r[F.TEAM]]||"Unassigned"; return {key:v,label:v}; };
-    else if(dim==="am") keyer=r=>{ var v=this.amOf(this.S.teams[r[F.TEAM]])||"Unmapped"; return {key:v,label:v}; };
-    else if(dim==="analyst") keyer=r=>{ var v=Q.analysts[r[F.AN]]||"\u2014"; return {key:v,label:v}; };
-    else keyer=r=>{ var v=Q.dates[r[F.DATE]]||"\u2014"; return {key:v,label:v}; };
-
     var hasDiff=mrows.some(r=>r[F.DIFFCLO]===true||r[F.DIFFCLO]===false);
-    var buckets={};
-    mrows.forEach(r=>{
-      var kv=keyer(r);
-      var b=buckets[kv.key]||(buckets[kv.key]={label:kv.label,sub:kv.sub||null,count:0,proc:0,post:0});
-      b.count++;
-      if(hasDiff){ if(r[F.DIFFCLO]===true) b.proc++; else if(r[F.DIFFCLO]===false) b.post++; }
-    });
-    var list=Object.keys(buckets).map(k=>buckets[k]);
-    var CAP=30, shown;
-    if(dim==="day"){ list.sort((a,b)=>a.label<b.label?-1:1); shown=list.slice(Math.max(0,list.length-CAP)); }
-    else { list.sort((a,b)=>b.count-a.count); shown=list.slice(0,CAP); }
+    var list=this.errBuckets(mrows,dim,hasDiff);
+    var fullN=list.length;
+    var q=(this.sel.errSearch||"").trim().toLowerCase();
+    if(q) list=list.filter(function(b){ return String(b.label).toLowerCase().indexOf(q)!==-1 || (b.sub&&String(b.sub).toLowerCase().indexOf(q)!==-1); });
+    if(dim==="day") list.sort((a,b)=>a.label<b.label?-1:1);
+    else list.sort((a,b)=>b.count-a.count);
+
+    var noun=dimDef.noun, nounPl=noun+'s';
+    var toolsH='<div class="dim-tools">'
+      +'<input type="text" id="qa-errsearch" data-act="errsearch" placeholder="Search '+this.esc(dimDef.col.toLowerCase())+'…" value="'+this.esc(this.sel.errSearch||"")+'">'
+      +(q?'<button type="button" class="reset-btn" data-act="errsearchclear" title="Clear the search">Clear ✕</button>':'')
+      +'<span class="dim-tools-count">'+list.length.toLocaleString()+(q?' of '+fullN.toLocaleString():'')+' '+(list.length===1?noun:nounPl)+' in range</span>'
+      +'</div>';
+    if(!list.length) return openHead+toolsH+'<div class="placeholder-msg">No '+nounPl+' match “'+this.esc(this.sel.errSearch||"")+'”.</div></div></div>';
+
+    var BASE=this.errRowsBase();
+    var limit=this.errRowLimit(dim);
+    var shown=(dim==="day")?list.slice(Math.max(0,list.length-limit)):list.slice(0,limit);
     var mx=Math.max.apply(null,shown.map(b=>b.count).concat([1]));
+    var drill=this.sel.errDrill;
     var rowsH=shown.map(b=>{
       var share=total?(b.count/total*100):0;
       var w=(b.count/mx*100).toFixed(1);
-      var labelH=this.esc(b.label)+(b.sub?' <span class="dim-sub">#'+this.esc(b.sub)+'</span>':'');
-      var pp=hasDiff?(b.proc.toLocaleString()+' / '+b.post.toLocaleString()):'\u2014';
-      return '<tr><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
+      var on=!!(drill&&drill.dim===dim&&String(drill.key)===String(b.key));
+      var att=' data-act="errdrill" data-dim="'+dim+'" data-arg="'+this.esc(String(b.key))+'"';
+      var tip=' title="'+(on?'Hide the detail for':'See every mistake behind')+' this '+noun+'"';
+      var labelH='<button type="button" class="dim-drill'+(on?' active':'')+'"'+att+tip+'>'+this.esc(b.label)+(b.sub?' <span class="dim-sub">#'+this.esc(b.sub)+'</span>':'')+'</button>';
+      var cntH='<button type="button" class="dim-errs-btn'+(on?' active':'')+'"'+att+tip+'>'+b.count.toLocaleString()+'</button>';
+      var pp=hasDiff?(b.proc.toLocaleString()+' / '+b.post.toLocaleString()):'—';
+      return '<tr'+(on?' class="dim-row-on"':'')+'><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+cntH+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
     }).join('');
-    var colLabel=dims.filter(d=>d.key===dim)[0].col;
-    var capNote=list.length>shown.length?'<div class="dim-cap-note">Showing '+shown.length+' of '+list.length.toLocaleString()+(dim==="day"?' days (most recent)':' \u2014 sorted by error count')+'.</div>':'';
-    var restNote=dim==="restaurant"?'<div class="dim-cap-note">Restaurant name is the abbreviated tenant slug embedded in each order\u2019s link (may be truncated vs. the restaurant\u2019s full name) \u2014 the # is the exact tenant ID for a precise lookup. Restaurant type isn\u2019t available in the connected sheet.</div>':'';
-    var diffNote=hasDiff?'':'<div class="dim-cap-note">Processing vs. post-production isn\u2019t tracked in this portal\u2019s Mistake Details export, so the last column reads \u2014.</div>';
-    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
-    return openHead+table+capNote+restNote+diffNote+'</div></div>';
+    var expanded=shown.length>BASE;
+    var table='<div class="'+(expanded?'dim-scroll':'dim-xscroll')+'"><table class="tbl"><thead><tr><th>'+dimDef.col+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    var rest=list.length-shown.length;
+    var moreH='';
+    if(rest>0){
+      moreH='<div class="dim-more">'
+        +'<button type="button" class="dim-more-btn" data-act="errmore" data-dim="'+dim+'" data-arg="50">Show '+Math.min(50,rest).toLocaleString()+' more</button>'
+        +'<button type="button" class="dim-more-btn ghost" data-act="errall" data-dim="'+dim+'">Show all '+list.length.toLocaleString()+'</button>'
+        +(shown.length>BASE?'<button type="button" class="dim-more-btn ghost" data-act="errless" data-dim="'+dim+'">Collapse to top '+BASE+'</button>':'')
+        +'<span class="dim-cap-note" style="margin:0">Showing '+shown.length.toLocaleString()+' of '+list.length.toLocaleString()+(dim==="day"?' days (most recent)':' — sorted by error count')+'</span></div>';
+    } else if(shown.length>BASE){
+      moreH='<div class="dim-more">'
+        +'<button type="button" class="dim-more-btn ghost" data-act="errless" data-dim="'+dim+'">Collapse to top '+BASE+'</button>'
+        +'<span class="dim-cap-note" style="margin:0">Showing all '+list.length.toLocaleString()+' '+nounPl+(q?' that match the search':'')+' — scroll the list to browse</span></div>';
+    } else {
+      moreH='<div class="dim-cap-note">Showing all '+list.length.toLocaleString()+' '+nounPl+(dim==="day"?'':' — sorted by error count')+'.</div>';
+    }
+    var restNote=dim==="restaurant"?'<div class="dim-cap-note">Restaurant name is the abbreviated tenant slug embedded in each order’s link (may be truncated vs. the restaurant’s full name) — the # is the exact tenant ID for a precise lookup. Restaurant type isn’t available in the connected sheet.</div>':'';
+    var diffNote=hasDiff?'':'<div class="dim-cap-note">Processing vs. post-production isn’t tracked in this portal’s Mistake Details export, so the last column reads —.</div>';
+    return openHead+toolsH+table+moreH+restNote+diffNote+'</div></div>'+this.errDrillCard(mrows,dim,dimDef,total,hasDiff);
+  }
+
+  // Detail panel for a single value of the active dimension (an error type, a
+  // restaurant, a lead, ...): headline numbers, cross-tabs against every other
+  // dimension, and the individual mistakes with their order links.
+  errDrillCard(mrows,dim,dimDef,total,hasDiff){
+    var d=this.sel.errDrill;
+    if(!d||d.dim!==dim) return '';
+    var F=this.QF, Q=this.Q;
+    var keyer=this.errKeyer(dim), rows=[], label=null, sub=null;
+    for(var i=0;i<mrows.length;i++){
+      var kv=keyer(mrows[i]);
+      if(String(kv.key)!==String(d.key)) continue;
+      if(label===null){ label=kv.label; sub=kv.sub||null; }
+      rows.push(mrows[i]);
+    }
+    var closeH='<button type="button" class="reset-btn dim-drill-close" data-act="errdrillclose" title="Close this detail view">Close ✕</button>';
+    var titleH=this.esc(dimDef.col)+' · <b>'+this.esc(label==null?String(d.key):label)+'</b>'+(sub?' <span class="dim-sub">#'+this.esc(sub)+'</span>':'');
+    if(!rows.length) return '<div class="card" id="err-drill-anchor"><div class="card-head">'+titleH+closeH+'</div><div class="placeholder-msg">No mistakes for this '+dimDef.noun+' under the current filters.</div></div>';
+
+    var prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a);
+    var areaTag=(a)=>{ var p=prettyArea(a); return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc"; };
+    var proc=0, post=0, anSet={}, daySet={}, restSet={}, dmin=null, dmax=null;
+    for(var j=0;j<rows.length;j++){
+      var r=rows[j];
+      if(r[F.DIFFCLO]===true) proc++; else if(r[F.DIFFCLO]===false) post++;
+      anSet["k"+(Q.analysts[r[F.AN]]||"?")]=1;
+      var dt=Q.dates[r[F.DATE]];
+      daySet["k"+dt]=1;
+      if(dmin===null||dt<dmin) dmin=dt;
+      if(dmax===null||dt>dmax) dmax=dt;
+      var tn=this.parseTenantUrl((Q.url_prefix||"")+(r[F.URL]||""));
+      if(tn) restSet["k"+tn.id]=1;
+    }
+    var nDays=Object.keys(daySet).length;
+    var kpi='<div class="kpi-row" style="margin-bottom:18px">'
+      +'<div class="kpi"><div class="k-label">Mistakes</div><div class="k-val" style="color:var(--accent)">'+rows.length.toLocaleString()+'</div><div class="k-sub">'+(total?(rows.length/total*100).toFixed(1):'0.0')+'% of all mistakes in range</div></div>'
+      +'<div class="kpi"><div class="k-label">Processing / Post-prod</div><div class="k-val" style="font-size:21px">'+(hasDiff?proc.toLocaleString()+' / '+post.toLocaleString():'—')+'</div><div class="k-sub">'+(hasDiff?'caught while processing vs after production':'not tracked in this export')+'</div></div>'
+      +'<div class="kpi"><div class="k-label">People involved</div><div class="k-val">'+Object.keys(anSet).length.toLocaleString()+'</div><div class="k-sub">analysts · '+Object.keys(restSet).length.toLocaleString()+' restaurants</div></div>'
+      +'<div class="kpi"><div class="k-label">Days affected</div><div class="k-val">'+nDays.toLocaleString()+'</div><div class="k-sub">'+this.esc(dmin||'—')+' → '+this.esc(dmax||'—')+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Per active day</div><div class="k-val">'+(nDays?(rows.length/nDays).toFixed(1):'0')+'</div><div class="k-sub">mistakes / day</div></div>'
+      +'</div>';
+
+    var self=this;
+    var crossDims=[["type","Top error types"],["area","Mistake areas"],["analyst","Top analysts"],["restaurant","Top restaurants"],["lead","Top leads"],["am","Assistant managers"],["day","Busiest days"]];
+    var crossAct={analyst:"profile",lead:"teamname",am:"am"};
+    var miniH=crossDims.filter(c=>c[0]!==dim).map(function(c){
+      var sub2=self.errBuckets(rows,c[0],false).sort((a,b)=>b.count-a.count).slice(0,6);
+      if(!sub2.length) return '';
+      var items=sub2.map(b=>({label:String(b.label)+(b.sub?' #'+b.sub:''),value:b.count,disp:b.count.toLocaleString(),act:crossAct[c[0]]||null}));
+      return '<div class="drill-mini"><div class="drill-mini-t">'+c[1]+'</div>'+self.rankBars(items)+'</div>';
+    }).join('');
+    var grid=miniH?'<div class="drill-grid">'+miniH+'</div>':'';
+
+    var sorted=rows.slice().sort(function(a,b){ var da=Q.dates[a[F.DATE]], db=Q.dates[b[F.DATE]]; return da<db?1:da>db?-1:0; });
+    var cap=Math.max(1,this.sel.errDrillShow||100);
+    var page=sorted.slice(0,cap);
+    var showRest=dim!=="restaurant";
+    var showAn=dim!=="analyst";
+    var detailRows=page.map(function(r,i){
+      var org=r[F.DIFFCLO]===true?'<span class="tag tag-proc">Processing</span>':r[F.DIFFCLO]===false?'<span class="tag tag-pp">Post-prod</span>':'<span class="tag" style="background:var(--neutral-100);color:var(--muted)">—</span>';
+      var area=Q.areas[r[F.AREA]];
+      var anLogin=Q.analysts[r[F.AN]]||'';
+      var anH=showAn?'<td style="font-family:var(--font-body)">'+(anLogin?'<button type="button" class="team-link" data-act="profile" data-arg="'+self.esc(anLogin)+'">'+self.esc(anLogin)+'</button>':'—')+'</td>':'';
+      var restH='';
+      if(showRest){
+        var tn=self.parseTenantUrl((Q.url_prefix||"")+(r[F.URL]||""));
+        restH='<td>'+(tn?self.esc(self.prettyTenantSlug(tn.slug))+' <span class="dim-sub">#'+self.esc(tn.id)+'</span>':'—')+'</td>';
+      }
+      return '<tr><td class="r">'+(i+1)+'</td><td>'+self.esc(Q.dates[r[F.DATE]])+'</td>'+anH
+        +'<td><span class="'+areaTag(area)+'">'+self.esc(prettyArea(area))+'</span></td>'
+        +'<td style="font-family:var(--font-body)"><a class="order-link" href="'+self.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order ↗">'+self.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">↗</span></a></td>'
+        +'<td>'+org+'</td>'+restH
+        +'<td>'+self.esc(self.S.teams[r[F.TEAM]]||'—')+'</td>'
+        +'<td class="r">'+(r[F.LP]||'—')+'</td>'
+        +'<td style="font-family:var(--font-body)">'+self.esc(Q.statuses[r[F.ST]])+'</td></tr>';
+    }).join('');
+    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Status</th></tr></thead>';
+    var big=page.length>60;
+    var tableH='<div class="'+(big?'dim-scroll':'dim-xscroll')+'" style="margin-top:0"><table class="tbl">'+thead+'<tbody>'+detailRows+'</tbody></table></div>';
+    var left=sorted.length-page.length;
+    var footH=left>0
+      ? '<div class="note-strip">Showing '+page.length.toLocaleString()+' of '+sorted.length.toLocaleString()+' mistakes (newest first) — <button type="button" class="reset-btn" style="font-size:11px" data-act="errdrillmore" data-arg="200">show 200 more</button> · <button type="button" class="reset-btn" style="font-size:11px" data-act="errdrillmore" data-arg="all">show all '+sorted.length.toLocaleString()+'</button></div>'
+      : '<div class="note-strip">Showing all '+sorted.length.toLocaleString()+' mistakes behind this '+dimDef.noun+' — newest first · every variable links straight to the order.</div>';
+    return '<div class="card" id="err-drill-anchor"><div class="card-head">'+titleH+' — '+rows.length.toLocaleString()+' mistakes'+closeH+'</div>'
+      +'<div class="card-body" style="padding-bottom:6px">'+kpi+grid+'</div>'+tableH+footH+'</div>';
   }
 
 
@@ -1857,6 +2014,27 @@ class Component extends DCLogic {
 .qa .dim-cap-note{font-size:11.5px;color:var(--muted);margin-top:10px;}
 .qa .tbl-export-btn{margin-left:auto;font-size:11px;padding:4px 8px;white-space:nowrap;flex-shrink:0;}
 .qa .dim-sub{color:var(--muted);font-weight:600;font-size:11px;font-family:var(--font-num);}
+.qa .dim-drill{background:none;border:none;padding:0;font:inherit;font-weight:700;font-family:var(--font-body);color:var(--accent);cursor:pointer;text-align:left;border-bottom:1px dotted var(--accent);}
+.qa .dim-drill:hover{border-bottom-style:solid;}
+.qa .dim-drill.active{color:var(--text);border-bottom-style:solid;border-bottom-color:var(--text);}
+.qa .dim-errs-btn{background:none;border:none;padding:2px 7px;border-radius:7px;font:inherit;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:800;color:var(--accent);cursor:pointer;}
+.qa .dim-errs-btn:hover{background:var(--blue-50);text-decoration:underline;}
+.qa .dim-errs-btn.active{background:var(--accent);color:#fff;}
+.qa .dim-row-on td{background:var(--blue-50);}
+.qa .dim-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 0;}
+.qa .dim-tools input[type=text]{min-width:240px;}
+.qa .dim-tools-count{font-size:11.5px;color:var(--muted);font-weight:600;}
+.qa .dim-xscroll{overflow-x:auto;margin-top:14px;}
+.qa .dim-scroll{overflow:auto;max-height:62vh;margin-top:14px;border:1px solid var(--border);border-radius:10px;contain:content;}
+.qa .dim-scroll thead th{position:sticky;top:0;z-index:2;}
+.qa .dim-more{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;}
+.qa .dim-more-btn{border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:700;padding:8px 15px;border-radius:18px;cursor:pointer;font-family:var(--font-body);}
+.qa .dim-more-btn.ghost{background:var(--neutral-100);color:var(--text);}
+.qa .dim-more-btn:hover{filter:brightness(1.06);}
+.qa .dim-drill-close{margin-left:auto;flex-shrink:0;}
+.qa .drill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;}
+.qa .drill-mini{background:var(--neutral-50);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.qa .drill-mini-t{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:12px;}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
