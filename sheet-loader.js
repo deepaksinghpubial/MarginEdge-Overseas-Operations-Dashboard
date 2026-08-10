@@ -34,7 +34,7 @@
         date: "mistake_date", area: "mistake_area", variable: "variable",
         username: "analyst_login", team: "team_lead_login", lp: null,
         ent: "entered_value", clo: "closed_value", cur: "current_value",
-        st: "status", url: "order_url", org: null } }
+        st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
     },
     ipa: {
       daily: { tab: "IPA Productivity", cols: {
@@ -45,7 +45,7 @@
         date: "mistake_date", area: "mistake_area", variable: "variable",
         username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
         ent: "proposed_value", clo: "closed_value", cur: "current_value",
-        st: "task_type", url: "order_url", org: "flow_type" } }
+        st: "task_type", url: "order_url", org: "flow_type", diffClo: "differs_from_closed" } }
     }
   };
 
@@ -70,7 +70,8 @@
     return { mistake_date: row[m.date], mistake_area: row[m.area], variable: row[m.variable],
       analyst_login: row[m.username], team_lead_login: row[m.team],
       entered_value: m.ent ? row[m.ent] : "", closed_value: m.clo ? row[m.clo] : "",
-      current_value: m.cur ? row[m.cur] : "", status: m.st ? row[m.st] : "", order_url: m.url ? row[m.url] : "" };
+      current_value: m.cur ? row[m.cur] : "", status: m.st ? row[m.st] : "", order_url: m.url ? row[m.url] : "",
+      differs_from_closed: m.diffClo ? row[m.diffClo] : "" };
   }
 
   var cfg = CONFIG[TARGET] || CONFIG.legacy;
@@ -395,11 +396,18 @@
         var d = normDate(r[M.date]);
         if (loginIdx[u] == null || qdi[d] == null) return;
         var an = loginIdx[u];
+        var diffCloRaw = M.diffClo ? r[M.diffClo] : null;
+        var diffClo = (diffCloRaw === true || diffCloRaw === false) ? diffCloRaw
+          : (diffCloRaw == null || diffCloRaw === "") ? null
+          : /^true$/i.test(String(diffCloRaw).trim()) ? true
+          : /^false$/i.test(String(diffCloRaw).trim()) ? false
+          : null;
         qrecords.push([
           qdi[d], ai[r[M.area]] || 0, vi[r[M.variable]] || 0, an, analyst_team[an],
           M.lp ? (r[M.lp] || "") : "", M.ent ? (r[M.ent] || "") : "",
           M.clo ? (r[M.clo] || "") : "", M.cur ? (r[M.cur] || "") : "",
-          M.st ? (r[M.st] !== "" && r[M.st] != null && si[r[M.st]] != null ? si[r[M.st]] : -1) : -1, r[M.url] || "", M.org ? (r[M.org] || "") : ""
+          M.st ? (r[M.st] !== "" && r[M.st] != null && si[r[M.st]] != null ? si[r[M.st]] : -1) : -1, r[M.url] || "", M.org ? (r[M.org] || "") : "",
+          diffClo
         ]);
       });
       QA = { url_prefix: "", dates: qdates, areas: areas, vars: vars, statuses: statuses, analysts: analysts, records: qrecords };

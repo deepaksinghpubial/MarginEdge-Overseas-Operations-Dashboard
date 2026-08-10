@@ -50,7 +50,7 @@
 class Component extends DCLogic {
   rootRef = React.createRef();
   SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
-  QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11};
+  QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12};
   PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
     errorexplorer:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
@@ -583,7 +583,7 @@ class Component extends DCLogic {
     var mrows=this.Q?(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[]):null;
     var total=mrows?mrows.length:0;
     var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' \u2014 '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
-      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate.</div>'
+      +'<div class="dim-note">Pick a dimension to see where mistakes concentrate. The last column splits each row into errors caught during processing vs reported after production.</div>'
       +'<div class="dim-pills">'+pillsH+'</div>';
     if(this.Q===null) return openHead+'<div class="placeholder-msg">Mistake Details export not loaded.</div></div></div>';
     if(!total) return openHead+'<div class="placeholder-msg">No mistakes on record in this range.</div></div></div>';
@@ -610,11 +610,13 @@ class Component extends DCLogic {
     else if(dim==="analyst") keyer=r=>{ var v=Q.analysts[r[F.AN]]||"\u2014"; return {key:v,label:v}; };
     else keyer=r=>{ var v=Q.dates[r[F.DATE]]||"\u2014"; return {key:v,label:v}; };
 
+    var hasDiff=mrows.some(r=>r[F.DIFFCLO]===true||r[F.DIFFCLO]===false);
     var buckets={};
     mrows.forEach(r=>{
       var kv=keyer(r);
-      var b=buckets[kv.key]||(buckets[kv.key]={label:kv.label,sub:kv.sub||null,count:0});
+      var b=buckets[kv.key]||(buckets[kv.key]={label:kv.label,sub:kv.sub||null,count:0,proc:0,post:0});
       b.count++;
+      if(hasDiff){ if(r[F.DIFFCLO]===true) b.proc++; else if(r[F.DIFFCLO]===false) b.post++; }
     });
     var list=Object.keys(buckets).map(k=>buckets[k]);
     var CAP=30, shown;
@@ -625,13 +627,15 @@ class Component extends DCLogic {
       var share=total?(b.count/total*100):0;
       var w=(b.count/mx*100).toFixed(1);
       var labelH=this.esc(b.label)+(b.sub?' <span class="dim-sub">#'+this.esc(b.sub)+'</span>':'');
-      return '<tr><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td></tr>';
+      var pp=hasDiff?(b.proc.toLocaleString()+' / '+b.post.toLocaleString()):'\u2014';
+      return '<tr><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+b.count.toLocaleString()+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
     }).join('');
     var colLabel=dims.filter(d=>d.key===dim)[0].col;
     var capNote=list.length>shown.length?'<div class="dim-cap-note">Showing '+shown.length+' of '+list.length.toLocaleString()+(dim==="day"?' days (most recent)':' \u2014 sorted by error count')+'.</div>':'';
     var restNote=dim==="restaurant"?'<div class="dim-cap-note">Restaurant name is the abbreviated tenant slug embedded in each order\u2019s link (may be truncated vs. the restaurant\u2019s full name) \u2014 the # is the exact tenant ID for a precise lookup. Restaurant type isn\u2019t available in the connected sheet.</div>':'';
-    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
-    return openHead+table+capNote+restNote+'</div></div>';
+    var diffNote=hasDiff?'':'<div class="dim-cap-note">Processing vs. post-production isn\u2019t tracked in this portal\u2019s Mistake Details export, so the last column reads \u2014.</div>';
+    var table='<div style="overflow-x:auto;margin-top:14px"><table class="tbl"><thead><tr><th>'+colLabel+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    return openHead+table+capNote+restNote+diffNote+'</div></div>';
   }
 
 
@@ -1030,7 +1034,7 @@ class Component extends DCLogic {
         case "date": return Q.dates[r[F.DATE]]||"";
         case "area": return prettyArea(Q.areas[r[F.AREA]])||"";
         case "var": return Q.vars[r[F.VAR]]||"";
-        case "type": return r[F.ORG]===0?"Processing":"Post-prod";
+        case "type": return r[F.DIFFCLO]===true?"Processing":r[F.DIFFCLO]===false?"Post-prod":"\u2014";
         case "lp": return r[F.LP]||"";
         case "ent": return r[F.ENT]||"";
         case "clo": return r[F.CLO]||"";
@@ -1057,7 +1061,7 @@ class Component extends DCLogic {
     };
     var cap=this.sel.showAllMistakes?m.length:200;
     var rowsH=m.slice(0,cap).map((r,i)=>{
-      var org=r[F.ORG]===0?'<span class="tag tag-proc">Processing</span>':'<span class="tag tag-pp">Post-prod</span>';
+      var org=r[F.DIFFCLO]===true?'<span class="tag tag-proc">Processing</span>':r[F.DIFFCLO]===false?'<span class="tag tag-pp">Post-prod</span>':'<span class="tag" style="background:var(--neutral-100);color:var(--muted)">\u2014</span>';
       var area=Q.areas[r[F.AREA]];
       return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join("");
@@ -1323,7 +1327,7 @@ class Component extends DCLogic {
       var login=this.S.analysts[parseInt(this.sel.prAnalyst)], m=this.mistakesFor(login);
       if(m && m.length){ var Q=this.Q, F=this.QF; name="qa_mistakes_"+login;
         rows.push(["Date","Area","Variable","Type","Line pos","Entered","Closed","Current","Status","Order link"]);
-        m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.ORG]===0?"Processing":"Post-prod",r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
+        m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.DIFFCLO]===true?"Processing":r[F.DIFFCLO]===false?"Post-prod":"",r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
       } else { var D=this.SD, aIdx=parseInt(this.sel.prAnalyst); name="qa_dailyscores_"+login;
         rows.push(["Date","Productivity","Errors","Possible points","Error rate","Final score"]);
         rws.filter(r=>r[D.AN]===aIdx).sort((a,b)=>a[D.DATE]-b[D.DATE]).forEach(r=>rows.push([this.S.dates[r[D.DATE]],r[D.PROD],r[D.ERRS],r[D.PTS],r[D.ER],r[D.FS]]));
