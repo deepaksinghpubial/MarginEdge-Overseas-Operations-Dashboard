@@ -149,13 +149,25 @@
   // left alone and handled separately as a flat fallback total.
   var FR_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
   var frDateHeaderIso = function (h) {
-    var m = String(h == null ? "" : h).trim().match(/^(\d{1,2})\s+([A-Za-z]{3,9})[a-z]*\.?\s+(\d{4})$/);
-    if (!m) return null;
-    var mo = FR_MONTHS[m[2].slice(0, 3).toLowerCase()];
-    if (!mo) return null;
-    var d = +m[1];
-    if (d < 1 || d > 31) return null;
-    return m[3] + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
+    var s = String(h == null ? "" : h).trim();
+    var m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})[a-z]*\.?\s+(\d{4})$/);
+    if (m) {
+      var mo = FR_MONTHS[m[2].slice(0, 3).toLowerCase()];
+      var d = +m[1];
+      if (mo && d >= 1 && d <= 31) return m[3] + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
+    }
+    // Defensive fallback: if the Apps Script proxy is ever redeployed without
+    // the header-date-formatting fix, a real Date header cell serializes to
+    // JS's verbose default toString(), e.g. "Sat Aug 01 2026 00:00:00 GMT...".
+    // Recognize that shape too so per-day FR columns degrade gracefully
+    // instead of silently vanishing again.
+    var m2 = s.match(/^\w{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+\d{2}:\d{2}:\d{2}/);
+    if (m2) {
+      var mo2 = FR_MONTHS[m2[1].toLowerCase()];
+      var d2 = +m2[2];
+      if (mo2 && d2 >= 1 && d2 <= 31) return m2[3] + "-" + ("0" + mo2).slice(-2) + "-" + ("0" + d2).slice(-2);
+    }
+    return null;
   };
 
   function build(daily, mist, roleRows, locRows, teamRows, frRows) {

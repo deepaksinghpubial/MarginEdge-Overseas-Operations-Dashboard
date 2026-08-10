@@ -44,6 +44,14 @@
  *  this only works for spreadsheets you own or have at least view access to.
  *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
  *  before — this is fully backward compatible with existing calls.
+ *
+ *  BUGFIX (2026-08): FR Details' per-day columns ("1 Aug 2026", "2 Aug 2026",
+ *  ...) are real Date cells, not text. sheetInfo() was reading every header
+ *  with a blind String(h), which for a Date cell produces JS's verbose
+ *  default toString() (e.g. "Sat Aug 01 2026 00:00:00 GMT..."), not
+ *  "1 Aug 2026" — so the client's date-header parser never matched a single
+ *  column and every per-day Final Review count silently came back empty.
+ *  Date-typed headers are now formatted explicitly to match.
  * ============================================================================
  */
 
@@ -98,7 +106,16 @@ function doGet(e) {
     var scanRows = Math.min(5, lastRow);
     var scanValues = sh.getRange(1, 1, scanRows, lastCol).getValues();
     var hr = headerRowIndex(scanValues);
-    var headers = scanValues[hr].map(function (h) { return String(h).trim(); });
+    var headers = scanValues[hr].map(function (h) {
+      // A header can itself be a real Date cell, not just plain text — e.g.
+      // FR Details' per-day columns ("1 Aug 2026", "2 Aug 2026", ...). Format
+      // those explicitly; otherwise String(dateObj) falls through to JS's
+      // verbose default toString() (e.g. "Sat Aug 01 2026 00:00:00 GMT..."),
+      // which the client's "1 Aug 2026" header parser doesn't recognize, so
+      // every per-day FR column was silently being dropped.
+      if (h instanceof Date) return Utilities.formatDate(h, tz, "d MMM yyyy");
+      return String(h).trim();
+    });
     var totalRows = Math.max(0, lastRow - 1 - hr); // data rows count, excludes banner/header rows
     return { lastRow: lastRow, lastCol: lastCol, hr: hr, headers: headers, totalRows: totalRows };
   }
