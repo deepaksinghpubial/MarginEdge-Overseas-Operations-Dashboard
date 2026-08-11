@@ -232,7 +232,7 @@ class Component extends DCLogic {
       var edim=t.dataset.dim||this.sel.errDim||"area";
       var cur=this.sel.errDrill;
       if(cur&&cur.dim===edim&&String(cur.key)===String(arg)){ this.sel.errDrill=null; this.renderContent(); }
-      else { this.sel.errDrill={dim:edim,key:arg}; this.sel.errDrillShow=100; this.renderContent(); this.scrollToErrDrill(); }
+      else { this.sel.errDim=edim; this.sel.errDrill={dim:edim,key:arg}; this.sel.errDrillShow=100; this.renderContent(); this.scrollToErrDrill(); }
     }
     else if(act==="errdrillclose"){ this.sel.errDrill=null; this.renderContent(); }
     else if(act==="errdrillmore"){ this.sel.errDrillShow=(arg==="all")?1e9:((this.sel.errDrillShow||100)+(parseInt(arg,10)||200)); this.renderContent(); }
@@ -352,7 +352,14 @@ class Component extends DCLogic {
   }
   rankBars(items, colorFn){
     var mx=Math.max.apply(null,items.map(i=>i.value).concat([0.0001]));
-    return items.map((it,i)=>'<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><span style="width:20px;text-align:right;font-size:11px;color:var(--muted);font-family:var(--font-num)">'+(i+1)+'</span><span style="width:118px;flex-shrink:0;font-size:12px;font-family:var(--font-body);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+this.esc(it.label)+'">'+(it.act?'<button class="team-link" data-act="'+it.act+'" data-arg="'+this.esc(it.label)+'">'+this.esc(it.label)+'</button>':this.esc(it.label))+'</span><div style="flex:1;height:8px;background:var(--neutral-200);border-radius:4px;overflow:hidden"><div class="me-grow" style="width:'+(it.value/mx*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+(colorFn?colorFn(it):"var(--accent)")+'"></div></div><span style="width:52px;text-align:right;font-size:12px;font-family:var(--font-num);font-weight:700;color:'+(colorFn?colorFn(it):"var(--text)")+'">'+it.disp+'</span></div>').join("");
+    return items.map((it,i)=>{
+      var argVal=this.esc(it.key!=null?it.key:it.label);
+      var dimAttr=it.dim!=null?' data-dim="'+this.esc(it.dim)+'"':'';
+      var actAttr=it.act?' data-act="'+it.act+'"'+dimAttr+' data-arg="'+argVal+'"':'';
+      var labelH=it.act?'<button type="button" class="team-link"'+actAttr+'>'+this.esc(it.label)+'</button>':this.esc(it.label);
+      var valH=it.act?'<button type="button" class="rankbar-val-btn"'+actAttr+'>'+it.disp+'</button>':it.disp;
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><span style="width:20px;text-align:right;font-size:11px;color:var(--muted);font-family:var(--font-num)">'+(i+1)+'</span><span style="width:118px;flex-shrink:0;font-size:12px;font-family:var(--font-body);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+this.esc(it.label)+'">'+labelH+'</span><div style="flex:1;height:8px;background:var(--neutral-200);border-radius:4px;overflow:hidden"><div class="me-grow" style="width:'+(it.value/mx*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+(colorFn?colorFn(it):"var(--accent)")+'"></div></div><span style="width:52px;text-align:right;font-size:12px;font-family:var(--font-num);font-weight:700;color:'+(colorFn?colorFn(it):"var(--text)")+'">'+valH+'</span></div>';
+    }).join("");
   }
   dualBar(title,aName,aV,bName,bV,opts){
     opts=opts||{}; var hb=opts.higherBetter, mx=Math.max(Math.abs(aV),Math.abs(bV),0.0001)*1.15;
@@ -750,14 +757,28 @@ class Component extends DCLogic {
 
     var self=this;
     var crossDims=[["type","Top error types"],["area","Mistake areas"],["analyst","Top analysts"],["restaurant","Top restaurants"],["lead","Top leads"],["am","Assistant managers"],["day","Busiest days"]];
-    var crossAct={analyst:"profile",lead:"teamname",am:"am"};
+    // Every value here is clickable (name and count alike) and jumps straight
+    // to that specific slice of errors -- switches the active dimension pill
+    // to the mini-card's own dimension and opens the drill panel for it.
     var miniH=crossDims.filter(c=>c[0]!==dim).map(function(c){
       var sub2=self.errBuckets(rows,c[0],false).sort((a,b)=>b.count-a.count).slice(0,6);
       if(!sub2.length) return '';
-      var items=sub2.map(b=>({label:String(b.label)+(b.sub?' #'+b.sub:''),value:b.count,disp:b.count.toLocaleString(),act:crossAct[c[0]]||null}));
+      var items=sub2.map(b=>({label:String(b.label)+(b.sub?' #'+b.sub:''),key:b.key,dim:c[0],value:b.count,disp:b.count.toLocaleString(),act:"errdrill"}));
       return '<div class="drill-mini"><div class="drill-mini-t">'+c[1]+'</div>'+self.rankBars(items)+'</div>';
     }).join('');
-    var grid=miniH?'<div class="drill-grid">'+miniH+'</div>':'';
+    // Specialists are a distinct role from Analysts but share the "analyst"
+    // dimension's key space, so this card reuses that dimension (pre-filtered
+    // to Specialist-role logins) and is hidden while already drilled by analyst.
+    var specH='';
+    if(dim!=="analyst"){
+      var specRows=rows.filter(r=>self.roleOf(Q.analysts[r[F.AN]])==="Specialist");
+      var specBk=self.errBuckets(specRows,"analyst",false).sort((a,b)=>b.count-a.count).slice(0,6);
+      if(specBk.length){
+        var specItems=specBk.map(b=>({label:b.label,key:b.key,dim:"analyst",value:b.count,disp:b.count.toLocaleString(),act:"errdrill"}));
+        specH='<div class="drill-mini"><div class="drill-mini-t">Top specialists</div>'+self.rankBars(specItems)+'</div>';
+      }
+    }
+    var grid=(miniH||specH)?'<div class="drill-grid">'+miniH+specH+'</div>':'';
 
     var sorted=rows.slice().sort(function(a,b){ var da=Q.dates[a[F.DATE]], db=Q.dates[b[F.DATE]]; return da<db?1:da>db?-1:0; });
     var cap=Math.max(1,this.sel.errDrillShow||100);
@@ -780,9 +801,12 @@ class Component extends DCLogic {
         +'<td>'+org+'</td>'+restH
         +'<td>'+self.esc(self.S.teams[r[F.TEAM]]||'—')+'</td>'
         +'<td class="r">'+(r[F.LP]||'—')+'</td>'
+        +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.ENT])||'—')+'</td>'
+        +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.CLO])||'—')+'</td>'
+        +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.CUR])||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+self.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join('');
-    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Status</th></tr></thead>';
+    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead>';
     var big=page.length>60;
     var tableH='<div class="'+(big?'dim-scroll':'dim-xscroll')+'" style="margin-top:0"><table class="tbl">'+thead+'<tbody>'+detailRows+'</tbody></table></div>';
     var left=sorted.length-page.length;
@@ -797,12 +821,22 @@ class Component extends DCLogic {
   exportTableEl(table, headEl){
     var ths=table.querySelectorAll("thead th");
     var headers=Array.prototype.map.call(ths,function(th){ return th.textContent.replace(/[\u25B2\u25BC]/g,"").trim().replace(/\s+/g," "); });
+    // Order-link cells only carry the variable name in visible text (the URL
+    // lives in the <a href>), so it silently dropped out of the CSV. Add it
+    // as its own trailing column whenever any row in this table has a link.
+    var hasLinks=!!table.querySelector("tbody a.order-link");
+    if(hasLinks) headers=headers.concat(["Order link"]);
     var rows=[];
     var trs=table.querySelectorAll("tbody tr");
     for(var i=0;i<trs.length;i++){
       var tds=trs[i].querySelectorAll("td");
       if(!tds.length) continue;
-      rows.push(Array.prototype.map.call(tds,function(td){ return td.textContent.trim().replace(/\s+/g," "); }));
+      var row=Array.prototype.map.call(tds,function(td){ return td.textContent.trim().replace(/\s+/g," "); });
+      if(hasLinks){
+        var lk=trs[i].querySelector("a.order-link");
+        row.push(lk?lk.href:"");
+      }
+      rows.push(row);
     }
     var titleTxt="table";
     if(headEl){
@@ -2033,6 +2067,8 @@ class Component extends DCLogic {
 .qa .drill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;}
 .qa .drill-mini{background:var(--neutral-50);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
 .qa .drill-mini-t{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:12px;}
+.qa .rankbar-val-btn{background:none;border:none;padding:0;font:inherit;font-family:inherit;color:inherit;cursor:pointer;}
+.qa .rankbar-val-btn:hover{text-decoration:underline;}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .qa .kpi .k-val{font-size:26px;font-weight:800;font-family:var(--font-num);font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text);}
