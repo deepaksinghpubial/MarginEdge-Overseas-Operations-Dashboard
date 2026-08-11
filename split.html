@@ -1170,7 +1170,7 @@ class Component extends DCLogic {
     }).join("");
     var frTh=showFr?'<th class="r">Final Review count</th>':'';
     var fpTh=showFr?'<th class="r">Final Points after considering FR counts</th>':'';
-    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Points</th><th class="r">Error rate</th><th class="r">Final score</th>'+frTh+fpTh+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Total Possible Error Points</th><th class="r">Error rate</th><th class="r">Final score</th>'+frTh+fpTh+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
   }
 
 
