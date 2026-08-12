@@ -45,6 +45,20 @@
  *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
  *  before — this is fully backward compatible with existing calls.
  *
+ *  PAYLOAD PROJECTION (2026-08): the Mistakes tabs are the slowest thing the
+ *  dashboards load. This endpoint used to return EVERY column of a tab, as one
+ *  JSON object per row — which repeats every header name on every single row —
+ *  even though the dashboard reads only ~12 of those columns. On a tab with
+ *  tens of thousands of rows that is megabytes of duplicated key names plus
+ *  columns nobody uses, and it costs time twice: once serializing here, once
+ *  parsing in the browser.
+ *    &cols=a|b|c   -> return only these columns (others are skipped)
+ *    &fmt=rows     -> return {c:[headers], r:[[v,v,...],...]} instead of
+ *                     [{header:v,...},...], dropping the repeated key names
+ *  Both are OPTIONAL and additive. Omit them and the response is byte-for-byte
+ *  what it always was, so an older client keeps working against a new
+ *  deployment and a new client keeps working against an older deployment.
+ *
  *  ERROR REVIEWS (2026-08): the dashboards can now record a review verdict
  *  against an individual mistake. Reviews are appended to an "Error Reviews"
  *  tab in this workbook (created automatically on the first save, with its
@@ -216,6 +230,9 @@ function doGet(e) {
   }
 
   var only = p.tabs ? p.tabs.split(/[|,]/).map(function (s) { return s.trim(); }) : null;
+  // Optional column projection. Pipe-separated so column names may contain commas.
+  var wantCols = p.cols ? p.cols.split("|").map(function (s) { return s.trim(); }).filter(String) : null;
+  var wantRows = String(p.fmt || "") === "rows";
   var offset = p.offset ? parseInt(p.offset, 10) : 0;   // 0-based data-row offset (excludes header)
   var limit = p.limit ? parseInt(p.limit, 10) : 0;      // 0 = all remaining rows
 
@@ -236,24 +253,46 @@ function doGet(e) {
     var remaining = info.lastRow - firstDataRow1based + 1;
     var numRows = limit > 0 ? Math.min(remaining, limit) : remaining;
 
+    // Which sheet columns to actually emit, resolved once per tab rather than
+    // per row. When a projection is requested, unknown names are simply absent
+    // from the result instead of erroring, so a client asking for an optional
+    // column (e.g. one portal has line_item_position and the other does not)
+    // degrades to "no data" exactly as it did before projection existed.
+    var emitIdx = [], emitNames = [];
+    for (var hc = 0; hc < headers.length; hc++) {
+      if (!headers[hc]) continue;
+      if (wantCols && wantCols.indexOf(headers[hc]) === -1) continue;
+      emitIdx.push(hc); emitNames.push(headers[hc]);
+    }
+    var dateFlag = emitNames.map(function (h) { return isDateHeader(h); });
+
     var rows = [];
     if (numRows > 0) {
       var values = sh.getRange(firstDataRow1based, 1, numRows, info.lastCol).getValues();
       for (var r = 0; r < values.length; r++) {
-        var o = {}, blank = true;
-        for (var c = 0; c < headers.length; c++) {
-          if (!headers[c]) continue;
-          var v = values[r][c];
-          if (v instanceof Date || isDateHeader(headers[c])) {
-            v = isoDate(v);
+        var src = values[r], blank = true;
+        if (wantRows) {
+          var arr = new Array(emitIdx.length);
+          for (var e = 0; e < emitIdx.length; e++) {
+            var av = src[emitIdx[e]];
+            if (av instanceof Date || dateFlag[e]) av = isoDate(av);
+            arr[e] = av;
+            if (av !== "" && av !== null) blank = false;
           }
-          o[headers[c]] = v;
-          if (v !== "" && v !== null) blank = false;
+          if (!blank) rows.push(arr);
+        } else {
+          var o = {};
+          for (var e2 = 0; e2 < emitIdx.length; e2++) {
+            var ov = src[emitIdx[e2]];
+            if (ov instanceof Date || dateFlag[e2]) ov = isoDate(ov);
+            o[emitNames[e2]] = ov;
+            if (ov !== "" && ov !== null) blank = false;
+          }
+          if (!blank) rows.push(o);
         }
-        if (!blank) rows.push(o);
       }
     }
-    out[name] = rows;
+    out[name] = wantRows ? { c: emitNames, r: rows } : rows;
   });
 
   return send({ tabs: out, tabNames: Object.keys(out), totals: totals, offset: offset, limit: limit, generated: new Date().toISOString() });

@@ -534,12 +534,41 @@
   // warnings in bulk, lower this back down rather than raising PAGE further.
   var PAGE_CONCURRENCY = 8;
 
-  function fetchPaged(tab, onProgress, sheetId) {
+  // The Mistakes tabs dominate load time, so ask the proxy for ONLY the columns
+  // we read, in the compact rows-of-arrays shape. See apps-script-proxy.gs.
+  function mistCols(cfgCols) {
+    var seen = {}, out = [];
+    Object.keys(cfgCols).forEach(function (k) {
+      var name = cfgCols[k];
+      if (!name || seen[name]) return;
+      seen[name] = 1; out.push(name);
+    });
+    return out;
+  }
+  // Accepts either response shape and always hands back array-of-objects, so
+  // build() is untouched and an older Apps Script deployment still works:
+  //   new: {c:[...headers...], r:[[v,...],...]}
+  //   old: [{header:v,...},...]
+  function normShape(payload) {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;                 // old deployment
+    var cols = payload.c || [], rws = payload.r || [];
+    var out = new Array(rws.length);
+    for (var i = 0; i < rws.length; i++) {
+      var src = rws[i], o = {};
+      for (var c = 0; c < cols.length; c++) o[cols[c]] = src[c];
+      out[i] = o;
+    }
+    return out;
+  }
+
+  function fetchPaged(tab, onProgress, sheetId, cols) {
+    var proj = (cols && cols.length) ? "&fmt=rows&cols=" + encodeURIComponent(cols.join("|")) : "";
     function fetchOne(offset) {
-      var q = "tabs=" + encodeURIComponent(tab) + "&offset=" + offset + "&limit=" + PAGE;
+      var q = "tabs=" + encodeURIComponent(tab) + "&offset=" + offset + "&limit=" + PAGE + proj;
       function attempt(n) {
         return jsonpFull(q, 120000, sheetId).then(function (j) {
-          var rows = (j.tabs && j.tabs[tab]) || [];
+          var rows = normShape(j.tabs && j.tabs[tab]);
           var tot = (j.totals && j.totals[tab] != null) ? j.totals[tab] : null;
           return { rows: rows, total: tot };
         }).catch(function (e) {
@@ -707,16 +736,16 @@
         window.__QA_LOAD_PROGRESS = { loaded: loaded, total: total };
       };
       if (TARGET === "split") {
-        mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); }, sheetId)
+        mistPromise = fetchPaged(CONFIG.legacy.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] legacy mistakes " + l + "/" + t + " …"); }, sheetId, mistCols(CONFIG.legacy.mistakes.cols))
           .then(function (lm) {
             window.__QA_LOAD_PROGRESS = null;
-            return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); }, sheetId)
+            return fetchPaged(CONFIG.ipa.mistakes.tab, function (l, t) { reportProgress(l, t); console.log("[sheet-loader] ipa mistakes " + l + "/" + t + " …"); }, sheetId, mistCols(CONFIG.ipa.mistakes.cols))
               .then(function (im) {
                 return lm.map(function (r) { return normMist(r, "legacy"); }).concat(im.map(function (r) { return normMist(r, "ipa"); }));
               });
           });
       } else {
-        mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { reportProgress(loaded, total); console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); }, sheetId);
+        mistPromise = fetchPaged(cfg.mistakes.tab, function (loaded, total) { reportProgress(loaded, total); console.log("[sheet-loader] mistakes " + loaded + "/" + total + " …"); }, sheetId, mistCols(cfg.mistakes.cols));
       }
       return mistPromise.then(function (mist) {
         if (mySeq !== loadSeq) return;

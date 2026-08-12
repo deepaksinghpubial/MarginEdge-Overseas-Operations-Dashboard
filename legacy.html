@@ -710,7 +710,7 @@ class Component extends DCLogic {
     var openHead='<div class="card"><div class="card-head">Error Explorer'+(mrows?' — '+total.toLocaleString()+' mistakes':'')+fx+'</div><div class="card-body">'
       +'<div class="dim-note">Pick a dimension to see where mistakes concentrate, then click any row — its name or its error count — to open every mistake behind it. The last column splits each row into errors caught during processing vs reported after production.</div>'
       +'<div class="dim-pills">'+pillsH+'</div>';
-    if(this.Q===null) return openHead+'<div class="placeholder-msg">Mistake Details export not loaded.</div></div></div>';
+    if(this.Q===null) return openHead+'<div class="placeholder-msg">'+this.mistLoadingMsg("the mistake details")+'</div></div></div>';
     if(!total) return openHead+'<div class="placeholder-msg">No mistakes on record in this range.</div></div></div>';
 
     var hasDiff=mrows.some(r=>r[F.DIFFCLO]===true||r[F.DIFFCLO]===false);
@@ -870,6 +870,31 @@ class Component extends DCLogic {
       +'<div class="card-body" style="padding-bottom:6px">'+kpi+grid+'</div>'+tableH+footH+'</div>';
   }
 
+
+  // The Mistakes export is the last and largest thing to load, so these views
+  // are empty for a while on a cold load. Saying "not loaded" made that look
+  // like a failure; report progress instead, and keep repainting until it
+  // arrives so the user does not have to guess whether to refresh.
+  mistLoadingMsg(what){
+    if(window.__QA_LOADING){
+      var p=window.__QA_LOAD_PROGRESS;
+      var pctTxt=(p&&p.total)?" — "+Math.round(p.loaded/p.total*100)+"% ("+p.loaded.toLocaleString()+" of "+p.total.toLocaleString()+" rows)":"";
+      this.pollMistLoad();
+      return '<span class="mist-loading">Loading '+what+' from the Google Sheet'+pctTxt+'…</span>';
+    }
+    return what.charAt(0).toUpperCase()+what.slice(1)+' could not be loaded from the Google Sheet. Reload the page to try again.';
+  }
+  pollMistLoad(){
+    if(this._mistPoll) return;
+    var self=this;
+    this._mistPoll=setInterval(function(){
+      if(!window.__QA_LOADING){ clearInterval(self._mistPoll); self._mistPoll=null; self.renderContent(); return; }
+      var el=self.rootRef.current&&self.rootRef.current.querySelector(".mist-loading");
+      if(!el) return;
+      var p=window.__QA_LOAD_PROGRESS;
+      el.textContent="Loading from the Google Sheet"+((p&&p.total)?" — "+Math.round(p.loaded/p.total*100)+"% ("+p.loaded.toLocaleString()+" of "+p.total.toLocaleString()+" rows)":"")+"…";
+    },400);
+  }
 
   // Progressive row rendering for the big leaderboards.
   //
@@ -1080,7 +1105,7 @@ class Component extends DCLogic {
     var F=this.QF, Q=this.Q;
     var fx=this.fxInline("Error Genuineness Review","Every mistake a reviewer has marked genuine or ingenuine, from the workbook’s “Error Reviews” tab. Percentages below are against the mistakes currently in scope (location, role and date filters above).");
     var head='<div class="card"><div class="card-head">Error Genuineness Review'+fx+'</div><div class="card-body">';
-    if(this.Q===null) return head+'<div class="placeholder-msg">Mistake Details export not loaded, so there is nothing to review yet.</div></div></div>';
+    if(this.Q===null) return head+'<div class="placeholder-msg">'+this.mistLoadingMsg("the mistake details")+'</div></div></div>';
 
     var mrows=this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[];
     var total=mrows.length;
@@ -1593,7 +1618,7 @@ class Component extends DCLogic {
 
   mistakeDetail(login){
     var F=this.QF, m=this.mistakesFor(login);
-    if(m===null) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail</div><div class="placeholder-msg">Mistake Details export (order links) not loaded.</div></div>';
+    if(m===null) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail</div><div class="placeholder-msg">'+this.mistLoadingMsg("the mistake details (order links)")+'</div></div>';
     if(!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
     var Q=this.Q, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
     var fk=this.sel.mistFilterKind, fv=this.sel.mistFilterValue, full=m;
@@ -2471,6 +2496,7 @@ class Component extends DCLogic {
 /* ---- leaderboard row styling (was inline on every row; 250 rows x ~300
        repeated chars each made the page ~30% bigger than it needed to be) ---- */
 .qa .spk{display:block;width:80px;height:22px;}
+.qa .mist-loading{color:var(--muted);font-weight:600;}
 .qa .spk polyline{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
 .qa .tr{font-weight:700;}
 .qa .tr-f{color:var(--muted);}
