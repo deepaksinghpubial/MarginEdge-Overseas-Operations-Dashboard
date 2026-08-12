@@ -721,6 +721,7 @@
       if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); window.__QA_LOADING = false; return null; }
       CORE.daily = daily;
       CORE.role = tabs[SHARED.role.tab] || []; CORE.loc = tabs[SHARED.location.tab] || []; CORE.team = tabs[SHARED.teams.tab] || []; CORE.fr = tabs[SHARED.fr.tab] || [];
+      window.__QA_LOAD_FAILED = null;   // this attempt reached the sheet
       CORE.reviews = tabs[SHARED.reviews.tab] || [];   // absent until the first review is saved
       var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr, CORE.reviews);
       window.SCORES = g.SCORES; window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
@@ -776,7 +777,18 @@
       if (mySeq !== loadSeq) return;
       window.__QA_LOADING = false;
       window.__QA_LOAD_PROGRESS = null;
-      console.warn("[sheet-loader] could not load sheet (" + e.message + ") — using bundled data.");
+      // Falling back to bundled data silently is dangerous on a dashboard people
+      // read numbers off: the bundled sample has its OWN (older) dates, so the
+      // page looks fine while showing figures that are not live. Record the
+      // failure so the UI can say so, and log something actionable.
+      window.__QA_LOAD_FAILED = { message: e && e.message ? e.message : String(e), url: WEBAPP_URL, at: new Date().toISOString() };
+      console.warn("[sheet-loader] could not load sheet (" + window.__QA_LOAD_FAILED.message + ") — SHOWING BUNDLED SAMPLE DATA, not live figures.");
+      console.warn("[sheet-loader] endpoint tried: " + WEBAPP_URL);
+      console.warn("[sheet-loader] 'JSONP failed to load' means the request never returned JS — usually the /exec URL is wrong " +
+        "(creating a NEW deployment issues a NEW URL; use Manage deployments > edit > New version to keep this one), " +
+        "the deployment's 'Who has access' is too restrictive, or you are not signed in to the right Google account in this browser. " +
+        "Open the URL above in this browser: if you do not see JSON, the dashboard cannot read it either.");
+      if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
     });
   }
 

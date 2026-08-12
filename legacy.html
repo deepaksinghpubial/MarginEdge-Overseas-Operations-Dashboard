@@ -236,6 +236,7 @@ class Component extends DCLogic {
       this.renderContent();
     }
     else if(act==="errdim"){ this.sel.errDim=arg; this.sel.errSearch=""; this.sel.errDrill=null; this.sel.errDrillShow=100; this.renderContent(); }
+    else if(act==="reloadlive"){ location.reload(); }
     else if(act==="rowmore"||act==="rowall"||act==="rowless"){
       var rkey=t.dataset.key||"lb";
       this.sel.rowShow=this.sel.rowShow||{};
@@ -458,10 +459,11 @@ class Component extends DCLogic {
   renderContent(){
     var el=this._q("#qa-content"); if(!el) return;
     var rws=this.srows(), p=this.st.page, html="";
-    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    var failB=this.liveFailBanner();
+    if(p==="roles"){ el.innerHTML=failB+this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=failB+this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="spprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="anprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
     if(p==="summary") html=this.pageSummary(rws);
     else if(p==="overview") html=this.pageOverview(rws);
     else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
@@ -477,7 +479,7 @@ class Component extends DCLogic {
     else if(p==="profile") html=this.pageProfile(rws);
     else if(p==="coaching") html=this.pageCoaching(rws);
     else if(p==="compare") html=this.pageCompare(rws);
-    el.innerHTML=html;
+    el.innerHTML=failB+html;
     this.enhanceKpiFx(el);
     this.enhanceTableExport(el); this.enhanceReviewModal();
     if(this._caret!=null){ var s=this._q(this._caretErr?"#qa-errsearch":this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
@@ -870,6 +872,28 @@ class Component extends DCLogic {
       +'<div class="card-body" style="padding-bottom:6px">'+kpi+grid+'</div>'+tableH+footH+'</div>';
   }
 
+
+  // Shown at the top of every page when the live sheet could not be reached.
+  // Without this the dashboard silently renders the BUNDLED sample data, which
+  // has its own older dates, so the page looks perfectly healthy while the
+  // numbers on it are not real — the worst possible failure mode for something
+  // people make decisions from.
+  liveFailBanner(){
+    var f=window.__QA_LOAD_FAILED;
+    if(!f) return "";
+    var hint=/failed to load/i.test(f.message)
+      ? 'The request never came back. Usually the Apps Script <b>/exec URL is wrong</b> — creating a <i>new deployment</i> issues a <i>new URL</i>, so use <b>Manage deployments → edit (pencil) → Version: New version</b> to keep the existing one. It can also mean the deployment’s “Who has access” is too restrictive, or this browser profile isn’t signed in to the right Google account.'
+      : /timeout/i.test(f.message)
+      ? 'The sheet took too long to respond. It may be a transient Apps Script quota limit — wait a minute and reload.'
+      : 'Reason reported: '+this.esc(f.message)+'.';
+    return '<div class="live-fail"><div class="live-fail-t">⚠ These are bundled sample figures, not your live data</div>'
+      +'<div class="live-fail-b">The Google Sheet could not be loaded, so the dashboard fell back to the sample data built into the page. '
+      +'<b>Do not read these numbers as current</b> — the dates shown are the sample’s own.</div>'
+      +'<div class="live-fail-b">'+hint+'</div>'
+      +'<div class="live-fail-b"><a href="'+this.esc(f.url)+'" target="_blank" rel="noopener">Open the endpoint in this browser ↗</a> '
+      +'— if that doesn’t show JSON, the dashboard can’t read it either. '
+      +'<button type="button" class="reset-btn" data-act="reloadlive">Retry now</button></div></div>';
+  }
 
   // The Mistakes export is the last and largest thing to load, so these views
   // are empty for a while on a cold load. Saying "not loaded" made that look
@@ -2497,6 +2521,10 @@ class Component extends DCLogic {
        repeated chars each made the page ~30% bigger than it needed to be) ---- */
 .qa .spk{display:block;width:80px;height:22px;}
 .qa .mist-loading{color:var(--muted);font-weight:600;}
+.qa .live-fail{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid var(--red);border-radius:8px;padding:14px 16px;margin-bottom:18px;font-family:var(--font-body);}
+.qa .live-fail-t{font-weight:800;font-size:13.5px;color:#991b1b;margin-bottom:6px;}
+.qa .live-fail-b{font-size:12.5px;color:#7f1d1d;line-height:1.55;margin-top:5px;}
+.qa .live-fail-b a{color:#991b1b;font-weight:700;}
 .qa .spk polyline{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
 .qa .tr{font-weight:700;}
 .qa .tr-f{color:var(--muted);}
