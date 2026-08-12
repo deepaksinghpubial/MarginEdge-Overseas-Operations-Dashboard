@@ -1238,12 +1238,20 @@ class Component extends DCLogic {
         b.n++;
         if(/^genuine/i.test(row.verdict||"")) b.gen++; else b.ing++;
       });
-      var glist=Object.keys(g).map(k=>g[k]).sort((a,b)=>b.errs-a.errs);
+      // Show only rows that actually have a reviewed error. Listing everyone
+      // buried the handful of real reviews under hundreds of 0 / 0.0% rows.
+      // Pass 1 still counts every error, because Total errors is the
+      // denominator that makes Reviewed % mean anything.
+      var gAll=Object.keys(g).map(k=>g[k]);
+      var glist=gAll.filter(function(x){ return x.n>0; })
+        .sort(function(a,b){ return (b.n-a.n) || (b.errs-a.errs); });
+      var hidden=gAll.length-glist.length;
       var colName=scopeDef.col||"Group";
       var isPeople=(scopeDef.kind==="role");
+      var noun=isPeople?(this.esc(scopeDef.role)+'s'):this.esc(colName);
       var title=isPeople
-        ? this.esc(scopeDef.role)+'s \u2014 '+glist.length.toLocaleString()+' with errors in range'
-        : 'Errors by '+this.esc(colName)+' \u2014 '+glist.length.toLocaleString();
+        ? this.esc(scopeDef.role)+'s with reviewed errors \u2014 '+glist.length.toLocaleString()
+        : 'Errors by '+this.esc(colName)+' \u2014 '+glist.length.toLocaleString()+' with reviews';
       breakdown='<div class="card"><div class="card-head">'+title+'</div>'
         +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>'+this.esc(colName)+'</th>'
         +'<th class="r">Total errors</th><th class="r">Reviewed</th><th class="r">Reviewed %</th>'
@@ -1262,7 +1270,9 @@ class Component extends DCLogic {
             +'<td class="r">'+pc(x.gen,x.n)+'</td><td class="r">'+pc(x.ing,x.n)+'</td></tr>';
         }).join('')
         +'</tbody></table></div>'
-        +'<div class="dim-cap-note">Sorted by total errors. <b>Reviewed %</b> shows how much of each row has actually been checked \u2014 a low figure means the verdict split beside it is based on a small sample.</div></div>';
+        +'<div class="dim-cap-note">Only rows with at least one reviewed error are listed'
+        +(hidden>0?', so '+hidden.toLocaleString()+' '+noun.toLowerCase()+' with errors but no review yet '+(hidden===1?'is':'are')+' hidden':'')
+        +'. Sorted by number reviewed. <b>Total errors</b> is the full count for that row, so <b>Reviewed %</b> shows how much of it has actually been checked \u2014 a low figure means the verdict split beside it rests on a small sample.</div></div>';
     }
 
     var sorted=inScope.slice().sort(function(a,b){ return (a.review_date<b.review_date)?1:(a.review_date>b.review_date)?-1:0; });
