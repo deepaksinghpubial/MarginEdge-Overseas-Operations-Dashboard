@@ -45,6 +45,16 @@
  *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
  *  before — this is fully backward compatible with existing calls.
  *
+ *  NARROW READS (2026-08): getValues() was always called across the FULL width
+ *  of the sheet, even when only the first few columns were wanted. That matters
+ *  more than it looks: Legacy Productivity carries computed columns
+ *  (median_error_rate, median_final_score, delta_from_median) whose values are
+ *  identical on every row, i.e. formulas. Pulling them into a read makes Google
+ *  evaluate them, for every row, on every request — which can take minutes on a
+ *  full month of data and shows up in the dashboard as "the sheet took too long
+ *  to respond". The read is now limited to the span of columns actually asked
+ *  for, so trailing computed columns are never touched at all.
+ *
  *  SHARED CACHE (2026-08): this web app runs as its owner, so EVERY viewer's
  *  request spends the owner's quota — and Apps Script allows only 30
  *  simultaneous executions per user, shared across everyone. With ~15 people
@@ -355,9 +365,19 @@ function doGet(e) {
     }
     var dateFlag = emitNames.map(function (h) { return isDateHeader(h); });
 
+    // Read only as far right as we actually need. Columns beyond the last
+    // requested one are never fetched, so computed/formula columns sitting at
+    // the end of a tab cost nothing.
+    var readWidth = info.lastCol;
+    if (wantCols && emitIdx.length) {
+      var maxIdx = 0;
+      for (var mi = 0; mi < emitIdx.length; mi++) if (emitIdx[mi] > maxIdx) maxIdx = emitIdx[mi];
+      readWidth = maxIdx + 1;
+    }
+
     var rows = [];
     if (numRows > 0) {
-      var values = sh.getRange(firstDataRow1based, 1, numRows, info.lastCol).getValues();
+      var values = sh.getRange(firstDataRow1based, 1, numRows, readWidth).getValues();
       for (var r = 0; r < values.length; r++) {
         var src = values[r], blank = true;
         if (wantRows) {

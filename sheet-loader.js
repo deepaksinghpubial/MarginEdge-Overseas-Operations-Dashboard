@@ -553,8 +553,18 @@
       document.head.appendChild(s);
     });
   }
-  function jsonp(tabList, timeoutMs, sheetId) {
-    return jsonpFull("tabs=" + encodeURIComponent(tabList.join(",")), timeoutMs, sheetId).then(function (j) { return (j && j.tabs) || {}; });
+  function jsonp(tabList, timeoutMs, sheetId, cols) {
+    // Passing cols lets the proxy narrow BOTH the payload and the range it
+    // reads, which keeps computed columns at the right-hand end of a tab
+    // (median_*, delta_*) from being evaluated on every request.
+    var q = "tabs=" + encodeURIComponent(tabList.join(","));
+    if (cols && cols.length) q += "&fmt=rows&cols=" + encodeURIComponent(cols.join("|"));
+    return jsonpFull(q, timeoutMs, sheetId).then(function (j) {
+      var tabs = (j && j.tabs) || {};
+      var out = {};
+      Object.keys(tabs).forEach(function (k) { out[k] = normShape(tabs[k]); });
+      return out;
+    });
   }
 
   // ---- Saving an error review -----------------------------------------------
@@ -779,10 +789,32 @@
     window.__QA_LOAD_PROGRESS = null;
     var CORE = {};
     var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab, SHARED.reviews.tab];
-    var phase1Tabs = (TARGET === "split"
+    // Phase 1 is two requests on purpose. A column projection applies to every
+    // tab in a request, so the productivity tabs and the reference tabs cannot
+    // share one: FR Details has one column PER DAY (the list is not fixed) and
+    // the others are read whole, so projecting them would strip what we need.
+    // Splitting lets the big productivity tabs be read narrowly — skipping the
+    // computed median_*/delta_* columns entirely — while the small reference
+    // tabs come back complete.
+    var dailyTabs = (TARGET === "split")
       ? [CONFIG.legacy.daily.tab, CONFIG.ipa.daily.tab]
-      : [cfg.daily.tab]).concat(detailTabs);
-    return jsonp(phase1Tabs, 120000, sheetId).then(function (tabs) {
+      : [cfg.daily.tab];
+    var dailyCols = [];
+    (TARGET === "split" ? [CONFIG.legacy.daily.cols, CONFIG.ipa.daily.cols] : [cfg.daily.cols])
+      .forEach(function (cset) {
+        Object.keys(cset).forEach(function (k) {
+          var n = cset[k];
+          if (n && dailyCols.indexOf(n) === -1) dailyCols.push(n);
+        });
+      });
+    return Promise.all([
+      jsonp(dailyTabs, 120000, sheetId, dailyCols),   // narrow: skips computed columns
+      jsonp(detailTabs, 120000, sheetId)              // whole: small reference tabs
+    ]).then(function (parts) {
+      var tabs = {};
+      parts.forEach(function (p) { Object.keys(p).forEach(function (k) { tabs[k] = p[k]; }); });
+      return tabs;
+    }).then(function (tabs) {
       if (mySeq !== loadSeq) return; // a newer source switch superseded this load
       var daily;
       if (TARGET === "split") {
