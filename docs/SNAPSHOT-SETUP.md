@@ -1,0 +1,162 @@
+# Dashboard data snapshots — setup and daily running
+
+**Who this is for:** the operations team. No coding needed. You will copy one
+file, paste four settings, and click "Deploy" once. After that it runs itself.
+
+---
+
+## Why we changed this
+
+The dashboard used to call Google Sheets every time someone opened it. Google
+only allows **30 things to run at once for one account**, and because the script
+runs as its owner, *everyone shares that one allowance*. With ~50 people opening
+the dashboard each morning, that limit was being hit and the dashboard started
+failing — sometimes showing sample figures instead of real ones.
+
+Now a job reads the sheet **once a day** and saves the result as a file. The
+dashboard reads that file. Fifty people cost exactly the same as one, and nobody
+opening the dashboard can touch the sheet at all.
+
+```
+Google Sheet  ──(once a day, 7am)──>  Apps Script  ──>  JSON file in GitHub
+                                                              │
+                                                    Netlify publishes it
+                                                              │
+                                                   everyone's dashboard
+```
+
+---
+
+## Part 1 — Create the GitHub token (5 minutes, once)
+
+The job needs permission to save the file into GitHub.
+
+1. Go to **github.com** → click your photo (top right) → **Settings**
+2. Scroll to the bottom of the left menu → **Developer settings**
+3. **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
+4. Fill in:
+   - **Token name:** `dashboard-snapshot`
+   - **Expiration:** 1 year *(put a reminder in your calendar to redo this)*
+   - **Repository access:** choose **Only select repositories**, then pick
+     `MarginEdge-Overseas-Operations-Dashboard`
+   - **Permissions** → **Repository permissions** → find **Contents** → set it to
+     **Read and write**. Leave everything else alone.
+5. Click **Generate token** and **copy it now** — GitHub only shows it once.
+
+> This token can only write files in that one repository. It cannot read the
+> Google Sheet, touch other repos, or change any settings.
+
+---
+
+## Part 2 — Install the script (10 minutes, once)
+
+1. Open the **live Google Sheet**.
+2. **Extensions** → **Apps Script**.
+3. In the file list on the left, click **+** → **Script**, and name it
+   `snapshot-generator`.
+4. Open `tools/snapshot-generator.gs` from the repository, copy **all** of it,
+   and paste it into that new file (replacing anything already there).
+5. Click the **save** icon.
+
+### Now add the four settings
+
+6. Click the **gear icon** (⚙ Project Settings) in the left menu.
+7. Scroll to **Script Properties** → **Add script property**. Add these:
+
+   | Property | Value |
+   | --- | --- |
+   | `GITHUB_TOKEN` | the token you copied in Part 1 |
+   | `GITHUB_REPO` | `deepaksinghpubial/MarginEdge-Overseas-Operations-Dashboard` |
+   | `GITHUB_BRANCH` | `main` |
+   | `DRIVE_FOLDER_ID` | *(optional)* a Drive folder ID to keep a spare copy in |
+
+8. Click **Save script properties**.
+
+### Test it before automating
+
+9. Go back to the **code** (`< >` icon), pick **`dryRunSnapshot`** from the
+   function dropdown at the top, and click **Run**.
+   - The first time, Google asks for permission. Click **Review permissions** →
+     choose your account → **Advanced** → **Go to (unsafe)** → **Allow**.
+     *(This warning is normal for your own scripts.)*
+   - Open **Execution log** at the bottom. You should see a line per tab with
+     row counts, and no `WARNING:` lines.
+   - `dryRunSnapshot` does **not** write to GitHub, so nothing can break.
+10. Happy with the log? Now run **`runSnapshotNow`**. This does the real thing.
+    The log should end with `Published to GitHub`.
+11. Check GitHub: `data/current.json` and `data/manifest.json` should exist, and
+    Netlify should show a fresh deploy a minute later.
+
+### Turn on the daily schedule
+
+12. Pick **`installDailyTrigger`** from the dropdown → **Run**. That's it — it
+    now runs every morning around 7am.
+    - To change the time: **clock icon** (Triggers) in the left menu → pencil on
+      the trigger → pick a different hour.
+    - **Set it to run *after* the Redash update lands**, otherwise it snapshots
+      yesterday's numbers.
+
+---
+
+## Part 3 — Every month (2 minutes)
+
+When a month finishes and before ops clears the live sheet for the new month:
+
+1. Apps Script → pick **`archiveMonth`** → but first change the month in the
+   code call, or simpler: use the **Execution** approach below.
+2. Easiest way: in the editor, temporarily change the top of `archiveMonth` test
+   call — or ask whoever maintains the dashboard to run:
+   `archiveMonth("2026-08")` with the month you are closing.
+3. That saves `data/2026-08.json` and adds **August 2026** to the dashboard's
+   month dropdown permanently.
+
+After that, ops clears the live sheet as usual. The next daily run picks up the
+new month automatically.
+
+---
+
+## Daily running — what to check
+
+Nothing, normally. If someone reports stale numbers:
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| Dashboard shows **"Updated 2 d ago"** in amber | The daily job hasn't run | Apps Script → **Executions** (left menu) → look for a failed `dailySnapshot` |
+| Red banner: **"bundled sample figures"** | The data file could not be loaded at all | Check Netlify deployed, then run `runSnapshotNow` by hand |
+| Log says `WARNING: tab "X" not found` | A tab was renamed in the sheet | Rename it back, or tell the dashboard maintainer the new name |
+| Log says `missing expected column(s)` | A column header changed | Same — the header names must match exactly |
+| GitHub write fails with `401`/`403` | The token expired or was revoked | Redo Part 1 and update `GITHUB_TOKEN` |
+
+To force an update right now: Apps Script → **`runSnapshotNow`** → **Run**.
+Or, in the dashboard, click the **↻** button next to the data selector.
+
+---
+
+## What people see in the dashboard
+
+- **Updated 3 h ago** next to the data picker — how old the figures are. Turns
+  amber with a ⚠ if the job hasn't run for more than a day and a half.
+- A **month dropdown** listing the current month plus every archived month.
+- The dashboard **re-checks for new data every 5 minutes**, so when the daily job
+  publishes, open dashboards pick it up without anyone reloading.
+- If the data file is briefly unavailable (e.g. mid-deploy), the dashboard keeps
+  showing the last copy it loaded rather than going blank.
+
+---
+
+## The tabs that get copied
+
+Nine tabs, because that is what the dashboards read:
+
+`Legacy Productivity` · `Legacy Mistakes` · `IPA Productivity` ·
+`IPA Mistakes` · `Role Details` · `Location Details` ·
+`Team Details - Legacy & IPA` · `FR Details` · `Error Reviews`
+
+**Not copied:** `Team Summary` and `Dashboard Summary`. The dashboard calculates
+those figures itself from the tabs above, so copying them would just make the
+file bigger. If you ever want them included, add a line to the `TABS` list at the
+top of `snapshot-generator.gs`.
+
+Only the columns the dashboard actually uses are copied from the two Mistakes
+tabs. That is deliberate — those tabs carry extra columns which would otherwise
+be downloaded by every viewer, every day, for nothing.

@@ -1,0 +1,327 @@
+{
+  "schema": 1,
+  "month": "2026-08",
+  "label": "August 2026",
+  "lastUpdated": "2026-08-12T18:00:00+05:30",
+  "timezone": "Asia/Kolkata",
+  "sourceSheetId": "MOCKSHEET",
+  "generator": "snapshot-generator v1",
+  "counts": {
+    "legacyProductivity": 4,
+    "legacyMistakes": 4,
+    "ipaProductivity": 4,
+    "ipaMistakes": 1,
+    "roleDetails": 4,
+    "locationDetails": 4,
+    "teamDetails": 1,
+    "frDetails": 2,
+    "errorReviews": 0,
+    "totalRows": 24
+  },
+  "warnings": [],
+  "data": {
+    "legacyProductivity": {
+      "cols": [
+        "analyst_login",
+        "team_lead_login",
+        "completed_date",
+        "productivity_score",
+        "total_errors",
+        "total_possible_error_points",
+        "error_rate",
+        "final_score"
+      ],
+      "rows": [
+        [
+          "sultanariya",
+          "nisha",
+          "2026-08-01",
+          300,
+          5,
+          2500,
+          0.002,
+          290
+        ],
+        [
+          "sultanariya",
+          "nisha",
+          "2026-08-04",
+          301,
+          5,
+          2500,
+          0.002,
+          290
+        ],
+        [
+          "sultanariya",
+          "nisha",
+          "2026-08-05",
+          302,
+          5,
+          2500,
+          0.002,
+          290
+        ],
+        [
+          "komalverma",
+          "nisha",
+          "2026-08-01",
+          320,
+          6,
+          2510,
+          0.0024,
+          310
+        ]
+      ]
+    },
+    "legacyMistakes": {
+      "cols": [
+        "mistake_date",
+        "mistake_area",
+        "variable",
+        "analyst_login",
+        "team_lead_login",
+        "entered_value",
+        "closed_value",
+        "current_value",
+        "status",
+        "order_url",
+        "differs_from_closed"
+      ],
+      "rows": [
+        [
+          "2026-08-01",
+          "LINE_ITEM",
+          "UNIT_PRICE",
+          "sultanariya",
+          "nisha",
+          "2.5",
+          "0.25",
+          "0.25",
+          "INITIAL_REVIEW",
+          "orders/o0?tenantId=ralphbrenn_1280",
+          true
+        ],
+        [
+          "2026-08-04",
+          "LINE_ITEM",
+          "UNIT_PRICE",
+          "komalverma",
+          "nisha",
+          "2.5",
+          "0.25",
+          "0.25",
+          "INITIAL_REVIEW",
+          "orders/o1?tenantId=ralphbrenn_1281",
+          false
+        ],
+        [
+          "2026-08-05",
+          "LINE_ITEM",
+          "UNIT_PRICE",
+          "bhardwajkhushbu",
+          "nisha",
+          "2.5",
+          "0.25",
+          "0.25",
+          "INITIAL_REVIEW",
+          "orders/o2?tenantId=ralphbrenn_1282",
+          true
+        ],
+        [
+          "2026-08-01",
+          "LINE_ITEM",
+          "UNIT_PRICE",
+          "meenu",
+          "nisha",
+          "2.5",
+          "0.25",
+          "0.25",
+          "INITIAL_REVIEW",
+          "orders/o3?tenantId=ralphbrenn_1283",
+          false
+        ]
+      ]
+    },
+    "ipaProductivity": {
+      "cols": [
+        "analyst_login",
+        "team_lead_login",
+        "completed_date",
+        "productivity_score",
+        "total_tasks",
+        "error_rate",
+        "final_score"
+      ],
+      "rows": [
+        [
+          "sultanariya",
+          "arun",
+          "2026-08-04",
+          200,
+          900,
+          0.004,
+          198
+        ],
+        [
+          "komalverma",
+          "arun",
+          "2026-08-04",
+          201,
+          900,
+          0.004,
+          199
+        ],
+        [
+          "bhardwajkhushbu",
+          "arun",
+          "2026-08-04",
+          202,
+          900,
+          0.004,
+          200
+        ],
+        [
+          "meenu",
+          "arun",
+          "2026-08-04",
+          203,
+          900,
+          0.004,
+          201
+        ]
+      ]
+    },
+    "ipaMistakes": {
+      "cols": [
+        "mistake_date",
+        "mistake_area",
+        "variable",
+        "analyst_login",
+        "team_lead_login",
+        "line_item_position",
+        "proposed_value",
+        "closed_value",
+        "current_value",
+        "task_type",
+        "order_url",
+        "flow_type",
+        "differs_from_closed"
+      ],
+      "rows": [
+        [
+          "2026-08-04",
+          "SINGLE_VARIABLE",
+          "INVOICE_TOTAL",
+          "meenu",
+          "arun",
+          3,
+          "180",
+          "360",
+          "360",
+          "INITIAL_REVIEW",
+          "orders/x1?tenantId=hutch_4891",
+          "standard",
+          false
+        ]
+      ]
+    },
+    "roleDetails": {
+      "cols": [
+        "username",
+        "designation",
+        "Allocated Team Lead",
+        "Allocated Asst Manager"
+      ],
+      "rows": [
+        [
+          "sultanariya",
+          "Analyst",
+          "Nisha Kashyap",
+          "Romana Akter Liza"
+        ],
+        [
+          "komalverma",
+          "Analyst",
+          "Nisha Kashyap",
+          "Romana Akter Liza"
+        ],
+        [
+          "bhardwajkhushbu",
+          "Specialist",
+          "Nisha Kashyap",
+          "Romana Akter Liza"
+        ],
+        [
+          "meenu",
+          "Specialist, IPA",
+          "Arun Kumar",
+          "Harjaspreet Singh"
+        ]
+      ]
+    },
+    "locationDetails": {
+      "cols": [
+        "username",
+        "location"
+      ],
+      "rows": [
+        [
+          "sultanariya",
+          "Chandigarh"
+        ],
+        [
+          "komalverma",
+          "Dhaka"
+        ],
+        [
+          "bhardwajkhushbu",
+          "Chandigarh"
+        ],
+        [
+          "meenu",
+          "Dhaka"
+        ]
+      ]
+    },
+    "teamDetails": {
+      "cols": [
+        "Legacy Team Names",
+        "IPA Team Names"
+      ],
+      "rows": [
+        [
+          "nisha",
+          "arun"
+        ]
+      ]
+    },
+    "frDetails": {
+      "cols": [
+        "User",
+        "Final Review",
+        "1 Aug 2026",
+        "4 Aug 2026"
+      ],
+      "rows": [
+        [
+          "bhardwajkhushbu",
+          120,
+          60,
+          60
+        ],
+        [
+          "meenu",
+          80,
+          40,
+          40
+        ]
+      ]
+    },
+    "errorReviews": {
+      "cols": [],
+      "rows": []
+    }
+  },
+  "_note": "EXAMPLE ONLY. The real data/current.json is generated daily by tools/snapshot-generator.gs and is much larger. Committed so the shape is reviewable and the dashboard has something to load before the first real run."
+}

@@ -17,6 +17,67 @@
   // ---- CONFIG ---------------------------------------------------------------
   var WEBAPP_URL = "https://script.google.com/a/macros/marginedge.com/s/AKfycby2M4d01zsjdBAw9FmiLFf7BYLPAM3aDptxOeZyHw86yJ5wttDCKjaBIKaqZtVopW9aSQ/exec";
 
+  // ---- STATIC SNAPSHOT TRANSPORT -------------------------------------------
+  // Preferred data path. A daily job (tools/snapshot-generator.gs) writes
+  // data/current.json into the repo, so the dashboards read a file from
+  // Netlify's CDN instead of calling Apps Script. That removes the shared
+  // 30-simultaneous-execution ceiling entirely: 50 viewers cost the same as 1,
+  // and nothing a viewer does can reach the sheet or its quota.
+  //
+  // If the snapshot is missing (not generated yet) the loader falls back to the
+  // old live-sheet path automatically, so this can be deployed before the
+  // Apps Script side is ready without breaking anything.
+  var SNAP = {
+    manifest: "data/manifest.json",
+    current: "data/current.json",
+    // Friendly snapshot key -> the sheet tab name the rest of this file expects.
+    map: {
+      legacyProductivity: "Legacy Productivity",
+      legacyMistakes: "Legacy Mistakes",
+      ipaProductivity: "IPA Productivity",
+      ipaMistakes: "IPA Mistakes",
+      roleDetails: "Role Details",
+      locationDetails: "Location Details",
+      teamDetails: "Team Details - Legacy & IPA",
+      frDetails: "FR Details",
+      errorReviews: "Error Reviews"
+    }
+  };
+  var REFRESH_MS = 5 * 60 * 1000;   // re-check the snapshot every 5 minutes
+
+  function fetchJSON(url, timeoutMs) {
+    // Cache-busted so a refresh cannot be served a stale copy by the browser or
+    // an intermediate proxy; Netlify sets long cache headers on static assets.
+    var u = url + (url.indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now();
+    if (typeof fetch !== "function") return Promise.reject(new Error("fetch unavailable"));
+    var ctl = (typeof AbortController === "function") ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs || 30000) : null;
+    return fetch(u, ctl ? { signal: ctl.signal } : undefined).then(function (r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }, function (e) { if (timer) clearTimeout(timer); throw e; });
+  }
+
+  // Snapshot {cols, rows} -> the array-of-objects keyed by tab name that
+  // build() already consumes, so nothing downstream changes.
+  function snapshotToTabs(snap) {
+    var tabs = {};
+    var data = (snap && snap.data) || {};
+    Object.keys(SNAP.map).forEach(function (k) {
+      var blockName = SNAP.map[k], block = data[k];
+      if (!block || !block.cols) { tabs[blockName] = []; return; }
+      var cols = block.cols, rows = block.rows || [], out = new Array(rows.length);
+      for (var i = 0; i < rows.length; i++) {
+        var src = rows[i], o = {};
+        for (var c = 0; c < cols.length; c++) o[cols[c]] = src[c];
+        out[i] = o;
+      }
+      tabs[blockName] = out;
+    });
+    return tabs;
+  }
+
   var SHARED = {
     role:     { tab: "Role Details",     user: "username", designation: "designation", lead: "Allocated Team Lead", am: "Allocated Asst Manager" },
     location: { tab: "Location Details", user: "username", loc: "location" },
@@ -634,6 +695,8 @@
     live: { label: "Live Dashboard Data", sheetId: null },
     archive_jul2026: { label: "Archive \u2014 Jul 2026", sheetId: "1uCFShcJrAG41WU50z-VAFaxucM1k3GbXR44vpuqTMdk" }
   };
+  // Default so the picker has something before the manifest arrives; the
+  // snapshot manifest replaces this with the real month list once loaded.
   window.__QA_SOURCES = SOURCES;
   window.__QA_ACTIVE_SOURCE_KEY = "live";
   window.__QA_LOADING = false;
@@ -828,8 +891,181 @@
     runLoad(src.sheetId, key, true);
   };
 
-  if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); } else {
-    console.log("[sheet-loader] target=" + TARGET + " — loading from sheet …");
-    runLoad(null, "live");
+  // ---- SNAPSHOT-FIRST STARTUP ----------------------------------------------
+  // Try the static snapshot; only if that is unavailable do we call Apps Script.
+  var snapMonths = null;      // manifest entries, once loaded
+  var snapActive = null;      // month key currently displayed
+
+  function applySnapshot_(snap, monthKey) {
+    var tabs = snapshotToTabs(snap);
+    var daily;
+    if (TARGET === "split") {
+      daily = (tabs[CONFIG.legacy.daily.tab] || []).map(function (r) { return normDaily(r, "legacy"); })
+        .concat((tabs[CONFIG.ipa.daily.tab] || []).map(function (r) { return normDaily(r, "ipa"); }));
+    } else {
+      daily = tabs[cfgFor(TARGET).daily.tab] || [];
+    }
+    if (!daily.length) throw new Error("snapshot has no productivity rows for target=" + TARGET);
+
+    var mist;
+    if (TARGET === "split") {
+      mist = (tabs[CONFIG.legacy.mistakes.tab] || []).map(function (r) { return normMist(r, "legacy"); })
+        .concat((tabs[CONFIG.ipa.mistakes.tab] || []).map(function (r) { return normMist(r, "ipa"); }));
+    } else {
+      mist = tabs[cfgFor(TARGET).mistakes.tab] || [];
+    }
+
+    var g = build(daily, mist, tabs[SHARED.role.tab] || [], tabs[SHARED.location.tab] || [],
+                  tabs[SHARED.teams.tab] || [], tabs[SHARED.fr.tab] || [], tabs[SHARED.reviews.tab] || []);
+    window.SCORES = g.SCORES; window.QA_DATA = g.QA_DATA;
+    window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
+    window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS;
+    window.__QA_LOAD_FAILED = null;
+    window.__QA_LOADING = false;
+    window.__QA_LOAD_PROGRESS = null;
+    window.__QA_SNAPSHOT = {
+      lastUpdated: snap.lastUpdated || null,
+      month: snap.month || monthKey || null,
+      label: snap.label || null,
+      counts: snap.counts || null,
+      warnings: snap.warnings || []
+    };
+    snapActive = snap.month || monthKey || null;
+    if (snap.warnings && snap.warnings.length) {
+      console.warn("[snapshot] generator reported: " + snap.warnings.join(" | "));
+    }
+    console.log("[snapshot] loaded " + (snap.label || snapActive) + " — " +
+      g.SCORES.records.length.toLocaleString() + " analyst-days, " +
+      (g.QA_DATA ? g.QA_DATA.records.length.toLocaleString() + " mistakes" : "no mistakes") +
+      ", generated " + snap.lastUpdated);
+    if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
   }
+
+  function cfgFor(t) { return CONFIG[t] || CONFIG.legacy; }
+
+  function loadSnapshot(file, monthKey) {
+    window.__QA_LOADING = true;
+    return fetchJSON(file, 45000).then(function (snap) {
+      applySnapshot_(snap, monthKey);
+      lsSet("snap_" + (snap.month || monthKey || "current"), { v: SNAPSHOT_VERSION, ts: Date.now(), snap: snap });
+      return true;
+    });
+  }
+
+  // Month dropdown is driven by the manifest, so adding a month needs no code
+  // change — the generator writes it and the dropdown picks it up.
+  function loadManifest() {
+    return fetchJSON(SNAP.manifest, 15000).then(function (m) {
+      if (!m || !m.months || !m.months.length) throw new Error("manifest has no months");
+      snapMonths = m.months;
+      var src = {};
+      m.months.forEach(function (mo) {
+        src["snap_" + mo.key] = { label: mo.label + (mo.live ? " (current)" : ""), snapshot: mo.file, month: mo.key };
+      });
+      window.__QA_SOURCES = src;
+      window.__QA_ACTIVE_SOURCE_KEY = "snap_" + (m.current || m.months[0].key);
+      return m;
+    });
+  }
+
+  window.__QA_LOAD_SOURCE = function (key, opts) {
+    // Snapshot months first; fall through to the legacy sheet-based sources.
+    var snapSrc = (window.__QA_SOURCES || {})[key];
+    if (snapSrc && snapSrc.snapshot) {
+      window.__QA_ACTIVE_SOURCE_KEY = key;
+      console.log("[snapshot] switching to " + snapSrc.label);
+      loadSnapshot(snapSrc.snapshot, snapSrc.month).catch(function (e) {
+        window.__QA_LOAD_FAILED = { message: "snapshot " + snapSrc.file + " — " + e.message, url: snapSrc.snapshot, at: new Date().toISOString() };
+        console.warn("[snapshot] could not load " + snapSrc.snapshot + ": " + e.message);
+        if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+      });
+      return;
+    }
+    var src = SOURCES[key];
+    if (!src) return;
+    window.__QA_ACTIVE_SOURCE_KEY = key;
+    console.log("[sheet-loader] switching data source -> " + src.label);
+    runLoad(src.sheetId, key, opts && opts.fresh);
+  };
+
+  window.__QA_REFRESH = function () {
+    var key = window.__QA_ACTIVE_SOURCE_KEY || "live";
+    var snapSrc = (window.__QA_SOURCES || {})[key];
+    if (snapSrc && snapSrc.snapshot) {
+      console.log("[snapshot] manual refresh");
+      loadSnapshot(snapSrc.snapshot, snapSrc.month).catch(function (e) {
+        console.warn("[snapshot] refresh failed, keeping what is on screen: " + e.message);
+      });
+      return;
+    }
+    var src = SOURCES[key] || {};
+    try { delete MEM_CACHE[key]; } catch (e) { MEM_CACHE[key] = null; }
+    try { localStorage.removeItem(LS_PREFIX + key); } catch (e) {}
+    console.log("[sheet-loader] manual refresh -> re-reading " + key + " (bypassing the 60s script cache)");
+    runLoad(src.sheetId, key, true);
+  };
+
+  // Poll for a newer snapshot. Cheap: a ~2KB manifest read, and the month file
+  // is only refetched when lastUpdated actually changes.
+  function startAutoRefresh() {
+    setInterval(function () {
+      if (document.hidden) return;              // don't poll background tabs
+      fetchJSON(SNAP.manifest, 15000).then(function (m) {
+        if (!m || !m.months) return;
+        var key = window.__QA_ACTIVE_SOURCE_KEY || "";
+        var want = null;
+        m.months.forEach(function (mo) { if ("snap_" + mo.key === key) want = mo; });
+        if (!want) return;
+        var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
+        if (have && want.lastUpdated && want.lastUpdated === have) return;   // unchanged
+        console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");
+        loadSnapshot(want.file, want.key).catch(function (e) {
+          console.warn("[snapshot] auto-refresh failed, keeping current view: " + e.message);
+        });
+      }).catch(function () { /* offline or deploying — try again next tick */ });
+    }, REFRESH_MS);
+  }
+
+  function bootData() {
+    loadManifest().then(function (m) {
+      var cur = null;
+      m.months.forEach(function (mo) { if (mo.key === (m.current || m.months[0].key)) cur = mo; });
+      cur = cur || m.months[0];
+      return loadSnapshot(cur.file, cur.key);
+    }).then(function () {
+      startAutoRefresh();
+    }).catch(function (e) {
+      // Snapshot path unavailable. Serve the last good copy if we have one, then
+      // fall back to the live sheet so the dashboard still works during the
+      // transition (or if a snapshot job fails).
+      console.warn("[snapshot] unavailable (" + e.message + ") — trying cached copy, then the live sheet.");
+      var cached = null;
+      try {
+        // localStorage.length / .key(i) is the standard enumeration API;
+        // Object.keys(localStorage) happens to work in browsers but is not
+        // guaranteed and silently returns nothing in stricter environments.
+        for (var i = 0; i < localStorage.length; i++) {
+          var lk = localStorage.key(i);
+          if (!lk || lk.indexOf(LS_PREFIX + "snap_") !== 0) continue;
+          var obj = JSON.parse(localStorage.getItem(lk));
+          if (obj && obj.snap && (!cached || obj.ts > cached.ts)) cached = obj;
+        }
+      } catch (e2) {}
+      if (cached) {
+        try {
+          applySnapshot_(cached.snap, cached.snap.month);
+          console.warn("[snapshot] showing the last snapshot saved in this browser (" + cached.snap.lastUpdated + ").");
+          startAutoRefresh();
+          return;
+        } catch (e3) { console.warn("[snapshot] cached copy unusable: " + e3.message); }
+      }
+      if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); return; }
+      window.__QA_SOURCES = SOURCES;
+      window.__QA_ACTIVE_SOURCE_KEY = "live";
+      console.log("[sheet-loader] falling back to the live sheet (target=" + TARGET + ") …");
+      runLoad(null, "live");
+    });
+  }
+
+  bootData();
 })();

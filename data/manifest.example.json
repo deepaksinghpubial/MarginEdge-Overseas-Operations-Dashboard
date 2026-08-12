@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "_note": "Generated and maintained by tools/snapshot-generator.gs. The dashboard month dropdown is built from this file, so adding a month needs no code change.",
+  "updated": "2026-08-12T18:00:00+05:30",
+  "current": "2026-08",
+  "months": [
+    {
+      "key": "2026-08",
+      "label": "August 2026",
+      "file": "data/current.json",
+      "lastUpdated": "2026-08-12T18:00:00+05:30",
+      "live": true
+    },
+    {
+      "key": "2026-07",
+      "label": "July 2026",
+      "file": "data/2026-07.json",
+      "lastUpdated": "2026-08-01T07:00:00+05:30",
+      "live": false
+    }
+  ]
+}

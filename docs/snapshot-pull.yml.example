@@ -1,0 +1,86 @@
+# NOTE: kept as a .example file on purpose.
+# Adding it under .github/workflows/ requires a GitHub token with the broad
+# 'workflow' scope. This is the ALTERNATIVE approach (not the recommended one),
+# so it is not worth granting that extra privilege just to store it. If you do
+# decide to use it, copy this file to .github/workflows/snapshot-pull.yml
+# yourself through the GitHub web UI, which needs no token at all.
+#
+# ALTERNATIVE to letting Apps Script push to GitHub.
+#
+# Use this ONLY if you would rather not store a GitHub token in Apps Script.
+# It inverts who holds the secret: GitHub pulls from Apps Script instead of
+# Apps Script pushing to GitHub.
+#
+# Trade-off you are accepting, stated plainly:
+#   The Apps Script web app must be deployed as "Anyone" (GitHub's runners are
+#   not signed in to your Google account), so the ONLY thing protecting your
+#   data is the long random /exec URL plus the SNAPSHOT_KEY below. The
+#   recommended setup (Apps Script pushes, docs/SNAPSHOT-SETUP.md) needs no
+#   public endpoint at all, which is why it is the default.
+#
+# Setup: Settings > Secrets and variables > Actions, add
+#   APPS_SCRIPT_URL   the /exec URL of the snapshot web app
+#   SNAPSHOT_KEY      a long random string; set the same value as a Script
+#                     Property named SNAPSHOT_KEY and have doGet() reject
+#                     requests whose key does not match
+
+name: Pull dashboard snapshot
+
+on:
+  schedule:
+    - cron: "30 1 * * *"    # 01:30 UTC = 07:00 IST, after the Redash update
+  workflow_dispatch:         # lets ops run it on demand from the Actions tab
+
+permissions:
+  contents: write            # scoped to this repo; no personal token needed
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch snapshot from Apps Script
+        env:
+          URL: ${{ secrets.APPS_SCRIPT_URL }}
+          KEY: ${{ secrets.SNAPSHOT_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          # --fail so a Google error page is never committed as if it were data
+          curl --fail --silent --show-error --location \
+               --max-time 300 --retry 3 --retry-delay 20 \
+               "$URL?key=$KEY" -o data/current.next.json
+
+      - name: Validate before committing
+        run: |
+          set -euo pipefail
+          # Committing a truncated or error payload would break the dashboard for
+          # everyone, so refuse anything that is not a well-formed snapshot.
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open("data/current.next.json"))
+          for f in ("schema", "lastUpdated", "data"):
+              if f not in d: sys.exit(f"snapshot missing required field: {f}")
+          rows = sum(len(v.get("rows", [])) for v in d["data"].values())
+          if rows == 0: sys.exit("snapshot contains zero rows - refusing to publish")
+          print(f"ok: {rows} rows, generated {d['lastUpdated']}")
+          PY
+          mv data/current.next.json data/current.json
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data/current.json; then
+            echo "No change in today's snapshot - nothing to commit."
+            exit 0
+          fi
+          git add data/current.json
+          git commit -m "Daily dashboard snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
