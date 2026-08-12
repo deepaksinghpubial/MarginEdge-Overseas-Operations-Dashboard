@@ -45,6 +45,23 @@
  *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
  *  before — this is fully backward compatible with existing calls.
  *
+ *  SHARED CACHE (2026-08): this web app runs as its owner, so EVERY viewer's
+ *  request spends the owner's quota — and Apps Script allows only 30
+ *  simultaneous executions per user, shared across everyone. With ~15 people
+ *  opening the dashboard, each independently re-reading the whole Mistakes tab,
+ *  that ceiling is reached and Google starts refusing requests (which reaches
+ *  the browser as a script that never loads, then a fall back to bundled data).
+ *  Responses are now cached in CacheService, which is shared script-wide: the
+ *  first viewer in each 60-second window pays for the sheet read and everyone
+ *  else is served from cache, so N viewers cost roughly one read instead of N.
+ *  60s is deliberately short — the underlying scores are per-analyst-per-DAY,
+ *  so nobody can perceive the difference — and &nocache=1 bypasses it entirely
+ *  for the Refresh control, so editing the sheet and re-reading still works.
+ *  Payloads are gzipped and split across cache entries because a single entry
+ *  holds ~100KB; anything still too large simply is not cached rather than
+ *  failing. Caching is best-effort throughout: any error falls through to a
+ *  normal, uncached read.
+ *
  *  PAYLOAD PROJECTION (2026-08): the Mistakes tabs are the slowest thing the
  *  dashboards load. This endpoint used to return EVERY column of a tab, as one
  *  JSON object per row — which repeats every header name on every single row —
@@ -148,11 +165,73 @@ function doGet(e) {
     return { lastRow: lastRow, lastCol: lastCol, hr: hr, headers: headers, totalRows: totalRows };
   }
 
-  function send(obj) {
-    var s = JSON.stringify(obj);
+  // Serialised body, wrapped for JSONP only if a callback was asked for. Split
+  // from send() so a cached body can be returned without re-serialising it.
+  function sendRaw(s) {
     return cb
       ? ContentService.createTextOutput(cb + "(" + s + ");").setMimeType(ContentService.MimeType.JAVASCRIPT)
       : ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
+  }
+  function send(obj) { return sendRaw(JSON.stringify(obj)); }
+
+  // ---- shared response cache ------------------------------------------------
+  var CACHE_TTL = 60;          // seconds; see SHARED CACHE note above
+  var CACHE_CHUNK = 90000;     // chars per entry (a single entry holds ~100KB)
+  var CACHE_MAX_CHUNKS = 40;   // beyond this, skip caching rather than thrash
+  var cacheSvc = null;
+  try { cacheSvc = CacheService.getScriptCache(); } catch (eC) { cacheSvc = null; }
+
+  // The cache is keyed on everything that changes the response. The callback
+  // name is deliberately excluded so JSONP and plain callers share one entry.
+  // Returns null if a key cannot be derived, which disables caching for this
+  // request rather than throwing. The cache is only ever an optimisation, so
+  // nothing in this path is allowed to break an otherwise-serviceable read —
+  // a failure here would take down every request and silently drop every
+  // viewer onto bundled sample data.
+  function cacheKey() {
+    try {
+      var raw = ["v1", p.tabs || "", p.offset || "", p.limit || "", p.cols || "",
+        p.fmt || "", p.sheetId || "", p.meta ? "meta" : ""].join("|");
+      var d = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw);
+      var hex = "";
+      for (var i = 0; i < d.length; i++) {
+        var v = (d[i] < 0 ? d[i] + 256 : d[i]).toString(16);
+        hex += v.length === 1 ? "0" + v : v;
+      }
+      return "qa1_" + hex;
+    } catch (e) { return null; }
+  }
+  function cacheRead(key) {
+    if (!cacheSvc || !key) return null;
+    try {
+      var n = parseInt(cacheSvc.get(key + "_m"), 10);
+      if (!(n > 0)) return null;
+      var names = [];
+      for (var i = 0; i < n; i++) names.push(key + "_" + i);
+      var got = cacheSvc.getAll(names);
+      var b64 = "";
+      for (var j = 0; j < n; j++) {
+        // A chunk can expire independently; a partial set is treated as a miss
+        // rather than being stitched into a truncated, unparseable body.
+        if (got[key + "_" + j] == null) return null;
+        b64 += got[key + "_" + j];
+      }
+      return Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(b64), "application/x-gzip")).getDataAsString();
+    } catch (e) { return null; }
+  }
+  function cacheWrite(key, body) {
+    if (!cacheSvc || !key) return;
+    try {
+      var b64 = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(body)).getBytes());
+      var n = Math.ceil(b64.length / CACHE_CHUNK);
+      if (n < 1 || n > CACHE_MAX_CHUNKS) return;
+      var obj = {};
+      for (var i = 0; i < n; i++) obj[key + "_" + i] = b64.substring(i * CACHE_CHUNK, (i + 1) * CACHE_CHUNK);
+      cacheSvc.putAll(obj, CACHE_TTL);
+      // Written last: until this exists, readers see a miss rather than a
+      // half-populated entry.
+      cacheSvc.put(key + "_m", String(n), CACHE_TTL);
+    } catch (e) { /* best effort */ }
   }
 
   // ---- ERROR REVIEWS ------------------------------------------------------
@@ -215,6 +294,14 @@ function doGet(e) {
     return send({ ok: true, review_id: rec.review_id, updated: !!foundRow, review: rec });
   }
 
+  // Read requests only: saveReview returned above, so nothing here can be a
+  // write. nocache=1 forces a fresh read (the dashboard's Refresh control).
+  var ckey = cacheKey();
+  if (!p.nocache) {
+    var hit = cacheRead(ckey);
+    if (hit) return sendRaw(hit);
+  }
+
   // META MODE: tiny payload — tab names, headers, one sample row, row counts.
   if (p.meta) {
     var meta = {};
@@ -226,7 +313,9 @@ function doGet(e) {
       }
       meta[sh.getName()] = { rows: info.totalRows, headers: info.headers, sample: sample };
     });
-    return send({ meta: meta, tabNames: Object.keys(meta) });
+    var metaBody = JSON.stringify({ meta: meta, tabNames: Object.keys(meta) });
+    cacheWrite(ckey, metaBody);
+    return sendRaw(metaBody);
   }
 
   var only = p.tabs ? p.tabs.split(/[|,]/).map(function (s) { return s.trim(); }) : null;
@@ -295,5 +384,7 @@ function doGet(e) {
     out[name] = wantRows ? { c: emitNames, r: rows } : rows;
   });
 
-  return send({ tabs: out, tabNames: Object.keys(out), totals: totals, offset: offset, limit: limit, generated: new Date().toISOString() });
+  var body = JSON.stringify({ tabs: out, tabNames: Object.keys(out), totals: totals, offset: offset, limit: limit, generated: new Date().toISOString() });
+  cacheWrite(ckey, body);
+  return sendRaw(body);
 }

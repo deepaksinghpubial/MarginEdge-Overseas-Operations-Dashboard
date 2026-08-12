@@ -179,7 +179,10 @@ class Component extends DCLogic {
     var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
     var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
     var busy=this._sourceLoading;
-    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span><span id="qa-ds-progress" class="ds-progress"></span>':'')+'</div>';
+    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span><span id="qa-ds-progress" class="ds-progress"></span>':'')
+      +'<button type="button" class="ds-refresh" data-act="refreshdata"'+(busy?' disabled':'')
+      +' title="Re-read the Google Sheet now, ignoring the 60-second shared cache. Use this after editing the sheet.">\u21bb</button>'
+      +'</div>';
   }
   sbSourceHTML(liveName,liveHref){
     var sources=window.__QA_SOURCES||{};
@@ -235,6 +238,14 @@ class Component extends DCLogic {
     }
     else if(act==="errdim"){ this.sel.errDim=arg; this.sel.errSearch=""; this.sel.errDrill=null; this.sel.errDrillShow=100; this.renderContent(); }
     else if(act==="reloadlive"){ location.reload(); }
+    else if(act==="refreshdata"){
+      if(window.__QA_REFRESH){
+        this._sourceLoading=true;
+        window.__QA_REFRESH();
+        this.renderContent();
+        this.watchLoadProgress();
+      } else location.reload();
+    }
     else if(act==="rowmore"||act==="rowall"||act==="rowless"){
       var rkey=t.dataset.key||"lb";
       this.sel.rowShow=this.sel.rowShow||{};
@@ -2410,6 +2421,9 @@ class Component extends DCLogic {
 .qa .data-source-filter select:focus{outline:2px solid var(--honey-600,#e07012);outline-offset:1px;}
 .qa .data-source-filter.archive{background:linear-gradient(135deg,#7a3e05,#b5650a);}
 .qa .data-source-filter.archive label{color:#ffe9c7;}
+.qa .ds-refresh{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:14px;line-height:1;padding:4px 8px;border-radius:6px;cursor:pointer;font-weight:700;}
+.qa .ds-refresh:hover:not(:disabled){background:rgba(255,255,255,.28);}
+.qa .ds-refresh:disabled{opacity:.45;cursor:default;}
 .qa .data-source-filter.archive select{border-color:#ffd58a;color:#7a3e05;}
 .qa .data-source-filter select:disabled{opacity:.6;cursor:wait;}
 .qa .ds-spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:ds-spin .7s linear infinite;flex:0 0 auto;}

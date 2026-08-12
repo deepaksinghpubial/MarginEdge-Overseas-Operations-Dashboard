@@ -473,6 +473,9 @@
     };
   }
 
+  // Set for the duration of a forced-refresh load; appends nocache=1 so the
+  // script-side cache is bypassed rather than serving the same 60s snapshot.
+  var forceFresh = false;
   function jsonpFull(tabList, timeoutMs, sheetId) {
     // Returns the full JSONP payload object (tabs + totals), not just .tabs.
     return new Promise(function (resolve, reject) {
@@ -484,6 +487,7 @@
       s.onerror = function () { cleanup(); reject(new Error("JSONP failed to load")); };
       s.src = WEBAPP_URL + (WEBAPP_URL.indexOf("?") < 0 ? "?" : "&") + tabList +
         (sheetId ? "&sheetId=" + encodeURIComponent(sheetId) : "") +
+        (forceFresh ? "&nocache=1" : "") +
         "&callback=" + cbName + "&_=" + Date.now();
       document.head.appendChild(s);
     });
@@ -532,7 +536,13 @@
   // so a stray timeout here just costs one retry rather than breaking the
   // load. If you start seeing "JSONP timeout"/"JSONP failed to load"
   // warnings in bulk, lower this back down rather than raising PAGE further.
-  var PAGE_CONCURRENCY = 8;
+  // Lowered from 8. This web app runs as its owner, so all viewers share ONE
+  // 30-simultaneous-execution budget; at 8 in flight per viewer, three or four
+  // people opening the dashboard together exhausted it and Google began
+  // refusing requests. Column projection made each page ~4x smaller and the
+  // script-side cache means most requests never touch the sheet, so a lower
+  // fan-out costs little and buys a much higher ceiling on concurrent viewers.
+  var PAGE_CONCURRENCY = 3;
 
   // The Mistakes tabs dominate load time, so ask the proxy for ONLY the columns
   // we read, in the compact rows-of-arrays shape. See apps-script-proxy.gs.
@@ -670,8 +680,9 @@
 
   var activeSheetId = null;   // null = the live, bound workbook
 
-  function runLoad(sheetId, sourceKey) {
+  function runLoad(sheetId, sourceKey, fresh) {
     activeSheetId = sheetId || null;
+    forceFresh = !!fresh;
     var mySeq = ++loadSeq;
     var key = sourceKey || "live";
     var isLive = key === "live";
@@ -798,12 +809,23 @@
   // in-memory cache if this session already loaded it once);
   // window.__QA_RELOAD() (set up by the dashboard component) fires the same
   // way it does on initial load.
-  window.__QA_LOAD_SOURCE = function (key) {
+  window.__QA_LOAD_SOURCE = function (key, opts) {
     var src = SOURCES[key];
     if (!src) return;
     window.__QA_ACTIVE_SOURCE_KEY = key;
     console.log("[sheet-loader] switching data source -> " + src.label);
-    runLoad(src.sheetId, key);
+    runLoad(src.sheetId, key, opts && opts.fresh);
+  };
+
+  // Refresh control: drop every cached copy for the active source (in-memory,
+  // localStorage and the script-side 60s cache) and re-read the sheet.
+  window.__QA_REFRESH = function () {
+    var key = window.__QA_ACTIVE_SOURCE_KEY || "live";
+    var src = SOURCES[key] || {};
+    try { delete MEM_CACHE[key]; } catch (e) { MEM_CACHE[key] = null; }
+    try { localStorage.removeItem(LS_PREFIX + key); } catch (e) {}
+    console.log("[sheet-loader] manual refresh -> re-reading " + key + " (bypassing the 60s script cache)");
+    runLoad(src.sheetId, key, true);
   };
 
   if (!WEBAPP_URL) { console.log("[sheet-loader] WEBAPP_URL not set — using bundled data."); } else {
