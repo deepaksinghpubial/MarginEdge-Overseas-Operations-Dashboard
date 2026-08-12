@@ -308,8 +308,18 @@ class Component extends DCLogic {
     var t=e.target;
     if(t.dataset.act==="revremarks"){ if(this.sel.revOpen) this.sel.revOpen.remarks=t.value; return; }
     if(t.dataset.act==="revreviewer"&&t.tagName==="INPUT"){ if(this.sel.revOpen) this.sel.revOpen.reviewer=t.value; return; }
-    if(t.dataset.act==="lbsearch"){ this.sel.lbSearch=t.value; this._caret=t.selectionStart; this.renderContent(); this._caret=null; }
-    else if(t.dataset.act==="spsearch"){ this.sel.spSearch=t.value; this._caret=t.selectionStart; this._caretSp=true; this.renderContent(); this._caret=null; this._caretSp=false; }
+    if(t.dataset.act==="lbsearch"){
+      this.sel.lbSearch=t.value;
+      var lpos=t.selectionStart, lself=this;
+      if(this._lbSearchT) clearTimeout(this._lbSearchT);
+      this._lbSearchT=setTimeout(function(){ lself._lbSearchT=null; lself._caret=lpos; lself.renderContent(); lself._caret=null; },140);
+    }
+    else if(t.dataset.act==="spsearch"){
+      this.sel.spSearch=t.value;
+      var spos=t.selectionStart, sself=this;
+      if(this._spSearchT) clearTimeout(this._spSearchT);
+      this._spSearchT=setTimeout(function(){ sself._spSearchT=null; sself._caret=spos; sself._caretSp=true; sself.renderContent(); sself._caret=null; sself._caretSp=false; },140);
+    }
     else if(t.dataset.act==="errsearch"){
       this.sel.errSearch=t.value;
       var pos=t.selectionStart, self=this;
@@ -870,8 +880,10 @@ class Component extends DCLogic {
     return '<span class="rev-chip '+(g?'rev-gen':'rev-ing')+'" title="'+this.esc((rv.verdict||'')+' · reviewed by '+(rv.reviewer_username||'?')+' on '+(rv.review_date||'?')+(rv.remarks?' · '+rv.remarks:''))+'">'+this.esc(g?'Genuine':'Ingenuine')+'</span>';
   }
   // The checkbox is the affordance the user asked for: ticked == reviewed.
-  reviewCell(r){
-    var key=this.mistKey(r), rv=this.reviewMap()[key];
+  // rmap is optional but callers rendering a whole table should pass one:
+  // rebuilding it per row is O(rows x reviews) and degrades as reviews pile up.
+  reviewCell(r, rmap){
+    var key=this.mistKey(r), rv=(rmap||this.reviewMap())[key];
     var an=this.Q.analysts[r[this.QF.AN]]||"";
     return '<td class="rev-cell" data-rev-key="'+this.esc(key)+'">'
       +'<label class="rev-box" title="'+(rv?'Reviewed — click to view or correct':'Click to review this error')+'">'
@@ -903,14 +915,23 @@ class Component extends DCLogic {
   // The modal lives outside #qa-content so re-rendering the page underneath it
   // (which happens on save) cannot blow away the open dialog mid-edit.
   enhanceReviewModal(){
+    var o=this.sel.revOpen, wrap=this._revModalEl;
+    // This runs after EVERY render, so the idle case must not query the tree —
+    // a querySelector over a 300KB page on every keystroke is pure waste.
+    if(!o && !wrap) return;
     var host=this.rootRef&&this.rootRef.current; if(!host) return;
-    var wrap=host.querySelector("#qa-rev-modal");
-    var o=this.sel.revOpen;
-    if(!o){ if(wrap) wrap.parentNode.removeChild(wrap); return; }
+    // boot() rebuilds the shell wholesale, which orphans a cached node.
+    if(wrap && !host.contains(wrap)){ wrap=null; this._revModalEl=null; }
+    if(!o){
+      if(wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      this._revModalEl=null;
+      return;
+    }
     if(!wrap){
       wrap=document.createElement("div");
       wrap.id="qa-rev-modal";
       (host.querySelector(".app") || host).appendChild(wrap);
+      this._revModalEl=wrap;
     }
     wrap.innerHTML=this.reviewModalHTML(o);
   }
@@ -1563,9 +1584,10 @@ class Component extends DCLogic {
       return '<th class="mist-th mist-clickable'+(right?" r":"")+'" data-act="mistsort" data-arg="'+col+'">'+label+arrow+'</th>';
     };
     var cap=this.sel.showAllMistakes?m.length:200;
+    var rmap=this.reviewMap();
     var rowsH=m.slice(0,cap).map((r,i)=>{
       var area=Q.areas[r[F.AREA]];
-      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td><td>'+this.esc(S.analysts[r[F.AN]]||"\u2014")+'</td><td>'+this.esc(S.teams[r[F.TEAM]]||"\u2014")+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td>'+this.reviewCell(r)+'</tr>';
+      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td><td>'+this.esc(S.analysts[r[F.AN]]||"\u2014")+'</td><td>'+this.esc(S.teams[r[F.TEAM]]||"\u2014")+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td>'+this.reviewCell(r,rmap)+'</tr>';
     }).join("");
     return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+th("Analyst","analyst")+th("Team","team")+th("Line pos","lp",true)+th("Proposed Value","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'<th>Review</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
