@@ -105,7 +105,7 @@ class Component extends DCLogic {
     this.EXCL = {};
     this.st.role = "";
     if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
-    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revScope:"overall", revSaving:false, revError:null };
+    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revDim:"overall", revPick:"", revRole:"", revSaving:false, revError:null };
     if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
     this.noteText = "Scores: legacy_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
     this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
@@ -258,6 +258,7 @@ class Component extends DCLogic {
       else this.sel.rowShow[rkey]=this.rowsBase();
       this.renderContent();
     }
+    else if(act==="revpickjump"){ this.sel.revPick=arg; this.renderContent(); }
     else if(act==="revopen"){ this.openReview(arg, t.dataset.an||""); }
     else if(act==="revcancel"){ this.closeReview(); }
     else if(act==="revstop"){ /* clicks inside the dialog must not close it */ }
@@ -320,7 +321,13 @@ class Component extends DCLogic {
     else if(act==="amsort"){ this.sel.amSort=t.value; this.renderContent(); }
     else if(act==="revreviewer"){ if(this.sel.revOpen){ this.sel.revOpen.reviewer=t.value; this.sel.revError=null; this.enhanceReviewModal(); } }
     else if(act==="revverdict"){ if(this.sel.revOpen){ this.sel.revOpen.verdict=t.value; this.sel.revError=null; } }
-    else if(act==="revscope"){ this.sel.revScope=t.value; this.renderContent(); }
+    else if(act==="revdim"){ this.sel.revDim=t.value; this.sel.revPick=""; this.renderContent(); }
+    else if(act==="revpick"){ this.sel.revPick=t.value; this.renderContent(); }
+    else if(act==="revrole"){
+      // Changing role can invalidate the chosen name (that AM may have no
+      // errors for the new role), so drop the pick and let it be re-chosen.
+      this.sel.revRole=t.value; this.sel.revPick=""; this.renderContent();
+    }
     else if(act==="chartseries"){
       var parts=t.dataset.arg.split("::"), cid=parts[0], si=parts[1];
       this.sel.chartHidden=this.sel.chartHidden||{}; this.sel.chartHidden[cid]=this.sel.chartHidden[cid]||{};
@@ -1145,44 +1152,74 @@ class Component extends DCLogic {
 
   // Roster of everyone whose errors could be reviewed, so "Total errors" is
   // measured against the same filtered population the rest of the page uses.
-  // Two different kinds of view share this one control:
-  //   group  = roll the reviewed errors up by an org level (AM / Lead / Location)
-  //   role   = narrow the WHOLE page to one role, then list those people
-  // Role views also re-scope the KPI row, so "Reviewed %" means "% of that
-  // role's errors" rather than a share of everyone's — otherwise the headline
-  // numbers would contradict the table under them.
-  reviewScopes(){
+  // Three cascading controls, because one dropdown could not express what is
+  // actually being asked: WHICH org level, WHICH person/group within it, and
+  // WHICH role — independently.
+  //   1. Dimension  — Overall / Assistant Manager / Team Lead / Location
+  //   2. Which one  — a specific AM, Lead or Location (or all of them)
+  //   3. Role       — Specialists / Analysts / Lead Analysts, or all
+  // Picking a specific value in (2) switches the table from listing groups to
+  // listing the PEOPLE under that value, which is the "persons under this
+  // Assistant Manager" view.
+  reviewDims(){
     return [
-      {key:"overall",     label:"Overall Reviewed Errors", kind:"none"},
-      {key:"am",          label:"Errors by person \u2014 as per Assistant Manager", kind:"group", col:"Assistant Manager"},
-      {key:"lead",        label:"Errors by person \u2014 as per Lead", kind:"group", col:"Lead"},
-      {key:"location",    label:"Errors by person \u2014 as per Location", kind:"group", col:"Location"},
-      {key:"specialists", label:"Errors of Specialists", kind:"role", role:"Specialist", col:"Specialist"},
-      {key:"analysts",    label:"Errors of Analysts", kind:"role", role:"Analyst", col:"Analyst"}
+      {key:"overall",  label:"Overall Reviewed Errors", col:"", noun:""},
+      {key:"am",       label:"By Assistant Manager", col:"Assistant Manager", noun:"assistant managers", all:"All Assistant Managers"},
+      {key:"lead",     label:"By Team Lead",         col:"Team Lead",         noun:"team leads",         all:"All Team Leads"},
+      {key:"location", label:"By Location",          col:"Location",          noun:"locations",          all:"All Locations"}
+    ];
+  }
+  reviewRoles(){
+    return [
+      {key:"",             label:"All roles"},
+      {key:"Specialist",   label:"Specialists"},
+      {key:"Analyst",      label:"Analysts"},
+      {key:"Lead Analyst", label:"Lead Analysts"}
     ];
   }
   pageReviewAudit(rws){
-    var F=this.QF, Q=this.Q;
-    var fx=this.fxInline("Error Genuineness Review","Every mistake a reviewer has marked genuine or ingenuine, from the workbook’s “Error Reviews” tab. Percentages below are against the mistakes currently in scope (location, role and date filters above).");
+    var F=this.QF, Q=this.Q, self=this;
+    var fx=this.fxInline("Error Genuineness Review","Every mistake a reviewer has marked genuine or ingenuine, from the workbook’s “Error Reviews” tab. Percentages are against the mistakes left in scope by the three selectors below, plus the location, role and date filters at the top.");
     var head='<div class="card"><div class="card-head">Error Genuineness Review'+fx+'</div><div class="card-body">';
     if(this.Q===null) return head+'<div class="placeholder-msg">'+this.mistLoadingMsg("the mistake details")+'</div></div></div>';
 
-    var scope=this.sel.revScope||"overall";
-    var scopes=this.reviewScopes();
-    if(!scopes.some(x=>x.key===scope)) scope="overall";
-    var scopeDef=scopes.filter(x=>x.key===scope)[0];
+    var DIMS=this.reviewDims(), ROLES3=this.reviewRoles();
+    var dim=this.sel.revDim||"overall";
+    if(!DIMS.some(function(d){return d.key===dim;})) dim="overall";
+    var dimDef=DIMS.filter(function(d){return d.key===dim;})[0];
+    var role=this.sel.revRole||"";
+    if(!ROLES3.some(function(r){return r.key===role;})) role="";
 
-    var mrowsAll=this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[];
-    // A role view narrows the whole page, KPIs included, so the headline
-    // figures always describe exactly what the table below them lists.
-    var mrows=(scopeDef.kind==="role")
-      ? mrowsAll.filter(r=>this.roleOf(Q.analysts[r[F.AN]])===scopeDef.role)
-      : mrowsAll;
+    var mrowsAll=this.qaRowsForLogins(this.aggAnalysts(rws).map(function(a){return a.an;}))||[];
+
+    // Which bucket a mistake belongs to for the chosen dimension.
+    var valOf=function(r){
+      if(dim==="am") return self.amOf(self.S.teams[r[F.TEAM]])||"Unmapped";
+      if(dim==="lead") return self.S.teams[r[F.TEAM]]||"Unassigned";
+      if(dim==="location") return self.locationOf(Q.analysts[r[F.AN]])||"Unmapped";
+      return null;
+    };
+
+    // Role is applied BEFORE building dropdown 2, so it only ever offers values
+    // that still have errors once the role filter is on — picking a name that
+    // then shows an empty table would be a dead end.
+    var mrowsRole=role?mrowsAll.filter(function(r){ return self.roleOf(Q.analysts[r[F.AN]])===role; }):mrowsAll;
+
+    var pickOpts=[];
+    if(dim!=="overall"){
+      var seen={};
+      mrowsRole.forEach(function(r){ var v=valOf(r); if(v&&!seen[v]){ seen[v]=1; pickOpts.push(v); } });
+      pickOpts.sort(function(a,b){ return String(a).localeCompare(String(b)); });
+    }
+    var pick=this.sel.revPick||"";
+    if(dim==="overall"||pickOpts.indexOf(pick)===-1) pick="";   // stale pick after switching dimension
+
+    var mrows=pick?mrowsRole.filter(function(r){ return valOf(r)===pick; }):mrowsRole;
     var total=mrows.length;
     var rmap=this.reviewMap();
 
-    // Only count reviews whose mistake is actually in the current scope, so the
-    // percentages cannot exceed 100% when a filter narrows the population.
+    // Reviews are counted only where their mistake is still in scope, so a
+    // percentage can never exceed 100% when the selectors narrow things down.
     var inScope=[], gen=0, ing=0;
     for(var i=0;i<mrows.length;i++){
       var rv=rmap[this.mistKey(mrows[i])];
@@ -1193,88 +1230,92 @@ class Component extends DCLogic {
       if(/^genuine/i.test(rv.verdict||"")) gen++; else ing++;
     }
     var nRev=inScope.length;
-    var pc=(n,d)=>d>0?(n/d*100).toFixed(1)+"%":"—";
+    var pc=function(n,d){ return d>0?(n/d*100).toFixed(1)+"%":"—"; };
+
+    // Say in words exactly what the numbers cover, so the KPI row can never be
+    // read as company-wide when it is not.
+    var bits=[];
+    if(role) bits.push(ROLES3.filter(function(r){return r.key===role;})[0].label);
+    else bits.push("All people");
+    if(pick) bits.push("under "+pick);
+    else if(dim!=="overall") bits.push("across all "+dimDef.noun);
+    var scopeText=bits.join(" ");
 
     var kpi='<div class="kpi-row">'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val">'+total.toLocaleString()+'</div><div class="k-sub">'+(scopeDef.kind==="role"?this.esc(scopeDef.role)+'s only, in the selected filters':'in the selected filters')+'</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val">'+total.toLocaleString()+'</div><div class="k-sub">'+this.esc(scopeText)+'</div></div>'
       +'<div class="kpi"><div class="k-label">Total errors reviewed</div><div class="k-val" style="color:var(--accent)">'+nRev.toLocaleString()+'</div><div class="k-sub">'+(total-nRev).toLocaleString()+' still to review</div></div>'
-      +'<div class="kpi"><div class="k-label">Reviewed</div><div class="k-val">'+pc(nRev,total)+'</div><div class="k-sub">of all errors in scope</div></div>'
+      +'<div class="kpi"><div class="k-label">Reviewed</div><div class="k-val">'+pc(nRev,total)+'</div><div class="k-sub">of the errors in scope</div></div>'
       +'<div class="kpi"><div class="k-label">Genuine errors</div><div class="k-val" style="color:var(--red)">'+gen.toLocaleString()+'</div><div class="k-sub">upheld on review</div></div>'
       +'<div class="kpi"><div class="k-label">Ingenuine errors</div><div class="k-val" style="color:var(--green)">'+ing.toLocaleString()+'</div><div class="k-sub">overturned on review</div></div>'
       +'<div class="kpi"><div class="k-label">Genuine</div><div class="k-val">'+pc(gen,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
       +'<div class="kpi"><div class="k-label">Ingenuine</div><div class="k-val">'+pc(ing,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
       +'</div>';
 
-    var scopeSel='<span class="ctrl-row" style="margin-left:auto"><select data-act="revscope">'
-      +scopes.map(x=>'<option value="'+x.key+'"'+(scope===x.key?' selected':'')+'>'+this.esc(x.label)+'</option>').join('')
-      +'</select></span>';
+    var opt=function(v,l,cur){ return '<option value="'+self.esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+self.esc(l)+'</option>'; };
+    var selDim='<select data-act="revdim" title="Which org level to break the errors down by">'
+      +DIMS.map(function(d){ return opt(d.key,d.label,dim); }).join('')+'</select>';
+    var selPick=(dim==="overall")
+      ? '<select disabled title="Pick a dimension first"><option>—</option></select>'
+      : '<select data-act="revpick" title="Narrow to one '+this.esc(dimDef.col.toLowerCase())+', to see the people under it"'+(pickOpts.length?'':' disabled')+'>'
+        +opt("",dimDef.all,pick)
+        +pickOpts.map(function(v){ return opt(v,v,pick); }).join('')+'</select>';
+    var selRole='<select data-act="revrole" title="Limit to one role">'
+      +ROLES3.map(function(r){ return opt(r.key,r.label,role); }).join('')+'</select>';
+    var ctrls='<span class="ctrl-row rev-ctrls" style="margin-left:auto">'+selDim+selPick+selRole+'</span>';
 
     var body=head+kpi+'<div class="dim-note">Tick the <b>Review</b> box beside any error on the Individual Analyst or Specialist pages to record a verdict. Reviews are stored in the workbook, so the whole team sees the same audit trail.</div></div></div>';
 
     if(!nRev){
-      return body+'<div class="card"><div class="card-head">Reviewed errors — 0'+scopeSel+'</div><div class="placeholder-msg">No errors have been reviewed in this range yet.</div></div>';
+      return body+'<div class="card"><div class="card-head">Reviewed errors — 0'+ctrls+'</div>'
+        +'<div class="placeholder-msg">No reviewed errors for '+this.esc(scopeText.toLowerCase())+' in this range.</div></div>';
     }
 
-    // Breakdown by whichever level the dropdown asks for.
-    var self=this;
-    // Keyed off the RAW mistake row so the same function can bucket both every
-    // error in scope and just the reviewed ones — otherwise "reviewed %" per
-    // group would have no denominator to divide by.
-    var groupKey=function(r){
-      var an=self.Q.analysts[r[F.AN]];
-      if(scope==="lead") return self.S.teams[r[F.TEAM]]||"Unassigned";
-      if(scope==="am") return self.amOf(self.S.teams[r[F.TEAM]])||"Unmapped";
-      if(scope==="location") return self.locationOf(an)||"Unmapped";
-      if(scopeDef.kind==="role") return an||"\u2014";   // role views list the people
-      return null;
-    };
+    // Choosing a specific value lists the people under it; otherwise the groups.
+    var byPerson=!!pick;
+    var groupKey=function(r){ return byPerson?(Q.analysts[r[F.AN]]||"—"):valOf(r); };
+
     var breakdown='';
-    if(scope!=="overall"){
+    if(dim!=="overall"){
       var g={};
       var bucket=function(k){ if(!g[k]) g[k]={k:k,errs:0,n:0,gen:0,ing:0}; return g[k]; };
-      // Pass 1: every error in scope, so each row has a total to be judged against.
-      for(var t=0;t<mrows.length;t++) bucket(groupKey(mrows[t])).errs++;
-      // Pass 2: the reviewed subset and its verdicts.
+      for(var t2=0;t2<mrows.length;t2++) bucket(groupKey(mrows[t2])).errs++;
       inScope.forEach(function(row){
         var b=bucket(groupKey(row.__r));
         b.n++;
         if(/^genuine/i.test(row.verdict||"")) b.gen++; else b.ing++;
       });
-      // Show only rows that actually have a reviewed error. Listing everyone
-      // buried the handful of real reviews under hundreds of 0 / 0.0% rows.
-      // Pass 1 still counts every error, because Total errors is the
-      // denominator that makes Reviewed % mean anything.
-      var gAll=Object.keys(g).map(k=>g[k]);
+      var gAll=Object.keys(g).map(function(k){ return g[k]; });
+      // Only rows with a review; listing everyone buried the real reviews under
+      // pages of 0 / 0.0% rows.
       var glist=gAll.filter(function(x){ return x.n>0; })
-        .sort(function(a,b){ return (b.n-a.n) || (b.errs-a.errs); });
+        .sort(function(a,b){ return (b.n-a.n)||(b.errs-a.errs); });
       var hidden=gAll.length-glist.length;
-      var colName=scopeDef.col||"Group";
-      var isPeople=(scopeDef.kind==="role");
-      var noun=isPeople?(this.esc(scopeDef.role)+'s'):this.esc(colName);
-      var title=isPeople
-        ? this.esc(scopeDef.role)+'s with reviewed errors \u2014 '+glist.length.toLocaleString()
-        : 'Errors by '+this.esc(colName)+' \u2014 '+glist.length.toLocaleString()+' with reviews';
-      breakdown='<div class="card"><div class="card-head">'+title+'</div>'
+      var colName=byPerson?"Person":dimDef.col;
+      var noun=byPerson?"people":dimDef.noun;
+      var title=byPerson
+        ? 'People under '+this.esc(pick)+' with reviewed errors — '+glist.length.toLocaleString()
+        : 'Errors by '+this.esc(colName)+' — '+glist.length.toLocaleString()+' with reviews';
+      breakdown='<div class="card"><div class="card-head">'+title+ctrls+'</div>'
         +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>'+this.esc(colName)+'</th>'
         +'<th class="r">Total errors</th><th class="r">Reviewed</th><th class="r">Reviewed %</th>'
         +'<th class="r">Genuine</th><th class="r">Ingenuine</th><th class="r">Genuine %</th><th class="r">Ingenuine %</th></tr></thead><tbody>'
         +glist.map(function(x){
-          // Only individual people have a profile page to link to.
-          var nameCell=isPeople
+          var nameCell=byPerson
             ? '<button type="button" class="team-link" data-act="profile" data-arg="'+self.esc(x.k)+'">'+self.esc(x.k)+'</button>'
-            : self.esc(x.k);
+            : '<button type="button" class="team-link" data-act="revpickjump" data-arg="'+self.esc(x.k)+'" title="See the people under '+self.esc(x.k)+'">'+self.esc(x.k)+'</button>';
           return '<tr><td style="font-weight:600;font-family:var(--font-body)">'+nameCell+'</td>'
             +'<td class="r">'+x.errs.toLocaleString()+'</td>'
             +'<td class="r">'+x.n.toLocaleString()+'</td>'
-            +'<td class="r"'+(x.n===0?' style="color:var(--muted)"':'')+'>'+pc(x.n,x.errs)+'</td>'
+            +'<td class="r">'+pc(x.n,x.errs)+'</td>'
             +'<td class="r" style="color:var(--red);font-weight:700">'+x.gen.toLocaleString()+'</td>'
             +'<td class="r" style="color:var(--green);font-weight:700">'+x.ing.toLocaleString()+'</td>'
             +'<td class="r">'+pc(x.gen,x.n)+'</td><td class="r">'+pc(x.ing,x.n)+'</td></tr>';
         }).join('')
         +'</tbody></table></div>'
         +'<div class="dim-cap-note">Only rows with at least one reviewed error are listed'
-        +(hidden>0?', so '+hidden.toLocaleString()+' '+noun.toLowerCase()+' with errors but no review yet '+(hidden===1?'is':'are')+' hidden':'')
-        +'. Sorted by number reviewed. <b>Total errors</b> is the full count for that row, so <b>Reviewed %</b> shows how much of it has actually been checked \u2014 a low figure means the verdict split beside it rests on a small sample.</div></div>';
+        +(hidden>0?', so '+hidden.toLocaleString()+' '+noun+' with errors but no review yet '+(hidden===1?'is':'are')+' hidden':'')
+        +'. Sorted by number reviewed. <b>Total errors</b> is the full count for that row, so <b>Reviewed %</b> shows how much of it has actually been checked — a low figure means the verdict split beside it rests on a small sample.'
+        +(byPerson?'':' Click a '+this.esc(colName.toLowerCase())+' to see the people under it.')+'</div></div>';
     }
 
     var sorted=inScope.slice().sort(function(a,b){ return (a.review_date<b.review_date)?1:(a.review_date>b.review_date)?-1:0; });
@@ -1283,7 +1324,7 @@ class Component extends DCLogic {
       var link=row.order_url
         ? '<a class="order-link" href="'+self.esc((Q.url_prefix||"")+row.order_url)+'" target="_blank" rel="noopener" title="Open order ↗">'+self.esc(Q.vars[r[F.VAR]]||"order")+' <span class="order-link-icon">↗</span></a>'
         : '—';
-      var g=/^genuine/i.test(row.verdict||"");
+      var g2=/^genuine/i.test(row.verdict||"");
       var targetName=row.target_login||Q.analysts[r[F.AN]]||"—";
       return '<tr><td class="r">'+(i+1)+'</td>'
         +'<td>'+self.esc(row.review_date||'—')+'</td>'
@@ -1292,11 +1333,11 @@ class Component extends DCLogic {
         +'<td style="font-family:var(--font-body)">'+link+'</td>'
         +'<td style="font-family:var(--font-body)"><button type="button" class="team-link" data-act="profile" data-arg="'+self.esc(targetName)+'">'+self.esc(targetName)+'</button></td>'
         +'<td>'+self.esc(row.target_designation||self.designationOf(targetName)||'—')+'</td>'
-        +'<td><span class="rev-chip '+(g?'rev-gen':'rev-ing')+'">'+(g?'Genuine':'Ingenuine')+'</span></td>'
+        +'<td><span class="rev-chip '+(g2?'rev-gen':'rev-ing')+'">'+(g2?'Genuine':'Ingenuine')+'</span></td>'
         +'<td class="rev-remark">'+self.esc(row.remarks||'—')+'</td></tr>';
     }).join('');
 
-    var tbl='<div class="card"><div class="card-head">Reviewed errors — '+sorted.length.toLocaleString()+scopeSel+'</div>'
+    var tbl='<div class="card"><div class="card-head">Reviewed errors — '+sorted.length.toLocaleString()+(dim==="overall"?ctrls:'')+'</div>'
       +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th><th>Date of review</th><th>Reviewer</th><th>Reviewer designation</th><th>Order link</th><th>Error by</th><th>Their designation</th><th>Verdict</th><th>Remarks</th></tr></thead><tbody>'
       +rowsH+'</tbody></table></div></div>';
 
@@ -2570,6 +2611,7 @@ class Component extends DCLogic {
 .qa .rev-chip.rev-ing{background:#dcfce7;color:#166534;}
 .qa .rev-chip.rev-none{background:var(--neutral-100);color:var(--muted);}
 .qa .rev-remark{max-width:280px;white-space:normal;font-family:var(--font-body);color:var(--text);}
+.qa .rev-ctrls select{max-width:210px;}
 .qa .rev-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px;}
 .qa .rev-dialog{background:#fff;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.3);width:100%;max-width:620px;max-height:90vh;overflow-y:auto;font-family:var(--font-body);}
 .qa .rev-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--neutral-200);font-weight:700;font-size:15px;}
