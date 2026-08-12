@@ -45,6 +45,20 @@
  *  Omit sheetId (or leave it blank) to read the live, bound spreadsheet as
  *  before — this is fully backward compatible with existing calls.
  *
+ *  ERROR REVIEWS (2026-08): the dashboards can now record a review verdict
+ *  against an individual mistake. Reviews are appended to an "Error Reviews"
+ *  tab in this workbook (created automatically on the first save, with its
+ *  header row), so every reviewer sees the same audit trail and it is visible
+ *  and editable in the sheet like any other tab.
+ *    /exec?action=saveReview&review_date=...&reviewer_username=...&verdict=...
+ *      ...&remarks=...&order_url=...&target_login=...&mistake_key=...
+ *      -> {"ok":true,"review_id":"..."}
+ *  Re-saving the same mistake_key UPDATES that row rather than appending a
+ *  duplicate, so a verdict can be corrected. Reads come back through the
+ *  normal tabs mechanism (tabs=Error Reviews), so no extra read endpoint.
+ *  NOTE: this writes to the workbook, so the deployment must run as you (it
+ *  already does) and you need edit access (you own it).
+ *
  *  BUGFIX (2026-08): FR Details' per-day columns ("1 Aug 2026", "2 Aug 2026",
  *  ...) are real Date cells, not text. sheetInfo() was reading every header
  *  with a blind String(h), which for a Date cell produces JS's verbose
@@ -125,6 +139,66 @@ function doGet(e) {
     return cb
       ? ContentService.createTextOutput(cb + "(" + s + ");").setMimeType(ContentService.MimeType.JAVASCRIPT)
       : ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // ---- ERROR REVIEWS ------------------------------------------------------
+  // Column order is fixed here and mirrored by sheet-loader.js. Anything the
+  // dashboard does not send is written blank rather than omitted, so the tab
+  // stays rectangular and readable.
+  var REVIEW_TAB = "Error Reviews";
+  var REVIEW_COLS = ["review_id", "review_date", "reviewer_username", "reviewer_designation",
+    "portal", "mistake_key", "mistake_date", "order_url", "target_login",
+    "target_designation", "verdict", "remarks", "logged_at"];
+
+  function reviewSheet() {
+    var sh = ss.getSheetByName(REVIEW_TAB);
+    if (!sh) {
+      sh = ss.insertSheet(REVIEW_TAB);
+      sh.appendRow(REVIEW_COLS);
+      sh.setFrozenRows(1);
+      sh.getRange(1, 1, 1, REVIEW_COLS.length).setFontWeight("bold");
+    }
+    return sh;
+  }
+
+  if (p.action === "saveReview") {
+    var sh = reviewSheet();
+    var now = new Date();
+    var mk = String(p.mistake_key || "").trim();
+    if (!mk) return send({ ok: false, error: "mistake_key is required" });
+
+    var rec = {
+      review_id: String(p.review_id || "").trim() || (Utilities.getUuid ? Utilities.getUuid() : "r" + now.getTime()),
+      review_date: String(p.review_date || Utilities.formatDate(now, tz, "yyyy-MM-dd")),
+      reviewer_username: String(p.reviewer_username || ""),
+      reviewer_designation: String(p.reviewer_designation || ""),
+      portal: String(p.portal || ""),
+      mistake_key: mk,
+      mistake_date: String(p.mistake_date || ""),
+      order_url: String(p.order_url || ""),
+      target_login: String(p.target_login || ""),
+      target_designation: String(p.target_designation || ""),
+      verdict: String(p.verdict || ""),
+      remarks: String(p.remarks || ""),
+      logged_at: Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss")
+    };
+    var rowVals = REVIEW_COLS.map(function (c) { return rec[c]; });
+
+    // Correcting an existing verdict must not leave a duplicate behind, so
+    // look for this mistake_key first and overwrite that row if present.
+    var keyCol = REVIEW_COLS.indexOf("mistake_key") + 1;
+    var last = sh.getLastRow();
+    var foundRow = 0;
+    if (last > 1) {
+      var keys = sh.getRange(2, keyCol, last - 1, 1).getValues();
+      for (var ki = 0; ki < keys.length; ki++) {
+        if (String(keys[ki][0]).trim() === mk) { foundRow = ki + 2; break; }
+      }
+    }
+    if (foundRow) sh.getRange(foundRow, 1, 1, REVIEW_COLS.length).setValues([rowVals]);
+    else sh.appendRow(rowVals);
+
+    return send({ ok: true, review_id: rec.review_id, updated: !!foundRow, review: rec });
   }
 
   // META MODE: tiny payload — tab names, headers, one sample row, row counts.

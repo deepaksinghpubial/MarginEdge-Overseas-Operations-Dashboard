@@ -21,7 +21,10 @@
     role:     { tab: "Role Details",     user: "username", designation: "designation", lead: "Allocated Team Lead", am: "Allocated Asst Manager" },
     location: { tab: "Location Details", user: "username", loc: "location" },
     teams:    { tab: "Team Details - Legacy & IPA", legacy: "Legacy Team Names", ipa: "IPA Team Names" },
-    fr:       { tab: "FR Details", user: "User", count: "Final Review" }
+    fr:       { tab: "FR Details", user: "User", count: "Final Review" },
+    // Written by the dashboards via the Apps Script saveReview action. The tab
+    // is created on the first save, so it is absent (not an error) until then.
+    reviews:  { tab: "Error Reviews" }
   };
 
   var CONFIG = {
@@ -171,7 +174,7 @@
     return null;
   };
 
-  function build(daily, mist, roleRows, locRows, teamRows, frRows) {
+  function build(daily, mist, roleRows, locRows, teamRows, frRows, reviewRows) {
     var C = cfg.daily.cols, M = cfg.mistakes.cols;
     DOMINANT_MONTH = computeDominantMonth(daily, C.date) || computeDominantMonth(mist, M.date);
 
@@ -196,10 +199,16 @@
 
     // --- Role Details: designation, Allocated Team Lead (name), Allocated AM ---
     var roleByLogin = {}, amByLogin = {}, leadByLogin = {};
+    // The RAW designation text ("Associate Director, Operations"), as distinct
+    // from normRole()'s coarse bucket — the review audit shows it verbatim.
+    var desigByLogin = {}, roster = [];
     var badAm = function (v) { return !v || /^#?n\/?a$/i.test(v) || /^unassigned/i.test(v); };
     (roleRows || []).forEach(function (r) {
       var u = String(r[SHARED.role.user] || "").trim().toLowerCase();
       if (!u) return;
+      var rawD = String(r[SHARED.role.designation] || "").trim();
+      if (rawD) desigByLogin[u] = rawD;
+      roster.push({ u: String(r[SHARED.role.user] || "").trim(), d: rawD });
       var role = normRole(r[SHARED.role.designation]);
       if (role) roleByLogin[u] = role;
       var am = String(r[SHARED.role.am] || "").trim();
@@ -330,10 +339,11 @@
     teams.forEach(function (t) { amMap[t] = mode(amVotesByTeam[t] || []) || "Unassigned AM"; });
 
     // --- roles & locations keyed by display name (what the dashboard uses) ---
-    var roleMap = {}, locMap = {};
+    var roleMap = {}, locMap = {}, desigMap = {};
     order.forEach(function (u) {
       roleMap[disp[u].toLowerCase()] = roleByLogin[u.toLowerCase()] || "Analyst";
       locMap[disp[u].toLowerCase()] = locByLogin[u.toLowerCase()] || "Unknown";
+      desigMap[disp[u].toLowerCase()] = desigByLogin[u.toLowerCase()] || "";
     });
 
     // --- mistake counts per login|date (for IPA errs) ---
@@ -424,6 +434,34 @@
     return {
       SCORES: SCORES, QA_DATA: QA,
       ROLES: { map: roleMap, roles: roleList, counts: rCounts },
+      ROSTER: (function () {
+        // De-duplicated, alphabetical usernames for the reviewer dropdown.
+        var seen = {}, out = [];
+        roster.forEach(function (x) {
+          var k = x.u.toLowerCase();
+          if (!x.u || seen[k]) return;
+          seen[k] = 1; out.push(x);
+        });
+        out.sort(function (a, b) { return a.u.toLowerCase() < b.u.toLowerCase() ? -1 : 1; });
+        return out;
+      })(),
+      DESIGNATIONS: { byLogin: desigByLogin, byName: desigMap },
+      REVIEWS: (reviewRows || []).map(function (r) {
+        return {
+          review_id: String(r.review_id || ""),
+          review_date: String(r.review_date || ""),
+          reviewer_username: String(r.reviewer_username || ""),
+          reviewer_designation: String(r.reviewer_designation || ""),
+          portal: String(r.portal || ""),
+          mistake_key: String(r.mistake_key || ""),
+          mistake_date: String(r.mistake_date || ""),
+          order_url: String(r.order_url || ""),
+          target_login: String(r.target_login || ""),
+          target_designation: String(r.target_designation || ""),
+          verdict: String(r.verdict || ""),
+          remarks: String(r.remarks || "")
+        };
+      }).filter(function (r) { return r.mistake_key; }),
       LOCATIONS: { locations: locations, map: locMap, counts: lCounts },
       AMS: { map: amMap },
       TEAM_SETS: (function () {
@@ -453,6 +491,37 @@
   function jsonp(tabList, timeoutMs, sheetId) {
     return jsonpFull("tabs=" + encodeURIComponent(tabList.join(",")), timeoutMs, sheetId).then(function (j) { return (j && j.tabs) || {}; });
   }
+
+  // ---- Saving an error review -----------------------------------------------
+  // Appends (or corrects) one row in the workbook's "Error Reviews" tab via the
+  // Apps Script saveReview action, and mirrors it into window.REVIEWS so the UI
+  // updates immediately rather than waiting for a refetch. Writes go to the
+  // workbook currently on screen, so reviewing an archived month records the
+  // verdict in that month's file.
+  //
+  // Resolves { ok:true, review } on success. On failure it REJECTS and does not
+  // touch window.REVIEWS, so the dashboard can tell the user the verdict was
+  // not stored instead of showing a review that only exists on their screen.
+  window.__QA_SAVE_REVIEW = function (rec) {
+    rec = rec || {};
+    if (!rec.mistake_key) return Promise.reject(new Error("mistake_key is required"));
+    var q = "action=saveReview";
+    ["review_id", "review_date", "reviewer_username", "reviewer_designation", "portal",
+      "mistake_key", "mistake_date", "order_url", "target_login", "target_designation",
+      "verdict", "remarks"].forEach(function (k) {
+        if (rec[k] != null && rec[k] !== "") q += "&" + k + "=" + encodeURIComponent(String(rec[k]));
+      });
+    return jsonpFull(q, 45000, activeSheetId).then(function (j) {
+      if (!j || !j.ok) throw new Error((j && j.error) || "the sheet rejected the save");
+      var saved = j.review || rec;
+      window.REVIEWS = window.REVIEWS || [];
+      var i = window.REVIEWS.findIndex
+        ? window.REVIEWS.findIndex(function (r) { return r.mistake_key === saved.mistake_key; })
+        : -1;
+      if (i >= 0) window.REVIEWS[i] = saved; else window.REVIEWS.push(saved);
+      return { ok: true, review: saved, updated: !!j.updated };
+    });
+  };
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
   var PAGE = 24000;
@@ -531,7 +600,7 @@
   window.__QA_LOADING = false;
   window.__QA_LOAD_PROGRESS = null; // {loaded, total} while a big tab paginates
 
-  var SNAPSHOT_VERSION = 1;
+  var SNAPSHOT_VERSION = 2;   // bumped: snapshots now carry ROSTER/DESIGNATIONS/REVIEWS
   var LIVE_TTL_MS = 3 * 60 * 1000; // re-fetch Live at most once every 3 minutes
   var LS_PREFIX = "qaCache_" + TARGET + "_";
   var LS_MAX_CHARS = 4500000; // ~4.5MB guard so we never trip a QuotaExceededError
@@ -566,9 +635,14 @@
   function applySnapshot(s) {
     window.SCORES = s.SCORES; window.QA_DATA = s.QA_DATA;
     window.ROLES = s.ROLES; window.LOCATIONS = s.LOCATIONS; window.AMS = s.AMS; window.TEAM_SETS = s.TEAM_SETS;
+    window.ROSTER = s.ROSTER || []; window.DESIGNATIONS = s.DESIGNATIONS || { byLogin: {}, byName: {} };
+    window.REVIEWS = s.REVIEWS || [];
   }
 
+  var activeSheetId = null;   // null = the live, bound workbook
+
   function runLoad(sheetId, sourceKey) {
+    activeSheetId = sheetId || null;
     var mySeq = ++loadSeq;
     var key = sourceKey || "live";
     var isLive = key === "live";
@@ -601,7 +675,7 @@
     window.__QA_LOADING = true;
     window.__QA_LOAD_PROGRESS = null;
     var CORE = {};
-    var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
+    var detailTabs = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab, SHARED.reviews.tab];
     var phase1Tabs = (TARGET === "split"
       ? [CONFIG.legacy.daily.tab, CONFIG.ipa.daily.tab]
       : [cfg.daily.tab]).concat(detailTabs);
@@ -618,8 +692,10 @@
       if (!daily.length) { console.warn("[sheet-loader] daily returned no rows — keeping bundled data."); window.__QA_LOADING = false; return null; }
       CORE.daily = daily;
       CORE.role = tabs[SHARED.role.tab] || []; CORE.loc = tabs[SHARED.location.tab] || []; CORE.team = tabs[SHARED.teams.tab] || []; CORE.fr = tabs[SHARED.fr.tab] || [];
-      var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr);
+      CORE.reviews = tabs[SHARED.reviews.tab] || [];   // absent until the first review is saved
+      var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr, CORE.reviews);
       window.SCORES = g.SCORES; window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
+      window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS;
       console.log("[sheet-loader] phase 1: " + g.SCORES.analysts.length + " people, " + g.SCORES.records.length +
         " analyst-days through " + g.SCORES.dates[g.SCORES.dates.length - 1] + " — mistakes loading…");
       window.QA_DATA = null;
@@ -644,13 +720,14 @@
       }
       return mistPromise.then(function (mist) {
         if (mySeq !== loadSeq) return;
-        var g2 = build(CORE.daily, mist, CORE.role, CORE.loc, CORE.team, CORE.fr);
+        var g2 = build(CORE.daily, mist, CORE.role, CORE.loc, CORE.team, CORE.fr, CORE.reviews);
         window.SCORES = g2.SCORES; window.QA_DATA = g2.QA_DATA;
         window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
+        window.ROSTER = g2.ROSTER; window.DESIGNATIONS = g2.DESIGNATIONS; window.REVIEWS = g2.REVIEWS;
         console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
         window.__QA_LOADING = false;
         window.__QA_LOAD_PROGRESS = null;
-        var snapshot = { v: SNAPSHOT_VERSION, ts: Date.now(), SCORES: g2.SCORES, QA_DATA: g2.QA_DATA, ROLES: g2.ROLES, LOCATIONS: g2.LOCATIONS, AMS: g2.AMS, TEAM_SETS: g2.TEAM_SETS };
+        var snapshot = { v: SNAPSHOT_VERSION, ts: Date.now(), SCORES: g2.SCORES, QA_DATA: g2.QA_DATA, ROLES: g2.ROLES, LOCATIONS: g2.LOCATIONS, AMS: g2.AMS, TEAM_SETS: g2.TEAM_SETS, ROSTER: g2.ROSTER, DESIGNATIONS: g2.DESIGNATIONS, REVIEWS: g2.REVIEWS };
         MEM_CACHE[key] = snapshot;
         if (!isLive) {
           lsSet(key, snapshot);

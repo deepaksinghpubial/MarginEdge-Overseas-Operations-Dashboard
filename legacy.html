@@ -51,9 +51,10 @@ class Component extends DCLogic {
   rootRef = React.createRef();
   SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
   QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12};
-  PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
+  PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", reviewaudit:"Error Genuineness Review", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
     errorexplorer:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
+    reviewaudit:'<path d="M9 11l3 3 7-7"/><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/>',
     overview:'<path d="M3 3v18h18"/><path d="M7 16v2"/><path d="M12 11v7"/><path d="M17 6v12"/>',
     summary:'<path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>',
     leaderboard:'<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v1.5a3 3 0 0 1-3 3"/><path d="M7 5H4v1.5a3 3 0 0 0 3 3"/>',
@@ -91,6 +92,11 @@ class Component extends DCLogic {
     this.LOC = window.LOCATIONS || null;
     this.ROLE = window.ROLES || null;
     this.AM = window.AMS || null;
+    // Error-review support: the Role Details roster feeds the reviewer picker,
+    // DESIGNATIONS gives verbatim designations, REVIEWS is the saved audit trail.
+    this.ROSTER = window.ROSTER || [];
+    this.DESIG = window.DESIGNATIONS || { byLogin:{}, byName:{} };
+    this.REVIEWS = window.REVIEWS || [];
     this._teamAllowed = {};
     if (this.AM) { for (var ti=0; ti<this.S.teams.length; ti++){ this._teamAllowed[ti] = !!this.AM.map[this.S.teams[ti]]; } }
     // Team membership is now governed entirely by the sheet loader (allowlisted
@@ -99,7 +105,7 @@ class Component extends DCLogic {
     this.EXCL = {};
     this.st.role = "";
     if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
-    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false };
+    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revScope:"overall", revSaving:false, revError:null };
     if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
     this.noteText = "Scores: legacy_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
     this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
@@ -154,7 +160,7 @@ class Component extends DCLogic {
       +   '<div class="sb-brand"><img src="'+((window.__resources&&window.__resources.meLogo)||"assets/me-white.png")+'" alt="MarginEdge"><div class="ttl">Analyst Scoring</div><div class="sub">Legacy Portal \u00b7 Dhaka &amp; Chandigarh Operations</div></div>'
       +   '<div class="sb-group"><div class="sb-group-label">Insights</div>'+nav("summary","Executive Summary")+nav("ams","AM Performance")+nav("teams","Team Lead Performance")+nav("specialist","Specialist Performance")+nav("leaderboard","Analyst Performance")+'</div>'
       +   '<div class="sb-group"><div class="sb-group-label">Deep dive</div>'+nav("spprofile","Individual Specialist Performance")+nav("anprofile","Individual Analyst Performance")+'</div>'
-      +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("errorexplorer","Error Explorer")+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
+      +   '<div class="sb-group"><div class="sb-group-label">QA &amp; Training</div>'+nav("errorexplorer","Error Explorer")+nav("reviewaudit","Error Genuineness Review")+nav("coaching","Coaching Queue")+nav("training","Training Picks")+nav("compare","Compare")+'</div>'
       +   '<div class="sb-admin">'
       +     this.sbSourceHTML("Legacy Productivity","https://docs.google.com/spreadsheets/d/16GBOjwfzCdJBASuSqr_8A-TCJPjEMZxK3EWWcz3ETmo/edit")
       +     '<div class="sb-note" id="qa-note">'+this.esc(this.noteText)+'</div>'
@@ -230,6 +236,10 @@ class Component extends DCLogic {
       this.renderContent();
     }
     else if(act==="errdim"){ this.sel.errDim=arg; this.sel.errSearch=""; this.sel.errDrill=null; this.sel.errDrillShow=100; this.renderContent(); }
+    else if(act==="revopen"){ this.openReview(arg, t.dataset.an||""); }
+    else if(act==="revcancel"){ this.closeReview(); }
+    else if(act==="revstop"){ /* clicks inside the dialog must not close it */ }
+    else if(act==="revsave"){ this.saveReview(); }
     else if(act==="errdrill"){
       var edim=t.dataset.dim||this.sel.errDim||"area";
       var cur=this.sel.errDrill;
@@ -286,6 +296,9 @@ class Component extends DCLogic {
     else if(act==="locfilter"){ this.st.loc=t.value; var lf=t.closest(".role-filter"); if(lf) lf.classList.toggle("active", !!t.value); this.renderContent(); }
     else if(act==="exclusive"){ this.st.exclusiveOnly=t.checked; var el=t.closest(".excl-toggle"); if(el){ el.classList.toggle("active", t.checked); var cn=el.querySelector(".excl-count"); if(cn){ var allN=this.S.teams.filter(x=>x!=="Unassigned").length; var exN=Object.keys(this.exclusiveTeamIdx()).length; cn.textContent=(t.checked?exN:allN)+" teams shown"; } } this.renderContent(); }
     else if(act==="amsort"){ this.sel.amSort=t.value; this.renderContent(); }
+    else if(act==="revreviewer"){ if(this.sel.revOpen){ this.sel.revOpen.reviewer=t.value; this.sel.revError=null; this.enhanceReviewModal(); } }
+    else if(act==="revverdict"){ if(this.sel.revOpen){ this.sel.revOpen.verdict=t.value; this.sel.revError=null; } }
+    else if(act==="revscope"){ this.sel.revScope=t.value; this.renderContent(); }
     else if(act==="chartseries"){
       var parts=t.dataset.arg.split("::"), cid=parts[0], si=parts[1];
       this.sel.chartHidden=this.sel.chartHidden||{}; this.sel.chartHidden[cid]=this.sel.chartHidden[cid]||{};
@@ -295,6 +308,8 @@ class Component extends DCLogic {
   };
   onInput = (e) => {
     var t=e.target;
+    if(t.dataset.act==="revremarks"){ if(this.sel.revOpen) this.sel.revOpen.remarks=t.value; return; }
+    if(t.dataset.act==="revreviewer"&&t.tagName==="INPUT"){ if(this.sel.revOpen) this.sel.revOpen.reviewer=t.value; return; }
     if(t.dataset.act==="lbsearch"){ this.sel.lbSearch=t.value; this._caret=t.selectionStart; this.renderContent(); this._caret=null; }
     else if(t.dataset.act==="spsearch"){ this.sel.spSearch=t.value; this._caret=t.selectionStart; this._caretSp=true; this.renderContent(); this._caret=null; this._caretSp=false; }
     else if(t.dataset.act==="errsearch"){
@@ -408,10 +423,10 @@ class Component extends DCLogic {
   renderContent(){
     var el=this._q("#qa-content"); if(!el) return;
     var rws=this.srows(), p=this.st.page, html="";
-    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
-    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
-    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
-    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); return; }
+    if(p==="roles"){ el.innerHTML=this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="spprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="anprofile"){ el.innerHTML=this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
     if(p==="summary") html=this.pageSummary(rws);
     else if(p==="overview") html=this.pageOverview(rws);
     else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
@@ -422,13 +437,14 @@ class Component extends DCLogic {
     else if(p==="locations") html=this.pageLocations(rws);
     else if(p==="roles") html=this.pageRoles(rws);
     else if(p==="errorexplorer") html=this.pageErrorExplorer(rws);
+    else if(p==="reviewaudit") html=this.pageReviewAudit(rws);
     else if(p==="training") html=this.pageTraining(rws);
     else if(p==="profile") html=this.pageProfile(rws);
     else if(p==="coaching") html=this.pageCoaching(rws);
     else if(p==="compare") html=this.pageCompare(rws);
     el.innerHTML=html;
     this.enhanceKpiFx(el);
-    this.enhanceTableExport(el);
+    this.enhanceTableExport(el); this.enhanceReviewModal();
     if(this._caret!=null){ var s=this._q(this._caretErr?"#qa-errsearch":this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
   }
 
@@ -819,6 +835,278 @@ class Component extends DCLogic {
       +'<div class="card-body" style="padding-bottom:6px">'+kpi+grid+'</div>'+tableH+footH+'</div>';
   }
 
+
+  // ======================= ERROR GENUINENESS REVIEW =========================
+  // A mistake has no id of its own in the export, so reviews are keyed by the
+  // combination that uniquely identifies one: the order it belongs to plus the
+  // exact field and position flagged on it. Deliberately portal-agnostic, so a
+  // verdict recorded in the Split view is the same verdict Legacy/IPA see.
+  mistKey(r){
+    var F=this.QF, Q=this.Q;
+    return [Q.dates[r[F.DATE]], Q.areas[r[F.AREA]], Q.vars[r[F.VAR]],
+      Q.analysts[r[F.AN]], (r[F.LP]==null?"":r[F.LP]), (r[F.URL]||"")].join("|");
+  }
+  reviewMap(){
+    // Rebuilt per render rather than cached: window.REVIEWS is mutated in place
+    // by the loader when a save succeeds, so a stale cache would hide it.
+    var m={}, list=window.REVIEWS||this.REVIEWS||[];
+    for(var i=0;i<list.length;i++) m[list[i].mistake_key]=list[i];
+    return m;
+  }
+  designationOf(name){
+    if(!name) return "";
+    var d=this.DESIG||{byLogin:{},byName:{}};
+    var k=String(name).toLowerCase();
+    return (d.byName&&d.byName[k])||(d.byLogin&&d.byLogin[k])||"";
+  }
+  todayISO(){
+    // Local system date, not UTC — a reviewer in IST late evening should not
+    // have their review dated yesterday.
+    var d=new Date(), p=(n)=>(n<10?"0":"")+n;
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+  }
+  reviewVerdicts(){ return ["Genuine error","Ingenuine error"]; }
+  reviewChip(rv){
+    if(!rv) return '<span class="rev-chip rev-none">Not reviewed</span>';
+    var g=/^genuine/i.test(rv.verdict||"");
+    return '<span class="rev-chip '+(g?'rev-gen':'rev-ing')+'" title="'+this.esc((rv.verdict||'')+' · reviewed by '+(rv.reviewer_username||'?')+' on '+(rv.review_date||'?')+(rv.remarks?' · '+rv.remarks:''))+'">'+this.esc(g?'Genuine':'Ingenuine')+'</span>';
+  }
+  // The checkbox is the affordance the user asked for: ticked == reviewed.
+  reviewCell(r){
+    var key=this.mistKey(r), rv=this.reviewMap()[key];
+    var an=this.Q.analysts[r[this.QF.AN]]||"";
+    return '<td class="rev-cell" data-rev-key="'+this.esc(key)+'">'
+      +'<label class="rev-box" title="'+(rv?'Reviewed — click to view or correct':'Click to review this error')+'">'
+      +'<input type="checkbox" data-act="revopen" data-arg="'+this.esc(key)+'" data-an="'+this.esc(an)+'"'+(rv?' checked':'')+'>'
+      +'</label>'+(rv?' '+this.reviewChip(rv):'')+'</td>';
+  }
+  openReview(key,anName){
+    var rv=this.reviewMap()[key]||null;
+    var parts=String(key).split("|");
+    this.sel.revOpen={
+      key:key,
+      mistake_date:parts[0]||"",
+      order_url:parts[5]||"",
+      target:anName||parts[3]||"",
+      reviewer:rv?rv.reviewer_username:"",
+      verdict:rv?rv.verdict:"",
+      remarks:rv?rv.remarks:"",
+      review_id:rv?rv.review_id:"",
+      existing:!!rv
+    };
+    this.sel.revError=null; this.sel.revSaving=false;
+    this.enhanceReviewModal();
+  }
+  closeReview(){
+    this.sel.revOpen=null; this.sel.revSaving=false; this.sel.revError=null;
+    this.enhanceReviewModal();
+    this.renderContent();
+  }
+  // The modal lives outside #qa-content so re-rendering the page underneath it
+  // (which happens on save) cannot blow away the open dialog mid-edit.
+  enhanceReviewModal(){
+    var host=this.rootRef&&this.rootRef.current; if(!host) return;
+    var wrap=host.querySelector("#qa-rev-modal");
+    var o=this.sel.revOpen;
+    if(!o){ if(wrap) wrap.parentNode.removeChild(wrap); return; }
+    if(!wrap){
+      wrap=document.createElement("div");
+      wrap.id="qa-rev-modal";
+      (host.querySelector(".app") || host).appendChild(wrap);
+    }
+    wrap.innerHTML=this.reviewModalHTML(o);
+  }
+  reviewModalHTML(o){
+    var self=this;
+    var roster=(this.ROSTER&&this.ROSTER.length)?this.ROSTER:[];
+    var rOpts='<option value="">-- select reviewer --</option>'+roster.map(function(x){
+      return '<option value="'+self.esc(x.u)+'"'+(String(o.reviewer).toLowerCase()===String(x.u).toLowerCase()?' selected':'')+'>'+self.esc(x.u)+'</option>';
+    }).join('');
+    var desig=o.reviewer?this.designationOf(o.reviewer):"";
+    if(!desig&&o.reviewer){
+      for(var i=0;i<roster.length;i++) if(String(roster[i].u).toLowerCase()===String(o.reviewer).toLowerCase()){ desig=roster[i].d||""; break; }
+    }
+    var vOpts='<option value="">-- select verdict --</option>'+this.reviewVerdicts().map(function(v){
+      return '<option value="'+self.esc(v)+'"'+(o.verdict===v?' selected':'')+'>'+self.esc(v)+'</option>';
+    }).join('');
+    var targetDesig=this.designationOf(o.target);
+    var noRoster=!roster.length;
+    var link=o.order_url?'<a class="order-link" href="'+this.esc((this.Q&&this.Q.url_prefix||"")+o.order_url)+'" target="_blank" rel="noopener">open order ↗</a>':'—';
+    return '<div class="rev-overlay" data-act="revcancel">'
+      +'<div class="rev-dialog" role="dialog" aria-modal="true" data-act="revstop">'
+      +  '<div class="rev-head"><span>'+(o.existing?'Edit error review':'Review this error')+'</span>'
+      +    '<button type="button" class="rev-x" data-act="revcancel" title="Close without saving">✕</button></div>'
+      +  '<div class="rev-ctx">'+this.esc(o.mistake_date||'—')+' · <b>'+this.esc(o.target||'—')+'</b>'
+      +    (targetDesig?' <span class="rev-ctx-d">'+this.esc(targetDesig)+'</span>':'')+' · '+link+'</div>'
+      +  '<div class="rev-body">'
+      +    '<label class="rev-f"><span class="rev-l">Name of reviewer</span>'
+      +      (noRoster
+        ? '<input type="text" data-act="revreviewer" value="'+this.esc(o.reviewer||"")+'" placeholder="Role Details not loaded — type a username">'
+        : '<select data-act="revreviewer">'+rOpts+'</select>')+'</label>'
+      +    '<label class="rev-f"><span class="rev-l">Designation</span>'
+      +      '<input type="text" value="'+this.esc(desig)+'" readonly placeholder="'+(o.reviewer?'not set in Role Details':'auto-fills from the reviewer')+'"></label>'
+      +    '<label class="rev-f"><span class="rev-l">Date of review</span>'
+      +      '<input type="text" value="'+this.esc(this.todayISO())+'" readonly></label>'
+      +    '<label class="rev-f"><span class="rev-l">Is the error genuine?</span>'
+      +      '<select data-act="revverdict">'+vOpts+'</select></label>'
+      +    '<label class="rev-f rev-f-wide"><span class="rev-l">Remarks — outcome of the review</span>'
+      +      '<textarea data-act="revremarks" rows="3" placeholder="What did you conclude, and why?">'+this.esc(o.remarks||"")+'</textarea></label>'
+      +  '</div>'
+      +  (this.sel.revError?'<div class="rev-err">'+this.esc(this.sel.revError)+'</div>':'')
+      +  '<div class="rev-foot">'
+      +    '<span class="rev-hint">'+(this.sel.revSaving?'Saving to the Google Sheet…':'Saved to the workbook’s “Error Reviews” tab, visible to everyone.')+'</span>'
+      +    '<button type="button" class="rev-btn ghost" data-act="revcancel"'+(this.sel.revSaving?' disabled':'')+'>Cancel</button>'
+      +    '<button type="button" class="rev-btn" data-act="revsave"'+(this.sel.revSaving?' disabled':'')+'>'+(this.sel.revSaving?'Saving…':'Save')+'</button>'
+      +  '</div></div></div>';
+  }
+  saveReview(){
+    var o=this.sel.revOpen; if(!o||this.sel.revSaving) return;
+    if(!o.reviewer){ this.sel.revError="Pick who is doing the review."; this.enhanceReviewModal(); return; }
+    if(!o.verdict){ this.sel.revError="Choose whether the error is genuine or ingenuine."; this.enhanceReviewModal(); return; }
+    var rec={
+      review_id:o.review_id||"",
+      review_date:this.todayISO(),
+      reviewer_username:o.reviewer,
+      reviewer_designation:this.designationOf(o.reviewer)||(function(rs,u){ for(var i=0;i<rs.length;i++) if(String(rs[i].u).toLowerCase()===String(u).toLowerCase()) return rs[i].d||""; return ""; })(this.ROSTER||[],o.reviewer),
+      portal:(window.__SHEET_TARGET||"legacy"),
+      mistake_key:o.key,
+      mistake_date:o.mistake_date,
+      order_url:o.order_url,
+      target_login:o.target,
+      target_designation:this.designationOf(o.target),
+      verdict:o.verdict,
+      remarks:o.remarks||""
+    };
+    if(typeof window.__QA_SAVE_REVIEW!=="function"){
+      this.sel.revError="Saving needs the updated Apps Script deployment — the review was not stored.";
+      this.enhanceReviewModal(); return;
+    }
+    this.sel.revSaving=true; this.sel.revError=null; this.enhanceReviewModal();
+    var self=this;
+    window.__QA_SAVE_REVIEW(rec).then(function(){
+      self.sel.revSaving=false;
+      self.closeReview();
+    }).catch(function(e){
+      self.sel.revSaving=false;
+      self.sel.revError="Could not save to the sheet ("+(e&&e.message||"unknown error")+"). Nothing was recorded — try again.";
+      self.enhanceReviewModal();
+    });
+  }
+
+  // Roster of everyone whose errors could be reviewed, so "Total errors" is
+  // measured against the same filtered population the rest of the page uses.
+  reviewScopes(){
+    return [
+      {key:"overall", label:"Overall Reviewed Errors"},
+      {key:"person",  label:"Specialist / Analyst"},
+      {key:"am",      label:"Assistant Manager"},
+      {key:"lead",    label:"Leads"}
+    ];
+  }
+  pageReviewAudit(rws){
+    var F=this.QF, Q=this.Q;
+    var fx=this.fxInline("Error Genuineness Review","Every mistake a reviewer has marked genuine or ingenuine, from the workbook’s “Error Reviews” tab. Percentages below are against the mistakes currently in scope (location, role and date filters above).");
+    var head='<div class="card"><div class="card-head">Error Genuineness Review'+fx+'</div><div class="card-body">';
+    if(this.Q===null) return head+'<div class="placeholder-msg">Mistake Details export not loaded, so there is nothing to review yet.</div></div></div>';
+
+    var mrows=this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an))||[];
+    var total=mrows.length;
+    var rmap=this.reviewMap();
+
+    // Only count reviews whose mistake is actually in the current scope, so the
+    // percentages cannot exceed 100% when a filter narrows the population.
+    var inScope=[], gen=0, ing=0;
+    for(var i=0;i<mrows.length;i++){
+      var rv=rmap[this.mistKey(mrows[i])];
+      if(!rv) continue;
+      var row=Object.assign({},rv);
+      row.__r=mrows[i];
+      inScope.push(row);
+      if(/^genuine/i.test(rv.verdict||"")) gen++; else ing++;
+    }
+    var nRev=inScope.length;
+    var pc=(n,d)=>d>0?(n/d*100).toFixed(1)+"%":"—";
+
+    var kpi='<div class="kpi-row">'
+      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val">'+total.toLocaleString()+'</div><div class="k-sub">in the selected filters</div></div>'
+      +'<div class="kpi"><div class="k-label">Total errors reviewed</div><div class="k-val" style="color:var(--accent)">'+nRev.toLocaleString()+'</div><div class="k-sub">'+(total-nRev).toLocaleString()+' still to review</div></div>'
+      +'<div class="kpi"><div class="k-label">Reviewed</div><div class="k-val">'+pc(nRev,total)+'</div><div class="k-sub">of all errors in scope</div></div>'
+      +'<div class="kpi"><div class="k-label">Genuine errors</div><div class="k-val" style="color:var(--red)">'+gen.toLocaleString()+'</div><div class="k-sub">upheld on review</div></div>'
+      +'<div class="kpi"><div class="k-label">Ingenuine errors</div><div class="k-val" style="color:var(--green)">'+ing.toLocaleString()+'</div><div class="k-sub">overturned on review</div></div>'
+      +'<div class="kpi"><div class="k-label">Genuine</div><div class="k-val">'+pc(gen,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
+      +'<div class="kpi"><div class="k-label">Ingenuine</div><div class="k-val">'+pc(ing,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
+      +'</div>';
+
+    var scope=this.sel.revScope||"overall";
+    var scopes=this.reviewScopes();
+    if(!scopes.some(x=>x.key===scope)) scope="overall";
+    var scopeSel='<span class="ctrl-row" style="margin-left:auto"><select data-act="revscope">'
+      +scopes.map(x=>'<option value="'+x.key+'"'+(scope===x.key?' selected':'')+'>'+this.esc(x.label)+'</option>').join('')
+      +'</select></span>';
+
+    var body=head+kpi+'<div class="dim-note">Tick the <b>Review</b> box beside any error on the Individual Analyst or Specialist pages to record a verdict. Reviews are stored in the workbook, so the whole team sees the same audit trail.</div></div></div>';
+
+    if(!nRev){
+      return body+'<div class="card"><div class="card-head">Reviewed errors — 0'+scopeSel+'</div><div class="placeholder-msg">No errors have been reviewed in this range yet.</div></div>';
+    }
+
+    // Breakdown by whichever level the dropdown asks for.
+    var self=this;
+    var groupOf=function(row){
+      var r=row.__r;
+      if(scope==="person") return self.Q.analysts[r[F.AN]]||"—";
+      if(scope==="lead") return self.S.teams[r[F.TEAM]]||"Unassigned";
+      if(scope==="am") return self.amOf(self.S.teams[r[F.TEAM]])||"Unmapped";
+      return null;
+    };
+    var breakdown='';
+    if(scope!=="overall"){
+      var g={};
+      inScope.forEach(function(row){
+        var k=groupOf(row);
+        if(!g[k]) g[k]={k:k,n:0,gen:0,ing:0};
+        g[k].n++;
+        if(/^genuine/i.test(row.verdict||"")) g[k].gen++; else g[k].ing++;
+      });
+      var glist=Object.keys(g).map(k=>g[k]).sort((a,b)=>b.n-a.n);
+      var scopeLabel=scopes.filter(x=>x.key===scope)[0].label;
+      breakdown='<div class="card"><div class="card-head">Reviewed errors by '+this.esc(scopeLabel)+' — '+glist.length.toLocaleString()+'</div>'
+        +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>'+this.esc(scopeLabel)+'</th><th class="r">Reviewed</th><th class="r">Genuine</th><th class="r">Ingenuine</th><th class="r">Genuine %</th><th class="r">Ingenuine %</th></tr></thead><tbody>'
+        +glist.map(function(x){
+          return '<tr><td style="font-weight:600;font-family:var(--font-body)">'+self.esc(x.k)+'</td>'
+            +'<td class="r">'+x.n.toLocaleString()+'</td>'
+            +'<td class="r" style="color:var(--red);font-weight:700">'+x.gen.toLocaleString()+'</td>'
+            +'<td class="r" style="color:var(--green);font-weight:700">'+x.ing.toLocaleString()+'</td>'
+            +'<td class="r">'+pc(x.gen,x.n)+'</td><td class="r">'+pc(x.ing,x.n)+'</td></tr>';
+        }).join('')
+        +'</tbody></table></div></div>';
+    }
+
+    var sorted=inScope.slice().sort(function(a,b){ return (a.review_date<b.review_date)?1:(a.review_date>b.review_date)?-1:0; });
+    var rowsH=sorted.map(function(row,i){
+      var r=row.__r;
+      var link=row.order_url
+        ? '<a class="order-link" href="'+self.esc((Q.url_prefix||"")+row.order_url)+'" target="_blank" rel="noopener" title="Open order ↗">'+self.esc(Q.vars[r[F.VAR]]||"order")+' <span class="order-link-icon">↗</span></a>'
+        : '—';
+      var g=/^genuine/i.test(row.verdict||"");
+      var targetName=row.target_login||Q.analysts[r[F.AN]]||"—";
+      return '<tr><td class="r">'+(i+1)+'</td>'
+        +'<td>'+self.esc(row.review_date||'—')+'</td>'
+        +'<td style="font-weight:600;font-family:var(--font-body)">'+self.esc(row.reviewer_username||'—')+'</td>'
+        +'<td>'+self.esc(row.reviewer_designation||'—')+'</td>'
+        +'<td style="font-family:var(--font-body)">'+link+'</td>'
+        +'<td style="font-family:var(--font-body)"><button type="button" class="team-link" data-act="profile" data-arg="'+self.esc(targetName)+'">'+self.esc(targetName)+'</button></td>'
+        +'<td>'+self.esc(row.target_designation||self.designationOf(targetName)||'—')+'</td>'
+        +'<td><span class="rev-chip '+(g?'rev-gen':'rev-ing')+'">'+(g?'Genuine':'Ingenuine')+'</span></td>'
+        +'<td class="rev-remark">'+self.esc(row.remarks||'—')+'</td></tr>';
+    }).join('');
+
+    var tbl='<div class="card"><div class="card-head">Reviewed errors — '+sorted.length.toLocaleString()+scopeSel+'</div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th><th>Date of review</th><th>Reviewer</th><th>Reviewer designation</th><th>Order link</th><th>Error by</th><th>Their designation</th><th>Verdict</th><th>Remarks</th></tr></thead><tbody>'
+      +rowsH+'</tbody></table></div></div>';
+
+    return body+breakdown+tbl;
+  }
 
   exportTableEl(table, headEl){
     var ths=table.querySelectorAll("thead th");
@@ -1279,9 +1567,9 @@ class Component extends DCLogic {
     var rowsH=m.slice(0,cap).map((r,i)=>{
       var org=r[F.DIFFCLO]===true?'<span class="tag tag-proc">Processing</span>':r[F.DIFFCLO]===false?'<span class="tag tag-pp">Post-prod</span>':'<span class="tag" style="background:var(--neutral-100);color:var(--muted)">\u2014</span>';
       var area=Q.areas[r[F.AREA]];
-      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
+      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td><td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td>'+this.reviewCell(r)+'</tr>';
     }).join("");
-    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+th("Type","type")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+th("Type","type")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'<th>Review</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
@@ -2069,6 +2357,39 @@ class Component extends DCLogic {
 .qa .drill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;}
 .qa .drill-mini{background:var(--neutral-50);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
 .qa .drill-mini-t{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:12px;}
+/* ---- Error genuineness review ---- */
+.qa .rev-cell{white-space:nowrap;}
+.qa .rev-box{display:inline-flex;align-items:center;cursor:pointer;}
+.qa .rev-box input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent);margin:0;}
+.qa .rev-chip{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.02em;vertical-align:middle;}
+.qa .rev-chip.rev-gen{background:#fee2e2;color:#991b1b;}
+.qa .rev-chip.rev-ing{background:#dcfce7;color:#166534;}
+.qa .rev-chip.rev-none{background:var(--neutral-100);color:var(--muted);}
+.qa .rev-remark{max-width:280px;white-space:normal;font-family:var(--font-body);color:var(--text);}
+.qa .rev-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px;}
+.qa .rev-dialog{background:#fff;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.3);width:100%;max-width:620px;max-height:90vh;overflow-y:auto;font-family:var(--font-body);}
+.qa .rev-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--neutral-200);font-weight:700;font-size:15px;}
+.qa .rev-x{margin-left:auto;background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted);line-height:1;padding:2px 6px;border-radius:5px;}
+.qa .rev-x:hover{background:var(--neutral-100);color:var(--text);}
+.qa .rev-ctx{padding:11px 20px;background:var(--neutral-50,#f8fafc);border-bottom:1px solid var(--neutral-200);font-size:12px;color:var(--muted);}
+.qa .rev-ctx-d{color:var(--muted);font-style:italic;}
+.qa .rev-body{padding:18px 20px;display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;}
+.qa .rev-f{display:flex;flex-direction:column;gap:5px;}
+.qa .rev-f-wide{grid-column:1 / -1;}
+.qa .rev-l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.qa .rev-f select,.qa .rev-f input,.qa .rev-f textarea{font-family:var(--font-body);font-size:13px;padding:8px 10px;border:1px solid var(--neutral-300,#cbd5e1);border-radius:7px;background:#fff;color:var(--text);width:100%;box-sizing:border-box;}
+.qa .rev-f textarea{resize:vertical;min-height:64px;}
+.qa .rev-f input[readonly]{background:var(--neutral-100);color:var(--muted);cursor:default;}
+.qa .rev-f select:focus,.qa .rev-f textarea:focus,.qa .rev-f input:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+.qa .rev-err{margin:0 20px 12px;padding:9px 12px;background:#fee2e2;color:#991b1b;border-radius:7px;font-size:12px;font-weight:600;}
+.qa .rev-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--neutral-200);}
+.qa .rev-hint{font-size:11px;color:var(--muted);margin-right:auto;max-width:280px;}
+.qa .rev-btn{font-family:var(--font-body);font-size:13px;font-weight:700;padding:8px 18px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;}
+.qa .rev-btn:hover:not(:disabled){filter:brightness(1.08);}
+.qa .rev-btn:disabled{opacity:.6;cursor:default;}
+.qa .rev-btn.ghost{background:#fff;color:var(--text);border-color:var(--neutral-300,#cbd5e1);}
+.qa .rev-btn.ghost:hover:not(:disabled){background:var(--neutral-100);}
+@media (max-width:560px){ .qa .rev-body{grid-template-columns:1fr;} }
 .qa .rankbar-val-btn{background:none;border:none;padding:0;font:inherit;font-family:inherit;color:inherit;cursor:pointer;}
 .qa .rankbar-val-btn:hover{text-decoration:underline;}
 
