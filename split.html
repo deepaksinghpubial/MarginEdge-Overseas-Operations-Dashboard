@@ -236,6 +236,15 @@ class Component extends DCLogic {
       this.renderContent();
     }
     else if(act==="errdim"){ this.sel.errDim=arg; this.sel.errSearch=""; this.sel.errDrill=null; this.sel.errDrillShow=100; this.renderContent(); }
+    else if(act==="rowmore"||act==="rowall"||act==="rowless"){
+      var rkey=t.dataset.key||"lb";
+      this.sel.rowShow=this.sel.rowShow||{};
+      var curR=this.rowLimit(rkey);
+      if(act==="rowmore") this.sel.rowShow[rkey]=curR+(parseInt(arg,10)||50);
+      else if(act==="rowall") this.sel.rowShow[rkey]=1e9;
+      else this.sel.rowShow[rkey]=this.rowsBase();
+      this.renderContent();
+    }
     else if(act==="revopen"){ this.openReview(arg, t.dataset.an||""); }
     else if(act==="revcancel"){ this.closeReview(); }
     else if(act==="revstop"){ /* clicks inside the dialog must not close it */ }
@@ -355,8 +364,24 @@ class Component extends DCLogic {
     return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, series:ser, trend:this.trendOf(ser)}; });
   }
   trendOf(ser){ if(!ser||ser.length<2) return {dir:"flat",delta:0}; var mid=Math.floor(ser.length/2); var e=ser.slice(0,mid), l=ser.slice(mid); var ea=e.reduce((s,v)=>s+v,0)/(e.length||1), la=l.reduce((s,v)=>s+v,0)/(l.length||1); var d=la-ea, rel=ea?d/Math.abs(ea):0; return {dir:rel>0.05?"up":rel<-0.05?"down":"flat", delta:d}; }
-  trendArrow(t){ if(!t||t.dir==="flat") return '<span style="color:var(--muted);font-weight:700">\u2013</span>'; return t.dir==="up" ? '<span style="color:var(--green);font-weight:700">\u25B2</span>' : '<span style="color:var(--red);font-weight:700">\u25BC</span>'; }
-  sparkline(ser,color){ color=color||"var(--accent)"; if(!ser||!ser.length) return ""; var w=80,h=22,p=3; var mn=Math.min.apply(null,ser),mx=Math.max.apply(null,ser),rng=(mx-mn)||1; var pts=ser.map((v,i)=>{ var x=p+(ser.length===1?(w-2*p)/2:i/(ser.length-1)*(w-2*p)); var y=h-p-((v-mn)/rng)*(h-2*p); return x.toFixed(1)+","+y.toFixed(1); }); var lc=pts[pts.length-1].split(","); return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" style="display:block"><polyline points="'+pts.join(" ")+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lc[0]+'" cy="'+lc[1]+'" r="1.9" fill="'+color+'"/></svg>'; }
+  trendArrow(t){ if(!t||t.dir==="flat") return '<span class="tr tr-f">\u2013</span>'; return t.dir==="up" ? '<span class="tr tr-u">\u25B2</span>' : '<span class="tr tr-d">\u25BC</span>'; }
+  // 250 of these render on the leaderboard, so every repeated byte and every
+  // presentation attribute is multiplied 250x. Fixed styling lives in CSS
+  // (.qa .spk) and coordinates drop trailing ".0" — sub-pixel precision is
+  // invisible in an 80x22 box but cost ~4 chars per point per row.
+  _n1(n){ var s=n.toFixed(1); return s.slice(-2)===".0"?s.slice(0,-2):s; }
+  sparkline(ser,color){
+    color=color||"var(--accent)"; if(!ser||!ser.length) return "";
+    var w=80,h=22,p=3;
+    var mn=Math.min.apply(null,ser),mx=Math.max.apply(null,ser),rng=(mx-mn)||1;
+    var lx=0,ly=0,pts=ser.map((v,i)=>{
+      var x=p+(ser.length===1?(w-2*p)/2:i/(ser.length-1)*(w-2*p));
+      var y=h-p-((v-mn)/rng)*(h-2*p);
+      lx=x; ly=y;
+      return this._n1(x)+","+this._n1(y);
+    });
+    return '<svg class="spk" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts.join(" ")+'" stroke="'+color+'"/><circle cx="'+this._n1(lx)+'" cy="'+this._n1(ly)+'" r="1.9" fill="'+color+'"/></svg>';
+  }
   aggTeams(rws){
     var S=this.S, D=this.SD, m={};
     rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{}}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; });
@@ -846,6 +871,33 @@ class Component extends DCLogic {
   }
 
 
+  // Progressive row rendering for the big leaderboards.
+  //
+  // These tables used to emit every row up to a hard cap of 250 on every
+  // render. Profiling showed the cost is dominated by DOM ELEMENT COUNT, not
+  // payload size: 250 rows means ~2,500 cells plus 250 inline sparkline SVGs
+  // for the browser to parse, style and lay out, and that happens again on
+  // every sort, filter and date change. Trimming bytes barely helped; rendering
+  // fewer rows does. Callers show a page at a time with explicit controls to
+  // expand, matching the Error Explorer pattern already used elsewhere.
+  rowsBase(){ return 50; }
+  rowLimit(key){ var m=this.sel.rowShow||{}; return Math.max(1, m[key]||this.rowsBase()); }
+  moreControls(key, shownN, totalN, noun){
+    var BASE=this.rowsBase(), rest=totalN-shownN;
+    if(rest<=0 && shownN<=BASE)
+      return '<div class="dim-cap-note">Showing all '+totalN.toLocaleString()+' '+noun+'.</div>';
+    var h='<div class="dim-more">';
+    if(rest>0){
+      h+='<button type="button" class="dim-more-btn" data-act="rowmore" data-key="'+key+'" data-arg="50">Show '+Math.min(50,rest).toLocaleString()+' more</button>'
+        +'<button type="button" class="dim-more-btn ghost" data-act="rowall" data-key="'+key+'">Show all '+totalN.toLocaleString()+'</button>';
+    }
+    if(shownN>BASE)
+      h+='<button type="button" class="dim-more-btn ghost" data-act="rowless" data-key="'+key+'">Collapse to top '+BASE+'</button>';
+    h+='<span class="dim-cap-note" style="margin:0">Showing '+shownN.toLocaleString()+' of '+totalN.toLocaleString()+' '+noun
+      +' \u00b7 the \u2913 CSV button exports the rows shown; \u2913 Export CSV at the top of the page always exports all '+totalN.toLocaleString()+'.</span></div>';
+    return h;
+  }
+
   // ======================= ERROR GENUINENESS REVIEW =========================
   // A mistake has no id of its own in the export, so reviews are keyed by the
   // combination that uniquely identifies one: the order it belongs to plus the
@@ -1169,7 +1221,7 @@ class Component extends DCLogic {
       if(!table) continue;
       var head=card.querySelector(".card-head");
       if(!head || head.querySelector(".tbl-export-btn")) continue;
-      head.insertAdjacentHTML("beforeend",'<button type="button" class="tbl-export-btn reset-btn" data-act="tblexport" title="Export this table to CSV">\u2913 CSV</button>');
+      head.insertAdjacentHTML("beforeend",'<button type="button" class="tbl-export-btn reset-btn" data-act="tblexport" title="Export the rows currently shown to CSV">\u2913 CSV</button>');
     }
   }
 
@@ -1196,34 +1248,35 @@ class Component extends DCLogic {
     var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
     var q=this.sel.lbSearch.toLowerCase();
     var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
-    var capped=shown.slice(0,250);
+    var lbLimit=this.rowLimit("lb");
+    var capped=shown.slice(0,lbLimit);
     var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
     var rowsH=capped.map((a,i)=>{
       var rk=i+1, top3=(!hdrSort&&sort==="finalDesc"&&rk<=3);
-      var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
       var dF=a.delta;
+      var fsc=this.fsColor(a.fs,med.fs);
       var ps=(this.S.platformStats||{})[a.anIdx]||{};
-      var pdErr=s=>s?'Prod '+this.fs1(s.prod)+' \u00b7 Err '+this.pct(s.er):'<span style="color:var(--neutral-300)">\u2014</span>';
-      var portalPill=ps.portals?'<span class="tag" style="background:var(--sky-50);color:var(--me-blue);font-weight:700;white-space:nowrap">'+this.esc(ps.portals)+'</span>':'<span style="color:var(--neutral-300)">\u2014</span>';
-      return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
-        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
+      var pdErr=s=>s?'Prod '+this.fs1(s.prod)+' \u00b7 Err '+this.pct(s.er):'<span class="c-dash">\u2014</span>';
+      var portalPill=ps.portals?'<span class="tag portal-pill">'+this.esc(ps.portals)+'</span>':'<span class="c-dash">\u2014</span>';
+      return '<tr><td><span class="rank-badge '+(top3?'rk-top':'rk-nom')+'">'+rk+'</span></td>'
+        +'<td class="c-name"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
         +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
         +'<td>'+portalPill+'</td>'
-        +'<td style="white-space:nowrap;color:var(--muted);font-size:12.5px">'+pdErr(ps.legacy)+'</td>'
-        +'<td style="white-space:nowrap;color:var(--muted);font-size:12.5px">'+pdErr(ps.ipa)+'</td>'
-        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
-        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
-        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
+        +'<td class="c-plat">'+pdErr(ps.legacy)+'</td>'
+        +'<td class="c-plat">'+pdErr(ps.ipa)+'</td>'
+        +'<td class="r"><div class="ibar-wrap"><span class="fs-v" style="color:'+fsc+'">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+fsc+'"></div></div></div></td>'
+        +'<td><div class="traj">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
+        +'<td class="r er-v" style="color:'+this.erColor(a.er,med.er)+'">'+this.pct(a.er)+'</td>'
         +'<td class="r">'+this.fs1(a.prod)+'</td>'
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
-        +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
-        +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
+        +'<td class="r c-proc">'+a.errs+'</td>'
+        +'<td class="r c-mut">'+a.days+'</td></tr>';
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
     return '<div class="card"><div class="card-head">Analyst leaderboard \u2014 '+list.length+' analysts \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)
       +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-lbsearch" data-act="lbsearch" placeholder="Search analyst or team\u2026" value="'+this.esc(this.sel.lbSearch)+'"><select data-act="lbsort">'+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("prodDesc","Productivity \u2193")+sortOpt("errorsDesc","Most errors")+'</select></span></div>'
       +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Analyst","name")+this.tblTh(tblId,"Team","team")+'<th>Portal(s)</th><th>Legacy (Prod/Err)</th><th>IPA (Prod/Err)</th>'+this.tblTh(tblId,"Avg final score","fs",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
-      +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' analysts \u2014 refine the search to narrow down.</div>':'')+'</div>';
+      +this.moreControls("lb",capped.length,shown.length,"analysts")+'</div>';
   }
 
   pageTeams(rws){
@@ -1303,7 +1356,9 @@ class Component extends DCLogic {
     var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
     var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
     var fpFx=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the specialist\u2019s scored days in range (days with no FR record on file count as 0).");
-    var rowsH=shown.slice(0,250).map((a,i)=>{
+    var spLimit=this.rowLimit("sp");
+    var spShownN=Math.min(shown.length,spLimit);
+    var rowsH=shown.slice(0,spLimit).map((a,i)=>{
       var rk=i+1, top3=(!hdrSort&&sort==="fpDesc"&&rk<=3);
       var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
       var dF=a.delta;
@@ -1328,7 +1383,7 @@ class Component extends DCLogic {
       +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("fpDesc","Final points (FR) \u2193")+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Avg FR/day \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
       +(hasFr?'<div class="note-strip">Ranked by Final Points after considering FR counts'+fpFx+' \u2014 FR count \u00d7 2 + final score, averaged per day. Position score (shown alongside) instead blends avg final score with average daily FR volume, lifting standing by up to 25% relative to the top reviewer. Avg FR/day only counts days with 50 or more FRs; older archives without daily FR data show a flat total instead.</div>':'')
       +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
-      +(shown.length>250?'<div class="note-strip">Showing 250 of '+shown.length+' specialists.</div>':'')+'</div>';
+      +this.moreControls("sp",spShownN,shown.length,"specialists")+'</div>';
   }
   gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
   gotoAM(amName){ this.sel.amReport=amName; this.setPage("amreport"); }
@@ -2422,6 +2477,25 @@ class Component extends DCLogic {
 .qa .rev-btn.ghost:hover:not(:disabled){background:var(--neutral-100);}
 @media (max-width:560px){ .qa .rev-body{grid-template-columns:1fr;} }
 .qa .rankbar-val-btn{background:none;border:none;padding:0;font:inherit;font-family:inherit;color:inherit;cursor:pointer;}
+/* ---- leaderboard row styling (was inline on every row; 250 rows x ~300
+       repeated chars each made the page ~30% bigger than it needed to be) ---- */
+.qa .spk{display:block;width:80px;height:22px;}
+.qa .spk polyline{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
+.qa .tr{font-weight:700;}
+.qa .tr-f{color:var(--muted);}
+.qa .tr-u{color:var(--green);}
+.qa .tr-d{color:var(--red);}
+.qa .rank-badge.rk-top{background:var(--honey-600);color:#fff;}
+.qa .rank-badge.rk-nom{background:var(--neutral-100);color:var(--muted);}
+.qa td.c-name{font-weight:700;font-family:var(--font-body);}
+.qa .traj{display:flex;align-items:center;gap:6px;}
+.qa .fs-v{font-weight:800;}
+.qa td.er-v{font-weight:700;}
+.qa td.c-proc{color:var(--proc);}
+.qa td.c-mut{color:var(--muted);}
+.qa td.c-plat{white-space:nowrap;color:var(--muted);font-size:12.5px;}
+.qa .c-dash{color:var(--neutral-300);}
+.qa .tag.portal-pill{background:var(--sky-50);color:var(--me-blue);font-weight:700;white-space:nowrap;}
 .qa .rankbar-val-btn:hover{text-decoration:underline;}
 
 .qa .kpi .k-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:6px;}
