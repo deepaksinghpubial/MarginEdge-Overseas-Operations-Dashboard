@@ -1,5 +1,5 @@
-.DS_Store
-Thumbs.db
-node_modules/
-.netlify/
-*.log
+# Generated offline copies (tools/make-standalone.py). ~1.9 MB each and rebuilt
+# on demand, so they are deliberately not committed - keep them on your own
+# machine or in Drive, not in git history.
+*-standalone.html
+backups/

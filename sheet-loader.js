@@ -1059,6 +1059,23 @@
   }
 
   function bootData() {
+    // An offline archive (see tools/make-standalone.py) has its data baked into
+    // the page. Use it straight away so the file renders instantly and works
+    // with no network at all, then still try for fresher figures if we happen
+    // to be online. If that fails we simply keep showing the embedded copy —
+    // and deliberately do NOT raise the "bundled sample data" banner, because
+    // an embedded snapshot IS real data, just frozen at build time.
+    var embeddedOk = false;
+    if (window.__QA_EMBEDDED_SNAPSHOT) {
+      try {
+        applySnapshot_(window.__QA_EMBEDDED_SNAPSHOT, window.__QA_EMBEDDED_SNAPSHOT.month);
+        embeddedOk = true;
+        console.log("[snapshot] using the copy embedded in this file (generated " +
+          (window.__QA_EMBEDDED_SNAPSHOT.lastUpdated || "unknown") + "); will refresh if online.");
+      } catch (e) {
+        console.warn("[snapshot] embedded copy unusable (" + e.message + ")");
+      }
+    }
     loadManifest().then(function (m) {
       var cur = null;
       m.months.forEach(function (mo) { if (mo.key === (m.current || m.months[0].key)) cur = mo; });
@@ -1070,6 +1087,10 @@
       // Snapshot path unavailable. Serve the last good copy if we have one, then
       // fall back to the live sheet so the dashboard still works during the
       // transition (or if a snapshot job fails).
+      if (embeddedOk) {
+        console.log("[snapshot] no newer data reachable — keeping the copy embedded in this file.");
+        return;
+      }
       console.warn("[snapshot] unavailable (" + e.message + ") — trying cached copy, then the live sheet.");
       var cached = null;
       try {
