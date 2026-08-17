@@ -1,14 +1,18 @@
 {
-  "schema": 1,
+  "schema": 2,
   "months": [
     {
       "key": "2026-08",
       "label": "August 2026",
-      "file": "data/current.json",
-      "lastUpdated": "2026-08-17T05:39:07-07:00",
+      "files": {
+        "core": "data/core-current.json",
+        "legacy": "data/legacy-current.json",
+        "ipa": "data/ipa-current.json"
+      },
+      "lastUpdated": "2026-08-17T06:03:47-07:00",
       "live": true
     }
   ],
   "current": "2026-08",
-  "updated": "2026-08-17T05:39:07-07:00"
+  "updated": "2026-08-17T06:03:47-07:00"
 }
