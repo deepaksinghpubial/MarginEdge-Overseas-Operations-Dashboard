@@ -105,7 +105,7 @@ class Component extends DCLogic {
     this.EXCL = {};
     this.st.role = "";
     if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
-    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revRoleScope:"", revD1:"all", revD2:"", revD3:"all", revSaving:false, revError:null };
+    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revRoleScope:"", revD1:"all", revD2:"", revD3:"all", revVerdict:"", revSaving:false, revError:null };
     if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
     this.noteText = "Scores: legacy_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
     this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
@@ -258,16 +258,25 @@ class Component extends DCLogic {
       else this.sel.rowShow[rkey]=this.rowsBase();
       this.renderContent();
     }
+    else if(act==="revcell"){
+      // "am|category|verdict" from a clicked figure in the summary table. An
+      // empty am means all Assistant Managers (the totals row).
+      var rp=String(arg).split("|");
+      this.sel.revD1=rp[0]?"am":"all";
+      this.sel.revD2=rp[0]||"";
+      this.sel.revD3=rp[1]||"all";
+      this.sel.revVerdict=rp[2]||"";
+      this.renderContent();
+      this.scrollToRevDetail();
+    }
     else if(act==="revjumpam"){
       // Clicking an AM in the summary table or the chart loads their reviews
       // into the detail section and scrolls to it, rather than replacing the
       // summary the user was reading.
-      this.sel.revD1="am"; this.sel.revD2=arg; this.renderContent();
-      var self=this;
-      setTimeout(function(){
-        var el=self.rootRef.current&&self.rootRef.current.querySelector("#rev-detail-anchor");
-        if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"});
-      },40);
+      this.sel.revD1="am"; this.sel.revD2=arg;
+      this.sel.revD3="all"; this.sel.revVerdict="";   // the name means "everything for them"
+      this.renderContent();
+      this.scrollToRevDetail();
     }
     else if(act==="revopen"){ this.openReview(arg, t.dataset.an||""); }
     else if(act==="revcancel"){ this.closeReview(); }
@@ -334,6 +343,7 @@ class Component extends DCLogic {
     else if(act==="revrolescope"){ this.sel.revRoleScope=t.value; this.renderContent(); }
     else if(act==="revd1"){ this.sel.revD1=t.value; this.sel.revD2=""; this.renderContent(); }
     else if(act==="revd2"){ this.sel.revD2=t.value; this.renderContent(); }
+    else if(act==="revverdict"){ this.sel.revVerdict=t.value; this.renderContent(); }
     else if(act==="revd3"){
       // A different population can invalidate the chosen name, so clear it
       // rather than leave the table silently empty.
@@ -1172,6 +1182,13 @@ class Component extends DCLogic {
   // Sections 2 and 3 are AM-centric by design; clicking either drills into
   // section 4 rather than replacing what you were looking at.
 
+  scrollToRevDetail(){
+    var self=this;
+    setTimeout(function(){
+      var el=self.rootRef.current&&self.rootRef.current.querySelector("#rev-detail-anchor");
+      if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"});
+    },40);
+  }
   reviewRoleScopes(){
     return [
       {key:"",           label:"All by default"},
@@ -1196,9 +1213,25 @@ class Component extends DCLogic {
       {key:"all",            label:"All errors"},
       {key:"lead",           label:"Leads Errors"},
       {key:"specialist",     label:"Specialist Errors"},
+      {key:"analyst",        label:"Analyst Errors (both portals)"},
       {key:"analyst_legacy", label:"Legacy Analyst Errors"},
       {key:"analyst_ipa",    label:"IPA Analyst Errors"}
     ];
+  }
+  reviewVerdicts2(){
+    return [
+      {key:"",          label:"Genuine and ingenuine"},
+      {key:"genuine",   label:"Genuine only"},
+      {key:"ingenuine", label:"Ingenuine only"}
+    ];
+  }
+  // True when a review belongs in the chosen dropdown-3 bucket. "analyst" spans
+  // both portals; the two portal-specific keys narrow it further.
+  reviewInCat(f, d3){
+    if(d3==="all") return true;
+    var cat=this.reviewCatOf(f);
+    if(d3==="analyst") return cat==="analyst_legacy"||cat==="analyst_ipa";
+    return cat===d3;
   }
 
   // Everything the page needs about one reviewed error, resolved once.
@@ -1288,22 +1321,43 @@ class Component extends DCLogic {
       +roleScopes.map(function(x){ return '<option value="'+x.key+'"'+(roleScope===x.key?' selected':'')+'>'+self.esc(x.label)+'</option>'; }).join('')
       +'</select></span>';
 
+    // Every figure is a link to the exact subset behind it, so a reader never
+    // has to re-derive a filter by hand. arg is "am|category|verdict"; an empty
+    // am means all Assistant Managers (used by the totals row). A zero is left
+    // as plain text, since there would be nothing to show.
+    var cell=function(n, am, cat, verdict, style, label){
+      var txt=n.toLocaleString();
+      if(!n) return '<td class="r"'+(style?' style="'+style+'"':'')+'>'+txt+'</td>';
+      var arg=(am||"")+"|"+(cat||"all")+"|"+(verdict||"");
+      return '<td class="r"'+(style?' style="'+style+'"':'')+'>'
+        +'<button type="button" class="rev-num" data-act="revcell" data-arg="'+self.esc(arg)+'"'
+        +' title="Show '+self.esc(label)+' in the detail table below">'+txt+'</button></td>';
+    };
+    // A role scope chosen above should carry into what a clicked figure shows.
+    var scopeCat=(roleScope==="Specialist")?"specialist":(roleScope==="Analyst")?"analyst":"all";
     var sumRows=amList.map(function(b){
-      return '<tr class="rev-am-row" data-act="revjumpam" data-arg="'+self.esc(b.am)+'" title="Click to see these reviews below">'
-        +'<td style="font-weight:700;font-family:var(--font-body)"><button type="button" class="team-link" data-act="revjumpam" data-arg="'+self.esc(b.am)+'">'+self.esc(b.am)+'</button></td>'
-        +'<td class="r">'+b.specN.toLocaleString()+'</td>'
-        +'<td class="r">'+b.anlyN.toLocaleString()+'</td>'
-        +'<td class="r" style="font-weight:800">'+b.n.toLocaleString()+'</td>'
-        +'<td class="r" style="color:var(--red);font-weight:700">'+b.gen.toLocaleString()+'</td>'
-        +'<td class="r" style="color:var(--green);font-weight:700">'+b.ing.toLocaleString()+'</td></tr>';
+      var who=b.am;
+      return '<tr>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button type="button" class="team-link" data-act="revjumpam" data-arg="'+self.esc(who)+'">'+self.esc(who)+'</button></td>'
+        +cell(b.specN, who, "specialist", "", "", "the "+b.specN+" specialist(s) under "+who)
+        +cell(b.anlyN, who, "analyst", "", "", "the "+b.anlyN+" analyst(s) under "+who)
+        +cell(b.n,    who, scopeCat, "", "font-weight:800", "all "+b.n+" reviewed errors under "+who)
+        +cell(b.gen,  who, scopeCat, "genuine", "color:var(--red);font-weight:700", "the "+b.gen+" genuine errors under "+who)
+        +cell(b.ing,  who, scopeCat, "ingenuine", "color:var(--green);font-weight:700", "the "+b.ing+" ingenuine errors under "+who)
+        +'</tr>';
     }).join('');
     var totSpec={}, totAnly={};
     scoped.forEach(function(f){ if(f.role==="Specialist") totSpec[f.person]=1; else if(f.role==="Analyst") totAnly[f.person]=1; });
+    var tGen=scoped.filter(function(f){return f.genuine;}).length;
+    var tIng=scoped.length-tGen;
     var sumTotal='<tr style="border-top:2px solid var(--border);font-weight:800">'
-      +'<td>Total</td><td class="r">'+Object.keys(totSpec).length+'</td><td class="r">'+Object.keys(totAnly).length+'</td>'
-      +'<td class="r">'+scoped.length.toLocaleString()+'</td>'
-      +'<td class="r" style="color:var(--red)">'+scoped.filter(function(f){return f.genuine;}).length.toLocaleString()+'</td>'
-      +'<td class="r" style="color:var(--green)">'+scoped.filter(function(f){return !f.genuine;}).length.toLocaleString()+'</td></tr>';
+      +'<td>Total</td>'
+      +cell(Object.keys(totSpec).length, "", "specialist", "", "", "every specialist reviewed")
+      +cell(Object.keys(totAnly).length, "", "analyst", "", "", "every analyst reviewed")
+      +cell(scoped.length, "", scopeCat, "", "", "all reviewed errors")
+      +cell(tGen, "", scopeCat, "genuine", "color:var(--red)", "all genuine errors")
+      +cell(tIng, "", scopeCat, "ingenuine", "color:var(--green)", "all ingenuine errors")
+      +'</tr>';
 
     var summary='<div class="card"><div class="card-head">Reviewed errors by Assistant Manager'
       +this.fxInline("Reviewed errors by Assistant Manager","Rows are Assistant Managers. Specialist and Analyst counts are how many DISTINCT people under that AM have at least one reviewed error — not error counts. The dropdown limits every figure to one role.")
@@ -1312,7 +1366,7 @@ class Component extends DCLogic {
       +'<th>Name of Asst Mgrs</th><th class="r">Specialists with reviewed errors</th><th class="r">Analysts with reviewed errors</th>'
       +'<th class="r">Total Errors Reviewed</th><th class="r">Total Genuine Errors</th><th class="r">Total Ingenuine Errors</th>'
       +'</tr></thead><tbody>'+sumRows+sumTotal+'</tbody></table></div>'
-      +'<div class="dim-cap-note">Click any Assistant Manager to load their reviews into the detail table below.</div></div>';
+      +'<div class="dim-cap-note">Every figure in this table is clickable and loads exactly that subset into the detail table below \u2014 clicking <b>88</b> under Genuine shows those 88 errors, not all of that manager\u2019s. Zeros are not links.</div></div>';
 
     // ================= 3. clickable chart =================================
     var chart=this.revAmChart(amList);
@@ -1327,7 +1381,15 @@ class Component extends DCLogic {
 
     // Dropdown 2 options come from the data still in scope after dropdown 3, so
     // it can only ever offer names that actually have something to show.
-    var afterCat=(d3==="all")?all:all.filter(function(f){ return self.reviewCatOf(f)===d3; });
+    var verdicts2=this.reviewVerdicts2();
+    var vFilter=this.sel.revVerdict||"";
+    if(!verdicts2.some(function(x){return x.key===vFilter;})) vFilter="";
+    var afterCat=all.filter(function(f){
+      if(!self.reviewInCat(f,d3)) return false;
+      if(vFilter==="genuine" && !f.genuine) return false;
+      if(vFilter==="ingenuine" && f.genuine) return false;
+      return true;
+    });
     var d2opts=[];
     if(d1!=="all"){
       var seen={};
@@ -1354,6 +1416,7 @@ class Component extends DCLogic {
         : '<select data-act="revd2" title="Which '+this.esc(d1def.noun)+'"'+(d2opts.length?'':' disabled')+'>'
           +opt("","All "+d1def.noun+"s",d2)+d2opts.map(function(v){return opt(v,v,d2);}).join('')+'</select>')
       +'<select data-act="revd3" title="Which population the error is attributed to">'+D3.map(function(x){return opt(x.key,x.label,d3);}).join('')+'</select>'
+      +'<select data-act="revverdict" title="Limit to one verdict">'+verdicts2.map(function(x){return opt(x.key,x.label,vFilter);}).join('')+'</select>'
       +'</span>';
 
     var detailRows=rows.slice().sort(function(a,b){
@@ -1380,6 +1443,7 @@ class Component extends DCLogic {
     var scopeBits=[];
     if(d2) scopeBits.push(d1def.noun+": "+d2);
     if(d3!=="all") scopeBits.push(D3.filter(function(x){return x.key===d3;})[0].label);
+    if(vFilter) scopeBits.push(verdicts2.filter(function(x){return x.key===vFilter;})[0].label);
     var detail='<div class="card" id="rev-detail-anchor"><div class="card-head">Reviewed Error Details — '+rows.length.toLocaleString()
       +(scopeBits.length?' <span style="text-transform:none;letter-spacing:0;font-weight:600">('+this.esc(scopeBits.join(" · "))+')</span>':'')
       +ctrls+'</div>'
@@ -2705,8 +2769,9 @@ class Component extends DCLogic {
 .qa .rev-chip.rev-none{background:var(--neutral-100);color:var(--muted);}
 .qa .rev-remark{max-width:280px;white-space:normal;font-family:var(--font-body);color:var(--text);}
 .qa .rev-ctrls select{max-width:210px;}
-.qa .rev-am-row{cursor:pointer;}
-.qa .rev-am-row:hover{background:var(--neutral-50,#f8fafc);}
+.qa .rev-num{background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;font-variant-numeric:tabular-nums;}
+.qa .rev-num:hover{text-decoration:underline;}
+.qa .rev-num:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
 .qa .rev-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;cursor:pointer;padding:3px 4px;border-radius:6px;}
 .qa .rev-bar-row:hover{background:var(--neutral-50,#f8fafc);}
 .qa .rev-bar-lbl{width:150px;flex-shrink:0;font-size:12px;font-family:var(--font-body);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
