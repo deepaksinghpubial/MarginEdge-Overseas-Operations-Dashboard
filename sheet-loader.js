@@ -62,7 +62,8 @@
       if (!p) return;
       if (!merged) {
         merged = { schema: p.schema, month: p.month, label: p.label, lastUpdated: p.lastUpdated,
-                   timezone: p.timezone, generator: p.generator, counts: {}, warnings: [], data: {} };
+                   timezone: p.timezone, generator: p.generator, sourceSheetId: p.sourceSheetId,
+                   counts: {}, warnings: [], data: {} };
       }
       Object.keys(p.data || {}).forEach(function (k) {
         // A large month is published as several chunk files, each carrying a
@@ -1024,7 +1025,7 @@
   var snapMonths = null;      // manifest entries, once loaded
   var snapActive = null;      // month key currently displayed
 
-  function applySnapshot_(snap, monthKey) {
+  function applySnapshot_(snap, monthKey, liveFlag) {
     var tabs = snapshotToTabs(snap);
     var daily;
     if (TARGET === "split") {
@@ -1055,6 +1056,11 @@
       lastUpdated: snap.lastUpdated || null,
       month: snap.month || monthKey || null,
       label: snap.label || null,
+      // The workbook this month was actually read FROM. Recorded by the
+      // generator, so the sidebar's "Open sheet" link can point at the right
+      // file for an archived month instead of always the live one.
+      sourceSheetId: snap.sourceSheetId || null,
+      live: !!liveFlag,
       counts: snap.counts || null,
       warnings: snap.warnings || []
     };
@@ -1094,7 +1100,7 @@
     return Promise.all(urls.map(function (u) { return fetchJSON(u, 45000); })).then(function (parts) {
       var snap = (parts.length === 1 && !(entry && entry.files)) ? parts[0] : mergeParts(parts);
       if (!snap) throw new Error("snapshot parts were empty");
-      applySnapshot_(snap, monthKey);
+      applySnapshot_(snap, monthKey, entry && entry.live);
       lsSet("snap_" + (snap.month || monthKey || "current"), { v: SNAPSHOT_VERSION, ts: Date.now(), snap: snap });
       console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
       // Verdicts recorded since the snapshot ran would otherwise be invisible

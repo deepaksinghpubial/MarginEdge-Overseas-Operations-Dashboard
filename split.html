@@ -187,14 +187,32 @@ class Component extends DCLogic {
       +' title="Re-read the Google Sheet now, ignoring the 60-second shared cache. Use this after editing the sheet.">\u21bb</button>'
       +'</div>';
   }
+  // "Open sheet" must point at the workbook the figures on screen actually came
+  // from. Each archived month lives in its OWN spreadsheet, so a hard-coded link
+  // sent a reader looking at July to the live August book - the numbers would not
+  // have matched and there was nothing to explain why.
+  //
+  // The generator records sourceSheetId inside every snapshot, so the link is
+  // derived from the data rather than maintained by hand: archive a new month and
+  // its link is correct with no code change. The passed-in href is only a
+  // fallback for when no snapshot has loaded (bundled or live-sheet mode).
   sbSourceHTML(liveName,liveHref){
-    var sources=window.__QA_SOURCES||{};
-    var key=this.sel.dataSource||"live";
-    var src=sources[key];
-    var isLive=!src||!src.sheetId;
-    var name=isLive?liveName:(src.label+" (archived snapshot)");
-    var href=isLive?liveHref:("https://docs.google.com/spreadsheets/d/"+src.sheetId+"/edit");
-    return '<div class="sb-source"><div class="lbl">'+this.ic("doc")+'Data source</div><div class="sb-source-name">'+this.esc(name)+' &middot; Google Sheet</div><a class="sb-source-link" href="'+this.esc(href)+'" target="_blank" rel="noopener">Open sheet \u2197</a></div>';
+    var snap=window.__QA_SNAPSHOT;
+    var name=liveName, href=liveHref, note="";
+    if(snap&&snap.sourceSheetId){
+      href="https://docs.google.com/spreadsheets/d/"+snap.sourceSheetId+"/edit";
+      if(snap.label&&!snap.live){ name=liveName; note=snap.label+" archive"; }
+      else if(snap.label){ note=snap.label; }
+    } else {
+      // Legacy path: the old sheet-per-archive picker, still used if the
+      // snapshot is unavailable and we fell back to reading the sheet directly.
+      var src=(window.__QA_SOURCES||{})[this.sel.dataSource||"live"];
+      if(src&&src.sheetId){ href="https://docs.google.com/spreadsheets/d/"+src.sheetId+"/edit"; note=src.label; }
+    }
+    return '<div class="sb-source"><div class="lbl">'+this.ic("doc")+'Data source</div>'
+      +'<div class="sb-source-name">'+this.esc(name)+' &middot; Google Sheet</div>'
+      +(note?'<div class="sb-source-sub">'+this.esc(note)+'</div>':'')
+      +'<a class="sb-source-link" href="'+this.esc(href)+'" target="_blank" rel="noopener">Open sheet \u2197</a></div>';
   }
   locFilterHTML(){ if(!this.LOC) return ''; var active=!!this.st.loc; var opts='<option value="">All Locations</option>'+this.LOC.locations.map(l=>'<option value="'+this.esc(l)+'"'+(this.st.loc===l?' selected':'')+'>'+this.esc(l)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Location</label><select data-act="locfilter">'+opts+'</select></div>'; }
   roleFilterHTML(){ if(!this.ROLE) return ''; var active=!!this.st.role; var opts='<option value="">All roles</option>'+this.ROLE.roles.map(r=>'<option value="'+this.esc(r)+'"'+(this.st.role===r?' selected':'')+'>'+this.esc(r)+'</option>').join(''); return '<div class="role-filter'+(active?' active':'')+'"><label>Role</label><select data-act="rolefilter">'+opts+'</select></div>'; }
@@ -2753,6 +2771,7 @@ class Component extends DCLogic {
 .qa .ds-refresh:disabled{opacity:.45;cursor:default;}
 .qa .ds-stamp{font-size:10.5px;font-weight:700;color:#cfe3f5;white-space:nowrap;letter-spacing:.02em;}
 .qa .ds-stamp.stale{color:#ffd08a;}
+.qa .sb-source-sub{font-size:10.5px;color:#9fb6cc;margin-top:2px;}
 .qa .data-source-filter.archive select{border-color:#ffd58a;color:#7a3e05;}
 .qa .data-source-filter select:disabled{opacity:.6;cursor:wait;}
 .qa .ds-spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:ds-spin .7s linear infinite;flex:0 0 auto;}
