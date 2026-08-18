@@ -140,14 +140,10 @@ function archiveMonth(monthKey, sheetId) {
   }
   var built = buildSnapshot(monthKey, sheetId);
   if (sheetId) Logger.log("Reading from archived workbook " + sheetId);
-  var parts = splitSnapshot(built.snapshot);
-  var files = {};
-  Object.keys(parts).forEach(function (p) {
-    files[partFileName(p, monthKey, false)] = JSON.stringify(parts[p]);
-  });
-  files[MANIFEST_PATH] = JSON.stringify(
-    buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false), null, 2);
-  githubPutMany(files, "Archive dashboard snapshot for " + monthKey);
+  var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/false);
+  w.files[MANIFEST_PATH] = JSON.stringify(
+    buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false, w.fileMap), null, 2);
+  githubPutMany(w.files, "Archive dashboard snapshot for " + monthKey);
   Logger.log("Archived " + monthKey + " (" + built.snapshot.counts.totalRows + " rows)");
   return built.summary;
 }
@@ -189,22 +185,12 @@ function buildAndPublish(opts) {
     Logger.log("Drive copy skipped (continuing): " + (e && e.message || e));
   }
 
-  var parts = splitSnapshot(built.snapshot);
-  var files = {}, biggest = 0;
-  Object.keys(parts).forEach(function (p) {
-    var body = JSON.stringify(parts[p]);
-    files[partFileName(p, monthKey, true)] = body;
-    if (body.length > biggest) biggest = body.length;
-    Logger.log("  " + p + ": " + parts[p].counts.totalRows.toLocaleString() + " rows, " +
-      (body.length / 1048576).toFixed(2) + " MB");
-  });
-  Logger.log("Largest part " + (biggest / 1048576).toFixed(2) + " MB -> " +
-    (biggest * 4 / 3 / 1048576).toFixed(1) + " MB base64 (GitHub accepts up to 50 MB).");
+  var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/true);
 
   if (opts.publish) {
-    files[MANIFEST_PATH] = JSON.stringify(
-      buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true), null, 2);
-    githubPutMany(files, "Daily dashboard snapshot " + built.snapshot.lastUpdated);
+    w.files[MANIFEST_PATH] = JSON.stringify(
+      buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true, w.fileMap), null, 2);
+    githubPutMany(w.files, "Daily dashboard snapshot " + built.snapshot.lastUpdated);
     Logger.log("Published to GitHub. Netlify will redeploy automatically.");
   } else {
     Logger.log("Dry run — GitHub not touched.");
@@ -388,6 +374,33 @@ function isoDate(v, tz) {
 }
 
 /**
+ * Build every file for a snapshot: split into parts, chunk any part that is too
+ * large, and report both the bodies to upload and the per-part file lists the
+ * manifest needs.
+ */
+function writePartFiles(snapshot, monthKey, isCurrent) {
+  var parts = splitSnapshot(snapshot);
+  var files = {}, fileMap = {}, biggest = 0;
+  Object.keys(parts).forEach(function (p) {
+    var chunks = chunkPart(parts[p]);
+    fileMap[p] = [];
+    chunks.forEach(function (ch, i) {
+      var name = partFileName(p, monthKey, isCurrent, chunks.length > 1 ? (i + 1) : 0);
+      var body = JSON.stringify(ch);
+      files[name] = body;
+      fileMap[p].push(name);
+      if (body.length > biggest) biggest = body.length;
+      Logger.log("  " + p + (chunks.length > 1 ? " [" + (i + 1) + "/" + chunks.length + "]" : "") +
+        ": " + ch.counts.totalRows.toLocaleString() + " rows, " + (body.length / 1048576).toFixed(2) + " MB");
+    });
+    if (chunks.length > 1) Logger.log("  (" + p + " split into " + chunks.length + " files to stay under the upload limit)");
+  });
+  Logger.log("Largest file " + (biggest / 1048576).toFixed(2) + " MB -> " +
+    (biggest * 4 / 3 / 1048576).toFixed(1) + " MB base64 (GitHub accepts up to 50 MB).");
+  return { files: files, fileMap: fileMap };
+}
+
+/**
  * Slice one built snapshot into the per-part files that actually get published.
  * Each part carries the same metadata so any one of them can be read on its own
  * and still say which month it is and when it was generated.
@@ -420,8 +433,69 @@ function splitSnapshot(snap) {
   return out;
 }
 
-function partFileName(part, monthKey, isCurrent) {
-  return DATA_DIR + "/" + part + "-" + (isCurrent ? "current" : monthKey) + ".json";
+function partFileName(part, monthKey, isCurrent, chunk) {
+  var base = DATA_DIR + "/" + part + "-" + (isCurrent ? "current" : monthKey);
+  return base + (chunk ? "." + chunk : "") + ".json";
+}
+
+// Largest JSON we will hand to GitHub in one blob. Base64 inflates by a third,
+// so 12 MB becomes ~16 MB on the wire - comfortably inside UrlFetchApp's 50 MB
+// POST limit with room for a month to grow.
+var CHUNK_TARGET_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Split one part into as many files as needed to stay under the POST limit.
+ *
+ * This is not hypothetical: a PARTIAL August split into three parts fine, but a
+ * COMPLETE July did not - legacy alone was 18.77 MB and the IPA part blew the
+ * limit outright. Per-part splitting is not enough for a full month.
+ *
+ * The part's biggest tab is sliced across the chunks; the smaller tabs ride along
+ * in the first one. Every chunk is a valid part file in its own right, and the
+ * loader concatenates rows for a tab it sees more than once.
+ */
+function chunkPart(partObj) {
+  var body = JSON.stringify(partObj);
+  if (body.length <= CHUNK_TARGET_BYTES) return [partObj];
+
+  var keys = Object.keys(partObj.data);
+  if (!keys.length) return [partObj];
+  var big = keys[0];
+  keys.forEach(function (k) {
+    if ((partObj.data[k].rows || []).length > (partObj.data[big].rows || []).length) big = k;
+  });
+
+  var rows = partObj.data[big].rows || [];
+  var n = Math.ceil(body.length / CHUNK_TARGET_BYTES);
+  if (rows.length < n) n = Math.max(1, rows.length);        // cannot split fewer rows than chunks
+  var per = Math.ceil(rows.length / n);
+  var out = [];
+
+  for (var i = 0; i < n; i++) {
+    var data = {}, counts = {}, total = 0;
+    if (i === 0) {
+      keys.forEach(function (k) {
+        if (k === big) return;
+        data[k] = partObj.data[k];
+        counts[k] = (partObj.data[k].rows || []).length;
+        total += counts[k];
+      });
+    }
+    var slice = rows.slice(i * per, (i + 1) * per);
+    data[big] = { cols: partObj.data[big].cols, rows: slice };
+    counts[big] = slice.length;
+    total += slice.length;
+
+    var chunk = {};
+    Object.keys(partObj).forEach(function (k) { if (k !== "data" && k !== "counts") chunk[k] = partObj[k]; });
+    chunk.chunk = i + 1;
+    chunk.chunks = n;
+    chunk.counts = counts;
+    chunk.counts.totalRows = total;
+    chunk.data = data;
+    out.push(chunk);
+  }
+  return out;
 }
 
 // ===========================================================================
@@ -535,7 +609,7 @@ function githubPutMany(files, message) {
  * The manifest is what the dashboard's month dropdown is built from. It is
  * read-modify-written so archiving a month never drops the others.
  */
-function buildManifest(monthKey, lastUpdated, isCurrent) {
+function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
   var c = ghConf();
   var manifest = { schema: SNAPSHOT_SCHEMA, months: [] };
 
@@ -559,7 +633,11 @@ function buildManifest(monthKey, lastUpdated, isCurrent) {
     Object.keys(PARTS).forEach(function (p) { f[p] = partFileName(p, mKey, live); });
     return f;
   }
-  var entry = { key: monthKey, label: monthLabel(monthKey), files: fileSet(monthKey, !!isCurrent),
+  // fileMap comes from writePartFiles and may list SEVERAL files per part when a
+  // month was too large for one upload. Fall back to the single-file naming when
+  // it is absent (e.g. rewriting an older entry).
+  var entry = { key: monthKey, label: monthLabel(monthKey),
+                files: fileMap || fileSet(monthKey, !!isCurrent),
                 lastUpdated: lastUpdated, live: !!isCurrent };
 
   var found = false;

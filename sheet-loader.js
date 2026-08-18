@@ -64,10 +64,20 @@
         merged = { schema: p.schema, month: p.month, label: p.label, lastUpdated: p.lastUpdated,
                    timezone: p.timezone, generator: p.generator, counts: {}, warnings: [], data: {} };
       }
-      Object.keys(p.data || {}).forEach(function (k) { merged.data[k] = p.data[k]; });
+      Object.keys(p.data || {}).forEach(function (k) {
+        // A large month is published as several chunk files, each carrying a
+        // slice of the same tab's rows. Seeing a tab twice therefore means
+        // "continue it", not "replace it" - overwriting here would silently
+        // discard everything except the last chunk.
+        if (merged.data[k] && merged.data[k].rows && p.data[k] && p.data[k].rows) {
+          merged.data[k] = { cols: merged.data[k].cols, rows: merged.data[k].rows.concat(p.data[k].rows) };
+        } else {
+          merged.data[k] = p.data[k];
+        }
+      });
       Object.keys(p.counts || {}).forEach(function (k) {
-        if (k === "totalRows") merged.counts.totalRows = (merged.counts.totalRows || 0) + p.counts[k];
-        else merged.counts[k] = p.counts[k];
+        // Counts add up across chunks for the same reason.
+        merged.counts[k] = (merged.counts[k] || 0) + p.counts[k];
       });
       (p.warnings || []).forEach(function (w) { if (merged.warnings.indexOf(w) === -1) merged.warnings.push(w); });
     });
@@ -1068,7 +1078,15 @@
     var want = SNAP_PARTS[TARGET] || SNAP_PARTS.legacy;
     var urls;
     if (entry && entry.files) {
-      urls = want.map(function (p) { return entry.files[p]; }).filter(Boolean);
+      // Each part is one file, or a list of chunk files when the month was too
+      // large to upload in one piece.
+      urls = [];
+      want.forEach(function (p) {
+        var v = entry.files[p];
+        if (!v) return;
+        if (Object.prototype.toString.call(v) === "[object Array]") urls = urls.concat(v);
+        else urls.push(v);
+      });
       if (!urls.length) return Promise.reject(new Error("manifest lists no parts this dashboard can use"));
     } else {
       urls = [(entry && entry.file) || entry];
