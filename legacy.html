@@ -918,17 +918,24 @@ class Component extends DCLogic {
   // "Updated 11 Aug, 6:00 pm" beside the data picker. People need to know how
   // old the figures are; a dashboard that looks live but is two days stale is
   // worse than one that admits its age.
+  // Routine "Updated N h ago" is noise: the snapshot is expected to be a few
+  // hours old, so saying so every day tells nobody anything. It is now shown
+  // ONLY when the data is late enough to mean something has gone wrong, which is
+  // the one case where a reader does need to know before trusting the figures.
+  // The exact timestamp is still on the data-source picker's tooltip, and the
+  // refresh button beside it is unaffected.
   snapStampHTML(){
     var s=window.__QA_SNAPSHOT;
     if(!s||!s.lastUpdated) return "";
     var d=new Date(s.lastUpdated);
     if(isNaN(d.getTime())) return "";
     var mins=Math.round((Date.now()-d.getTime())/60000);
-    var age=mins<2?"just now":mins<60?mins+" min ago":mins<1440?Math.round(mins/60)+" h ago":Math.round(mins/1440)+" d ago";
-    var stale=mins>36*60;   // a daily job that has not run for 1.5 days is late
+    if(mins<=36*60) return "";          // healthy: say nothing
+    var age=mins<1440?Math.round(mins/60)+" h old":Math.round(mins/1440)+" d old";
     var when=d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
-    return '<span class="ds-stamp'+(stale?' stale':'')+'" title="Snapshot generated '+this.esc(when)+' ('+age+')'
-      +(stale?' — the daily job may not have run.':'')+'">'+(stale?'⚠ ':'')+'Updated '+this.esc(age)+'</span>';
+    return '<span class="ds-stamp stale" title="Snapshot generated '+this.esc(when)
+      +' \u2014 the 10:00 IST job may not have run. Click \u21bb to re-read, or check Apps Script \u25b8 Executions.">'
+      +'\u26a0 Data '+this.esc(age)+'</span>';
   }
 
   // Shown at the top of every page when the live sheet could not be reached.
