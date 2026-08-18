@@ -105,7 +105,7 @@ class Component extends DCLogic {
     this.EXCL = {};
     this.st.role = "";
     if(this.st.exclusiveOnly==null) this.st.exclusiveOnly = true;
-    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revRoleScope:"", revD1:"all", revD2:"", revD3:"all", revVerdict:"", revSaving:false, revError:null };
+    this.sel = { dataSource: (window.__QA_ACTIVE_SOURCE_KEY||"live"), lbSearch:"", lbSort:"finalDesc", amSort:"finalDesc", prTeam:"", prAnalyst:"", cmpMode:"analysts", cmpA:"", cmpB:"", showAllMistakes:false, revOpen:null, revGroupBy:"am", revRoleScope:"", revD1:"all", revD2:"", revD3:"all", revVerdict:"", revSaving:false, revError:null };
     if (prevSel) { for (var sk in prevSel) if (Object.prototype.hasOwnProperty.call(prevSel, sk)) this.sel[sk] = prevSel[sk]; }
     this.noteText = "Scores: ipa_analyst_daily_scores \u00b7 " + this.S.records.length.toLocaleString() + " analyst-days \u00b7 " + this.S.dates.length + " days";
     this.noteMistakes = this.Q ? ("Mistakes: " + this.Q.records.length.toLocaleString() + " rows \u00b7 " + this.Q.dates[0] + "\u2013" + this.Q.dates[this.Q.dates.length-1]) : "Mistakes: none loaded";
@@ -257,22 +257,23 @@ class Component extends DCLogic {
       this.renderContent();
     }
     else if(act==="revcell"){
-      // "am|category|verdict" from a clicked figure in the summary table. An
-      // empty am means all Assistant Managers (the totals row).
+      // "dim|name|category|verdict" from a clicked figure. An empty name means
+      // every row at that level (the totals line).
       var rp=String(arg).split("|");
-      this.sel.revD1=rp[0]?"am":"all";
-      this.sel.revD2=rp[0]||"";
-      this.sel.revD3=rp[1]||"all";
-      this.sel.revVerdict=rp[2]||"";
+      this.sel.revD1=rp[1]?(rp[0]||"am"):"all";
+      this.sel.revD2=rp[1]||"";
+      this.sel.revD3=rp[2]||"all";
+      this.sel.revVerdict=rp[3]||"";
       this.renderContent();
       this.scrollToRevDetail();
     }
     else if(act==="revjumpam"){
-      // Clicking an AM in the summary table or the chart loads their reviews
-      // into the detail section and scrolls to it, rather than replacing the
-      // summary the user was reading.
-      this.sel.revD1="am"; this.sel.revD2=arg;
-      this.sel.revD3="all"; this.sel.revVerdict="";   // the name means "everything for them"
+      // "dim|name" from a row label or a chart bar. The name on its own means
+      // "everything for them", so any earlier narrowing is cleared rather than
+      // silently inherited.
+      var jp=String(arg).split("|");
+      this.sel.revD1=jp[0]||"am"; this.sel.revD2=jp[1]||"";
+      this.sel.revD3="all"; this.sel.revVerdict="";
       this.renderContent();
       this.scrollToRevDetail();
     }
@@ -338,6 +339,7 @@ class Component extends DCLogic {
     else if(act==="amsort"){ this.sel.amSort=t.value; this.renderContent(); }
     else if(act==="revreviewer"){ if(this.sel.revOpen){ this.sel.revOpen.reviewer=t.value; this.sel.revError=null; this.enhanceReviewModal(); } }
     else if(act==="revverdict"){ if(this.sel.revOpen){ this.sel.revOpen.verdict=t.value; this.sel.revError=null; } }
+    else if(act==="revgroupby"){ this.sel.revGroupBy=t.value; this.sel.revD2=""; this.renderContent(); }
     else if(act==="revrolescope"){ this.sel.revRoleScope=t.value; this.renderContent(); }
     else if(act==="revd1"){ this.sel.revD1=t.value; this.sel.revD2=""; this.renderContent(); }
     else if(act==="revd2"){ this.sel.revD2=t.value; this.renderContent(); }
@@ -1047,6 +1049,36 @@ class Component extends DCLogic {
       +'<input type="checkbox" data-act="revopen" data-arg="'+this.esc(key)+'" data-an="'+this.esc(an)+'"'+(rv?' checked':'')+'>'
       +'</label>'+(rv?' '+this.reviewChip(rv):'')+'</td>';
   }
+  // Who is allowed to be recorded as a reviewer.
+  //
+  // Analysts and Specialists review their OWN work otherwise, so they are kept
+  // out of the reviewer list entirely. The rule is derived from the Role Details
+  // designation using the same precedence the loader uses (specialist, then
+  // lead, then manager, then analyst), so "Specialist, IPA" and "Lead Analyst,
+  // IPA" are classified the way they are everywhere else in the dashboard.
+  //
+  // Worth being plain about the limit: these dashboards are static pages with no
+  // sign-in, so nothing can tell WHO is looking. This stops an Analyst or
+  // Specialist being NAMED as the reviewer of an error; it cannot stop a person
+  // opening the box and choosing somebody else's name. Real enforcement would
+  // need per-user authentication.
+  designationRole(d){
+    if(!d) return null;
+    if(/special/i.test(d)) return "Specialist";
+    if(/lead/i.test(d)) return "Lead Analyst";
+    if(/assistant|manager|\bam\b/i.test(d)) return "Assistant Manager";
+    if(/analyst/i.test(d)) return "Analyst";
+    return null;
+  }
+  reviewerBlockedRoles(){ return ["Analyst","Specialist"]; }
+  canReview(designation){
+    return this.reviewerBlockedRoles().indexOf(this.designationRole(designation)) === -1;
+  }
+  eligibleReviewers(){
+    var self=this;
+    return (this.ROSTER||[]).filter(function(x){ return self.canReview(x.d); });
+  }
+
   openReview(key,anName){
     var rv=this.reviewMap()[key]||null;
     var parts=String(key).split("|");
@@ -1094,7 +1126,10 @@ class Component extends DCLogic {
   }
   reviewModalHTML(o){
     var self=this;
-    var roster=(this.ROSTER&&this.ROSTER.length)?this.ROSTER:[];
+    // Analysts and Specialists are excluded - see eligibleReviewers().
+    var allRoster=(this.ROSTER&&this.ROSTER.length)?this.ROSTER:[];
+    var roster=this.eligibleReviewers();
+    var blockedN=allRoster.length-roster.length;
     var rOpts='<option value="">-- select reviewer --</option>'+roster.map(function(x){
       return '<option value="'+self.esc(x.u)+'"'+(String(o.reviewer).toLowerCase()===String(x.u).toLowerCase()?' selected':'')+'>'+self.esc(x.u)+'</option>';
     }).join('');
@@ -1118,7 +1153,9 @@ class Component extends DCLogic {
       +    '<label class="rev-f"><span class="rev-l">Name of reviewer</span>'
       +      (noRoster
         ? '<input type="text" data-act="revreviewer" value="'+this.esc(o.reviewer||"")+'" placeholder="Role Details not loaded — type a username">'
-        : '<select data-act="revreviewer">'+rOpts+'</select>')+'</label>'
+        : '<select data-act="revreviewer">'+rOpts+'</select>')
+      +      (blockedN>0?'<span class="rev-hint-sm">'+blockedN+' Analyst/Specialist entries are not listed \u2014 they cannot review errors.</span>':'')
+      +      '</label>'
       +    '<label class="rev-f"><span class="rev-l">Designation</span>'
       +      '<input type="text" value="'+this.esc(desig)+'" readonly placeholder="'+(o.reviewer?'not set in Role Details':'auto-fills from the reviewer')+'"></label>'
       +    '<label class="rev-f"><span class="rev-l">Date of review</span>'
@@ -1138,6 +1175,17 @@ class Component extends DCLogic {
   saveReview(){
     var o=this.sel.revOpen; if(!o||this.sel.revSaving) return;
     if(!o.reviewer){ this.sel.revError="Pick who is doing the review."; this.enhanceReviewModal(); return; }
+    // Checked again here, not just in the dropdown: the fallback is a free-text
+    // box when Role Details has not loaded, and a stale selection could survive
+    // a data refresh.
+    var rDesig=this.designationOf(o.reviewer)||(function(rs,u){
+      for(var i=0;i<rs.length;i++) if(String(rs[i].u).toLowerCase()===String(u).toLowerCase()) return rs[i].d||"";
+      return "";
+    })(this.ROSTER||[],o.reviewer);
+    if(!this.canReview(rDesig)){
+      this.sel.revError=o.reviewer+" is "+(this.designationRole(rDesig)||"an Analyst/Specialist")+" and cannot review errors. Pick a Lead, Assistant Manager or above.";
+      this.enhanceReviewModal(); return;
+    }
     if(!o.verdict){ this.sel.revError="Choose whether the error is genuine or ingenuine."; this.enhanceReviewModal(); return; }
     var rec={
       review_id:o.review_id||"",
@@ -1186,6 +1234,13 @@ class Component extends DCLogic {
       var el=self.rootRef.current&&self.rootRef.current.querySelector("#rev-detail-anchor");
       if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"});
     },40);
+  }
+  // The summary can be rolled up by either org level.
+  reviewGroupBys(){
+    return [
+      {key:"am",   label:"Reviewed errors by Assistant Manager", col:"Name of Asst Mgrs",   noun:"Assistant Manager"},
+      {key:"lead", label:"Reviewed errors by Leads",             col:"Name of Team Leads",  noun:"Team Lead"}
+    ];
   }
   reviewRoleScopes(){
     return [
@@ -1300,9 +1355,16 @@ class Component extends DCLogic {
     if(!roleScopes.some(function(x){return x.key===roleScope;})) roleScope="";
     var scoped=roleScope?all.filter(function(f){ return f.role===roleScope; }):all;
 
+    var groupBys=this.reviewGroupBys();
+    var gBy=this.sel.revGroupBy||"am";
+    if(!groupBys.some(function(x){return x.key===gBy;})) gBy="am";
+    var gDef=groupBys.filter(function(x){return x.key===gBy;})[0];
+    var keyOf=function(f){ return gBy==="lead" ? f.lead : f.am; };
+
     var amMap={};
     scoped.forEach(function(f){
-      var b=amMap[f.am]||(amMap[f.am]={am:f.am,spec:{},anly:{},n:0,gen:0,ing:0});
+      var k=keyOf(f);
+      var b=amMap[k]||(amMap[k]={am:k,spec:{},anly:{},n:0,gen:0,ing:0});
       b.n++;
       if(f.genuine) b.gen++; else b.ing++;
       if(f.role==="Specialist") b.spec[f.person]=1;
@@ -1326,7 +1388,7 @@ class Component extends DCLogic {
     var cell=function(n, am, cat, verdict, style, label){
       var txt=n.toLocaleString();
       if(!n) return '<td class="r"'+(style?' style="'+style+'"':'')+'>'+txt+'</td>';
-      var arg=(am||"")+"|"+(cat||"all")+"|"+(verdict||"");
+      var arg=gBy+"|"+(am||"")+"|"+(cat||"all")+"|"+(verdict||"");
       return '<td class="r"'+(style?' style="'+style+'"':'')+'>'
         +'<button type="button" class="rev-num" data-act="revcell" data-arg="'+self.esc(arg)+'"'
         +' title="Show '+self.esc(label)+' in the detail table below">'+txt+'</button></td>';
@@ -1336,7 +1398,7 @@ class Component extends DCLogic {
     var sumRows=amList.map(function(b){
       var who=b.am;
       return '<tr>'
-        +'<td style="font-weight:700;font-family:var(--font-body)"><button type="button" class="team-link" data-act="revjumpam" data-arg="'+self.esc(who)+'">'+self.esc(who)+'</button></td>'
+        +'<td style="font-weight:700;font-family:var(--font-body)"><button type="button" class="team-link" data-act="revjumpam" data-arg="'+self.esc(gBy+"|"+who)+'">'+self.esc(who)+'</button></td>'
         +cell(b.specN, who, "specialist", "", "", "the "+b.specN+" specialist(s) under "+who)
         +cell(b.anlyN, who, "analyst", "", "", "the "+b.anlyN+" analyst(s) under "+who)
         +cell(b.n,    who, scopeCat, "", "font-weight:800", "all "+b.n+" reviewed errors under "+who)
@@ -1357,17 +1419,20 @@ class Component extends DCLogic {
       +cell(tIng, "", scopeCat, "ingenuine", "color:var(--green)", "all ingenuine errors")
       +'</tr>';
 
-    var summary='<div class="card"><div class="card-head">Reviewed errors by Assistant Manager'
-      +this.fxInline("Reviewed errors by Assistant Manager","Rows are Assistant Managers. Specialist and Analyst counts are how many DISTINCT people under that AM have at least one reviewed error — not error counts. The dropdown limits every figure to one role.")
+    var groupSel='<select data-act="revgroupby" class="rev-title-sel" title="Roll the summary up by Assistant Manager or by Team Lead">'
+      +groupBys.map(function(x){ return '<option value="'+x.key+'"'+(gBy===x.key?' selected':'')+'>'+self.esc(x.label)+'</option>'; }).join('')
+      +'</select>';
+    var summary='<div class="card"><div class="card-head">'+groupSel
+      +this.fxInline("Reviewed errors summary","Rows are whichever level the left-hand dropdown selects. Specialist and Analyst counts are how many DISTINCT people under that row have at least one reviewed error — not error counts. The right-hand dropdown limits every figure to one role.")
       +roleSel+'</div>'
       +'<div style="overflow-x:auto"><table class="tbl"><thead><tr>'
-      +'<th>Name of Asst Mgrs</th><th class="r">Specialists with reviewed errors</th><th class="r">Analysts with reviewed errors</th>'
+      +'<th>'+this.esc(gDef.col)+'</th><th class="r">Specialists with reviewed errors</th><th class="r">Analysts with reviewed errors</th>'
       +'<th class="r">Total Errors Reviewed</th><th class="r">Total Genuine Errors</th><th class="r">Total Ingenuine Errors</th>'
       +'</tr></thead><tbody>'+sumRows+sumTotal+'</tbody></table></div>'
-      +'<div class="dim-cap-note">Every figure in this table is clickable and loads exactly that subset into the detail table below \u2014 clicking <b>88</b> under Genuine shows those 88 errors, not all of that manager\u2019s. Zeros are not links.</div></div>';
+      +'<div class="dim-cap-note">Every figure in this table is clickable and loads exactly that subset into the detail table below \u2014 clicking <b>96</b> under Genuine shows those 96 errors, not all of that '+this.esc(gDef.noun.toLowerCase())+'\u2019s. Zeros are not links.</div></div>';
 
     // ================= 3. clickable chart =================================
-    var chart=this.revAmChart(amList);
+    var chart=this.revAmChart(amList, gBy, gDef);
 
     // ================= 4. reviewed error details ==========================
     var D1=this.reviewD1(), D3=this.reviewD3();
@@ -1458,14 +1523,15 @@ class Component extends DCLogic {
 
   // Clickable stacked bars: genuine vs ingenuine per Assistant Manager. Reuses
   // the dashboard's own bar styling rather than pulling in a chart library.
-  revAmChart(amList){
+  revAmChart(amList, gBy, gDef){
     if(!amList.length) return '';
+    gBy=gBy||"am"; gDef=gDef||{noun:"Assistant Manager"};
     var self=this;
     var top=amList.slice(0,12);
     var mx=Math.max.apply(null,top.map(function(b){return b.n;}).concat([1]));
     var bars=top.map(function(b){
       var gw=b.n?(b.gen/b.n*100):0;
-      return '<div class="rev-bar-row" data-act="revjumpam" data-arg="'+self.esc(b.am)+'" title="'+self.esc(b.am)+' — '+b.n+' reviewed ('+b.gen+' genuine, '+b.ing+' ingenuine). Click to filter the detail below.">'
+      return '<div class="rev-bar-row" data-act="revjumpam" data-arg="'+self.esc(gBy+"|"+b.am)+'" title="'+self.esc(b.am)+' — '+b.n+' reviewed ('+b.gen+' genuine, '+b.ing+' ingenuine). Click to filter the detail below.">'
         +'<span class="rev-bar-lbl">'+self.esc(b.am)+'</span>'
         +'<span class="rev-bar-track" style="width:'+(b.n/mx*100).toFixed(1)+'%">'
         +  '<span class="rev-bar-gen" style="width:'+gw.toFixed(1)+'%"></span>'
@@ -1473,11 +1539,11 @@ class Component extends DCLogic {
         +'<span class="rev-bar-num">'+b.n.toLocaleString()+'</span>'
         +'</div>';
     }).join('');
-    return '<div class="card"><div class="card-head">Reviewed errors by Assistant Manager — chart'
+    return '<div class="card"><div class="card-head">Reviewed errors by '+this.esc(gDef.noun)+' \u2014 chart'
       +this.fxInline("Chart","Bar length is the number of reviewed errors. The red portion is the share upheld as genuine, the green the share overturned. Click any bar to filter the detail table below.")
       +'<span class="rev-legend"><i class="sw-gen"></i>Genuine<i class="sw-ing"></i>Ingenuine</span></div>'
       +'<div class="card-body">'+bars
-      +(amList.length>top.length?'<div class="dim-cap-note">Showing the 12 Assistant Managers with the most reviewed errors, of '+amList.length+'.</div>':'')
+      +(amList.length>top.length?'<div class="dim-cap-note">Showing the 12 '+this.esc(gDef.noun.toLowerCase())+'s with the most reviewed errors, of '+amList.length+'.</div>':'')
       +'</div></div>';
   }
 
@@ -2759,6 +2825,8 @@ class Component extends DCLogic {
 .qa .rev-remark{max-width:280px;white-space:normal;font-family:var(--font-body);color:var(--text);}
 .qa .rev-ctrls select{max-width:210px;}
 .qa .rev-num{background:none;border:none;padding:0;font:inherit;color:inherit;cursor:pointer;font-variant-numeric:tabular-nums;}
+.qa .rev-title-sel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:var(--neutral-100);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:var(--font-body);max-width:320px;}
+.qa .rev-title-sel:focus{outline:2px solid var(--accent);outline-offset:1px;}
 .qa .rev-num:hover{text-decoration:underline;}
 .qa .rev-num:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
 .qa .rev-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;cursor:pointer;padding:3px 4px;border-radius:6px;}
@@ -2789,6 +2857,7 @@ class Component extends DCLogic {
 .qa .rev-err{margin:0 20px 12px;padding:9px 12px;background:#fee2e2;color:#991b1b;border-radius:7px;font-size:12px;font-weight:600;}
 .qa .rev-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--neutral-200);}
 .qa .rev-hint{font-size:11px;color:var(--muted);margin-right:auto;max-width:280px;}
+.qa .rev-hint-sm{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35;}
 .qa .rev-btn{font-family:var(--font-body);font-size:13px;font-weight:700;padding:8px 18px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;}
 .qa .rev-btn:hover:not(:disabled){filter:brightness(1.08);}
 .qa .rev-btn:disabled{opacity:.6;cursor:default;}
