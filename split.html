@@ -181,7 +181,7 @@ class Component extends DCLogic {
     var order=Object.keys(sources).sort((a,b)=>a==="live"?-1:b==="live"?1:0);
     var opts=order.map(k=>'<option value="'+k+'"'+(cur===k?' selected':'')+'>'+this.esc(sources[k].label)+'</option>').join('');
     var busy=this._sourceLoading;
-    return '<div class="data-source-filter'+(cur!=="live"?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span><span id="qa-ds-progress" class="ds-progress"></span>':'')
+    return '<div class="data-source-filter'+(this.isArchiveSource(cur)?' archive':'')+'"><label>Data</label><select data-act="datasource"'+(busy?' disabled':'')+'>'+opts+'</select>'+(busy?'<span class="ds-spin" title="Loading…"></span><span id="qa-ds-progress" class="ds-progress"></span>':'')
       +this.snapStampHTML()
       +'<button type="button" class="ds-refresh" data-act="refreshdata"'+(busy?' disabled':'')
       +' title="Re-read the Google Sheet now, ignoring the 60-second shared cache. Use this after editing the sheet.">\u21bb</button>'
@@ -196,6 +196,19 @@ class Component extends DCLogic {
   // derived from the data rather than maintained by hand: archive a new month and
   // its link is correct with no code change. The passed-in href is only a
   // fallback for when no snapshot has loaded (bundled or live-sheet mode).
+  // Is the selected data source an archived month?
+  //
+  // This used to be `key !== "live"`, which broke the moment months came from the
+  // snapshot manifest: the keys are now snap_2026-08 and snap_2026-07, so NEITHER
+  // equals "live" and the CURRENT month was styled as an archive as soon as it
+  // was picked from the dropdown. Decided from the month's own live flag instead.
+  isArchiveSource(key){
+    var src=(window.__QA_SOURCES||{})[key||this.sel.dataSource||"live"];
+    if(!src) return false;                                  // live sheet
+    if(src.snapshot) return !src.snapshot.live;              // manifest month
+    if(src.sheetId) return true;                             // legacy archive workbook
+    return false;
+  }
   sbSourceHTML(liveName,liveHref){
     var snap=window.__QA_SNAPSHOT;
     var name=liveName, href=liveHref, note="";
@@ -348,7 +361,7 @@ class Component extends DCLogic {
     else if(act==="datasource"){
       this.sel.dataSource=t.value;
       this._sourceLoading=true;
-      var df=t.closest(".data-source-filter"); if(df) df.classList.toggle("archive", t.value!=="live");
+      var df=t.closest(".data-source-filter"); if(df) df.classList.toggle("archive", this.isArchiveSource(t.value));
       if(window.__QA_LOAD_SOURCE) window.__QA_LOAD_SOURCE(t.value);
       this.renderContent();
       this.watchLoadProgress();

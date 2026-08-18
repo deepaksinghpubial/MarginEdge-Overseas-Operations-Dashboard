@@ -1118,7 +1118,12 @@
       snapMonths = m.months;
       var src = {};
       m.months.forEach(function (mo) {
-        src["snap_" + mo.key] = { label: mo.label + (mo.live ? " (current)" : ""), snapshot: mo, month: mo.key };
+        // "July 2026 Archive" reads unambiguously in the picker; "(current)"
+        // marks the month still being written to.
+        src["snap_" + mo.key] = {
+          label: mo.label + (mo.live ? " (current)" : " Archive"),
+          snapshot: mo, month: mo.key, live: !!mo.live
+        };
       });
       window.__QA_SOURCES = src;
       window.__QA_ACTIVE_SOURCE_KEY = "snap_" + (m.current || m.months[0].key);
