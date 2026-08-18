@@ -11,8 +11,29 @@
       },
       "lastUpdated": "2026-08-17T22:16:09-07:00",
       "live": true
+    },
+    {
+      "key": "2026-07",
+      "label": "July 2026",
+      "files": {
+        "core": [
+          "data/core-2026-07.json"
+        ],
+        "legacy": [
+          "data/legacy-2026-07.1.json",
+          "data/legacy-2026-07.2.json"
+        ],
+        "ipa": [
+          "data/ipa-2026-07.1.json",
+          "data/ipa-2026-07.2.json",
+          "data/ipa-2026-07.3.json",
+          "data/ipa-2026-07.4.json"
+        ]
+      },
+      "lastUpdated": "2026-08-18T03:43:24-07:00",
+      "live": false
     }
   ],
   "current": "2026-08",
-  "updated": "2026-08-17T22:16:09-07:00"
+  "updated": "2026-08-18T03:43:24-07:00"
 }
