@@ -120,8 +120,35 @@ function doGet(e) {
   //  • real Date cells -> formatDate (authoritative).
   //  • text cells -> parsed as DAY-first (DD-MM-YYYY or DD/MM/YYYY), the format
   //    entered in this workbook, so July 1 never gets read as Jan 7.
+  // Google Sheets stores plain numbers against its own epoch: serial 0 is
+  // 1899-12-30, serial 1 is 1899-12-31. So a quantity of 1, a credit of -13 or a
+  // price of 7.95 that someone date-formatted in the sheet arrives here as a
+  // Date in 1899/1900 and used to be written out as "1899-12-30" - which reads
+  // like corrupt data. The number is recoverable, so convert it back instead of
+  // hiding it.
+  //
+  // The cutoff is deliberately wide: typical values (1, 12, 7.95, 1253.07) land
+  // between 1899 and about 1903, and very large ones land in absurd far-future
+  // years. Genuine dates in this workbook are invoice dates in the 2020s, so
+  // anything outside 2000-2100 is a mis-formatted number, not a real date.
+  function looksLikeSerial(v) {
+    var y = v.getFullYear();
+    return y < 2000 || y > 2100;
+  }
+  function sheetsSerial(v) {
+    var p = Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm:ss").split(/[- :]/);
+    var days = (Date.UTC(+p[0], +p[1] - 1, +p[2]) - Date.UTC(1899, 11, 30)) / 86400000;
+    var frac = (+p[3] * 3600 + +p[4] * 60 + +p[5]) / 86400;
+    var n = days + frac;
+    // Trim floating-point noise without losing genuine decimals.
+    return Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : Math.round(n * 1e6) / 1e6;
+  }
+
   function isoDate(v) {
-    if (v instanceof Date) return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+    if (v instanceof Date) {
+      if (looksLikeSerial(v)) return sheetsSerial(v);
+      return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+    }
     var s = String(v).trim();
     var m = s.match(/^(\d{1,4})[-\/](\d{1,2})[-\/](\d{1,4})$/);
     if (!m) return v;

@@ -84,17 +84,32 @@ The job needs permission to save the file into GitHub.
    - `dryRunSnapshot` does **not** write to GitHub, so nothing can break.
 10. Happy with the log? Now run **`runSnapshotNow`**. This does the real thing.
     The log should end with `Published to GitHub`.
-11. Check GitHub: `data/current.json` and `data/manifest.json` should exist, and
-    Netlify should show a fresh deploy a minute later.
+11. Check GitHub. The `data/` folder should contain `core-current.json`,
+    `legacy-current.json`, `ipa-current.json` and `manifest.json` — all four
+    written as a **single commit**, so Netlify runs one deploy, not four.
 
 ### Turn on the daily schedule
 
-12. Pick **`installDailyTrigger`** from the dropdown → **Run**. That's it — it
-    now runs every morning around 7am.
-    - To change the time: **clock icon** (Triggers) in the left menu → pencil on
-      the trigger → pick a different hour.
-    - **Set it to run *after* the Redash update lands**, otherwise it snapshots
-      yesterday's numbers.
+12. Pick **`installDailyTriggerIST`** from the dropdown → **Run**.
+
+    This sets the job to **10:00 IST** — an hour after your Redash update lands
+    at ~09:00, with a little margin.
+
+    You give it the time in **IST** and it works out the rest. That matters
+    because Apps Script schedules in the *script project's* timezone, which is
+    not necessarily yours, and US timezones observe daylight saving while IST
+    does not. The function measures the real offset when it runs and rounds up,
+    so the job can never fire *before* the IST time you asked for.
+
+    For a different time: **`installDailyTriggerIST(11)`** for 11:00 IST, and so
+    on. Apps Script fires within an hour of the set time, so 10:00 means
+    "some time between 10:00 and 11:00 IST".
+
+    The log prints exactly what it set and what that comes to in IST — worth a
+    glance to confirm.
+
+    ⚠️ If the clocks change where your script timezone lives, the trigger can
+    drift by an hour. Re-run `installDailyTriggerIST()` if that matters.
 
 ---
 

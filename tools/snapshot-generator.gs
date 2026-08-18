@@ -25,7 +25,9 @@
  *      GITHUB_TOKEN   fine-grained PAT, Contents: Read and write, THIS repo only
  *      GITHUB_REPO    deepaksinghpubial/MarginEdge-Overseas-Operations-Dashboard
  *      GITHUB_BRANCH  main
- *      DRIVE_FOLDER_ID   (optional) folder to keep a dated copy in
+ *      DRIVE_FOLDER_ID   (optional) Drive folder for a spare copy. LEAVE THIS
+ *                        UNSET unless you want it — setting it makes the script
+ *                        ask for Drive permission it otherwise never needs.
  *      ENABLE_WEB_APP    (optional) "true" to serve the JSON over /exec too
  *  The token is the only secret. It is scoped to one repo and can write only
  *  file contents, so a leak cannot touch the sheet or any other repo.
@@ -70,7 +72,23 @@ var TABS = [
   { key: "errorReviews",    tab: "Error Reviews",                cols: null, optional: true }
 ];
 
-var SNAPSHOT_SCHEMA = 1;
+var SNAPSHOT_SCHEMA = 2;   // 2 = split into per-portal parts (see PARTS)
+
+// The snapshot is split into three files rather than one.
+//
+// WHY: measured on day 13 of a month the single file was 22.7 MB, which GitHub
+// needs base64-encoded to 30 MB. The mistakes tabs are ~91% of that and grow all
+// month, so by around day 25 the encoded payload passes UrlFetchApp's 50 MB
+// limit and the daily run would simply start failing in the last week of every
+// month. Splitting keeps every file well clear of that ceiling.
+//
+// It also makes the dashboards much lighter: a Legacy viewer fetches core+legacy
+// and never downloads IPA's 77k mistake rows, which they cannot see anyway.
+var PARTS = {
+  core:   ["roleDetails", "locationDetails", "teamDetails", "frDetails", "errorReviews"],
+  legacy: ["legacyProductivity", "legacyMistakes"],
+  ipa:    ["ipaProductivity", "ipaMistakes"]
+};
 var DATA_DIR = "data";                 // repo folder the JSON lives in
 var MANIFEST_PATH = DATA_DIR + "/manifest.json";
 
@@ -108,11 +126,14 @@ function archiveMonth(monthKey) {
     throw new Error('archiveMonth needs a month like "2026-08"');
   }
   var built = buildSnapshot(monthKey);
-  var json = JSON.stringify(built.snapshot);
-  saveToDrive(DATA_DIR.replace("/", "-") + "-" + monthKey + ".json", json);
-  githubPut(DATA_DIR + "/" + monthKey + ".json", json,
-    "Archive dashboard snapshot for " + monthKey);
-  updateManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false);
+  var parts = splitSnapshot(built.snapshot);
+  var files = {};
+  Object.keys(parts).forEach(function (p) {
+    files[partFileName(p, monthKey, false)] = JSON.stringify(parts[p]);
+  });
+  files[MANIFEST_PATH] = JSON.stringify(
+    buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false), null, 2);
+  githubPutMany(files, "Archive dashboard snapshot for " + monthKey);
   Logger.log("Archived " + monthKey + " (" + built.snapshot.counts.totalRows + " rows)");
   return built.summary;
 }
@@ -150,13 +171,26 @@ function buildAndPublish(opts) {
   try {
     saveToDrive("dashboard-data.json", json);
   } catch (e) {
-    Logger.log("Drive save failed (continuing): " + (e && e.message || e));
+    // Never fatal: the snapshot is already built and GitHub is next.
+    Logger.log("Drive copy skipped (continuing): " + (e && e.message || e));
   }
 
+  var parts = splitSnapshot(built.snapshot);
+  var files = {}, biggest = 0;
+  Object.keys(parts).forEach(function (p) {
+    var body = JSON.stringify(parts[p]);
+    files[partFileName(p, monthKey, true)] = body;
+    if (body.length > biggest) biggest = body.length;
+    Logger.log("  " + p + ": " + parts[p].counts.totalRows.toLocaleString() + " rows, " +
+      (body.length / 1048576).toFixed(2) + " MB");
+  });
+  Logger.log("Largest part " + (biggest / 1048576).toFixed(2) + " MB -> " +
+    (biggest * 4 / 3 / 1048576).toFixed(1) + " MB base64 (GitHub accepts up to 50 MB).");
+
   if (opts.publish) {
-    githubPut(DATA_DIR + "/current.json", json,
-      "Daily dashboard snapshot " + built.snapshot.lastUpdated);
-    updateManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true);
+    files[MANIFEST_PATH] = JSON.stringify(
+      buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true), null, 2);
+    githubPutMany(files, "Daily dashboard snapshot " + built.snapshot.lastUpdated);
     Logger.log("Published to GitHub. Netlify will redeploy automatically.");
   } else {
     Logger.log("Dry run — GitHub not touched.");
@@ -296,8 +330,35 @@ function readTab(sh, spec, tz) {
  * is 7 January, not 1 July. Guessing wrong here silently shifts records into the
  * wrong month, so day-first is applied deliberately rather than left to Date().
  */
+  // Google Sheets stores plain numbers against its own epoch: serial 0 is
+// 1899-12-30, serial 1 is 1899-12-31. So a quantity of 1, a credit of -13 or a
+// price of 7.95 that someone date-formatted in the sheet arrives here as a
+// Date in 1899/1900 and used to be written out as "1899-12-30" - which reads
+// like corrupt data. The number is recoverable, so convert it back instead of
+// hiding it.
+//
+// The cutoff is deliberately wide: typical values (1, 12, 7.95, 1253.07) land
+// between 1899 and about 1903, and very large ones land in absurd far-future
+// years. Genuine dates in this workbook are invoice dates in the 2020s, so
+// anything outside 2000-2100 is a mis-formatted number, not a real date.
+function looksLikeSerial(v) {
+  var y = v.getFullYear();
+  return y < 2000 || y > 2100;
+}
+function sheetsSerial(v, tz) {
+  var p = Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm:ss").split(/[- :]/);
+  var days = (Date.UTC(+p[0], +p[1] - 1, +p[2]) - Date.UTC(1899, 11, 30)) / 86400000;
+  var frac = (+p[3] * 3600 + +p[4] * 60 + +p[5]) / 86400;
+  var n = days + frac;
+  // Trim floating-point noise without losing genuine decimals.
+  return Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : Math.round(n * 1e6) / 1e6;
+}
+
 function isoDate(v, tz) {
-  if (v instanceof Date) return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+  if (v instanceof Date) {
+    if (looksLikeSerial(v)) return sheetsSerial(v, tz);
+    return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+  }
   var s = String(v).trim();
   if (!s) return "";
   var m = s.match(/^(\d{1,4})[-\/](\d{1,2})[-\/](\d{1,4})$/);
@@ -309,13 +370,72 @@ function isoDate(v, tz) {
   return y + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
 }
 
+/**
+ * Slice one built snapshot into the per-part files that actually get published.
+ * Each part carries the same metadata so any one of them can be read on its own
+ * and still say which month it is and when it was generated.
+ */
+function splitSnapshot(snap) {
+  var out = {};
+  Object.keys(PARTS).forEach(function (part) {
+    var data = {}, counts = {}, total = 0;
+    PARTS[part].forEach(function (key) {
+      if (!snap.data[key]) return;
+      data[key] = snap.data[key];
+      counts[key] = (snap.data[key].rows || []).length;
+      total += counts[key];
+    });
+    counts.totalRows = total;
+    out[part] = {
+      schema: SNAPSHOT_SCHEMA,
+      part: part,
+      month: snap.month,
+      label: snap.label,
+      lastUpdated: snap.lastUpdated,
+      timezone: snap.timezone,
+      sourceSheetId: snap.sourceSheetId,
+      generator: snap.generator,
+      counts: counts,
+      warnings: snap.warnings,
+      data: data
+    };
+  });
+  return out;
+}
+
+function partFileName(part, monthKey, isCurrent) {
+  return DATA_DIR + "/" + part + "-" + (isCurrent ? "current" : monthKey) + ".json";
+}
+
 // ===========================================================================
 //  DRIVE
 // ===========================================================================
 
 function saveToDrive(name, json) {
   var folderId = PropertiesService.getScriptProperties().getProperty("DRIVE_FOLDER_ID");
-  var folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+
+  // The Drive copy is an OPTIONAL spare. Touching DriveApp at all forces this
+  // script to request Drive permission, which is a lot to ask for a file nobody
+  // reads — GitHub is the destination that matters. So unless a folder is
+  // explicitly configured, Drive is not touched and no such permission is needed.
+  if (!folderId) {
+    Logger.log("Drive copy skipped (no DRIVE_FOLDER_ID set). GitHub is the destination that matters.");
+    return;
+  }
+
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    // Almost always the missing Drive scope rather than a bad folder id: this
+    // project was first authorised before it contained any Drive code, and
+    // Apps Script does not re-prompt on its own.
+    Logger.log("Drive copy skipped — this script has not been granted Drive access. " +
+      "To enable it: clear the DRIVE_FOLDER_ID property (simplest), or re-authorise the " +
+      "project by choosing Run once more and accepting the extra permission. " +
+      "The snapshot itself is unaffected. (" + (e && e.message || e) + ")");
+    return;
+  }
   var blob = Utilities.newBlob(json, "application/json", name);
   var existing = folder.getFilesByName(name);
   if (existing.hasNext()) {
@@ -341,56 +461,64 @@ function ghConf() {
   return { token: token, repo: repo, branch: props.getProperty("GITHUB_BRANCH") || "main" };
 }
 
-/** Current sha of a file, or null if it does not exist yet. */
-function githubSha(path) {
+/**
+ * Write SEVERAL files in ONE commit, using the Git Data API.
+ *
+ * The Contents API creates a commit PER FILE, and each commit is a separate Netlify
+ * production deploy at 15 credits a go — publishing four files that way would
+ * cost 60 credits a day instead of 15. So blobs are created first (which do not
+ * commit anything), then a single tree, then a single commit.
+ *
+ * files: { "path/in/repo.json": "contents", ... }
+ */
+function githubPutMany(files, message) {
   var c = ghConf();
-  var res = UrlFetchApp.fetch(
-    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(path) + "?ref=" + encodeURIComponent(c.branch),
-    { method: "get", muteHttpExceptions: true,
-      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
-  var code = res.getResponseCode();
-  if (code === 200) return JSON.parse(res.getContentText()).sha;
-  if (code === 404) return null;
-  throw new Error("GitHub sha lookup failed (" + code + "): " + res.getContentText().slice(0, 300));
-}
+  var api = "https://api.github.com/repos/" + c.repo;
+  var hdr = { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" };
 
-/** Create or overwrite one file. Retries once — a same-second write can 409. */
-function githubPut(path, content, message) {
-  var c = ghConf();
-  for (var attempt = 0; attempt < 2; attempt++) {
-    var sha = githubSha(path);
-    var payload = {
-      message: message,
-      content: Utilities.base64Encode(content, Utilities.Charset.UTF_8),
-      branch: c.branch
-    };
-    if (sha) payload.sha = sha;      // omitted on first-ever create
-
-    var res = UrlFetchApp.fetch(
-      "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(path),
-      { method: "put", contentType: "application/json", muteHttpExceptions: true,
-        headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" },
-        payload: JSON.stringify(payload) });
-
+  function call(url, method, payload) {
+    var opt = { method: method, muteHttpExceptions: true, headers: hdr };
+    if (payload) { opt.contentType = "application/json"; opt.payload = JSON.stringify(payload); }
+    var res = UrlFetchApp.fetch(url, opt);
     var code = res.getResponseCode();
-    if (code === 200 || code === 201) {
-      Logger.log("GitHub: wrote " + path + " (" + (content.length / 1048576).toFixed(2) + " MB)");
-      return;
+    if (code < 200 || code >= 300) {
+      throw new Error("GitHub " + method + " " + url.replace(api, "") + " failed (" + code + "): " +
+        res.getContentText().slice(0, 300));
     }
-    if (code === 409 && attempt === 0) {
-      Logger.log("GitHub: 409 conflict on " + path + " — refreshing sha and retrying once");
-      Utilities.sleep(1500);
-      continue;
-    }
-    throw new Error("GitHub write failed for " + path + " (" + code + "): " + res.getContentText().slice(0, 400));
+    return JSON.parse(res.getContentText());
   }
+
+  var ref = call(api + "/git/ref/heads/" + encodeURIComponent(c.branch), "get");
+  var baseCommitSha = ref.object.sha;
+  var baseCommit = call(api + "/git/commits/" + baseCommitSha, "get");
+
+  var tree = [];
+  Object.keys(files).forEach(function (path) {
+    // base64 so the blob survives regardless of the JSON's contents.
+    var blob = call(api + "/git/blobs", "post", {
+      content: Utilities.base64Encode(files[path], Utilities.Charset.UTF_8),
+      encoding: "base64"
+    });
+    Logger.log("  blob " + path + " (" + (files[path].length / 1048576).toFixed(2) + " MB)");
+    tree.push({ path: path, mode: "100644", type: "blob", sha: blob.sha });
+  });
+
+  // base_tree keeps every other file in the repo untouched.
+  var newTree = call(api + "/git/trees", "post", { base_tree: baseCommit.tree.sha, tree: tree });
+  var commit = call(api + "/git/commits", "post", {
+    message: message, tree: newTree.sha, parents: [baseCommitSha]
+  });
+  call(api + "/git/refs/heads/" + encodeURIComponent(c.branch), "patch", { sha: commit.sha, force: false });
+
+  Logger.log("GitHub: committed " + tree.length + " file(s) as " + commit.sha.slice(0, 7) +
+    " - one commit, so one Netlify deploy.");
 }
 
 /**
  * The manifest is what the dashboard's month dropdown is built from. It is
  * read-modify-written so archiving a month never drops the others.
  */
-function updateManifest(monthKey, lastUpdated, isCurrent) {
+function buildManifest(monthKey, lastUpdated, isCurrent) {
   var c = ghConf();
   var manifest = { schema: SNAPSHOT_SCHEMA, months: [] };
 
@@ -409,26 +537,32 @@ function updateManifest(monthKey, lastUpdated, isCurrent) {
     }
   }
 
-  var file = isCurrent ? (DATA_DIR + "/current.json") : (DATA_DIR + "/" + monthKey + ".json");
-  var entry = { key: monthKey, label: monthLabel(monthKey), file: file, lastUpdated: lastUpdated, live: !!isCurrent };
+  function fileSet(mKey, live) {
+    var f = {};
+    Object.keys(PARTS).forEach(function (p) { f[p] = partFileName(p, mKey, live); });
+    return f;
+  }
+  var entry = { key: monthKey, label: monthLabel(monthKey), files: fileSet(monthKey, !!isCurrent),
+                lastUpdated: lastUpdated, live: !!isCurrent };
 
   var found = false;
   for (var i = 0; i < manifest.months.length; i++) {
     if (manifest.months[i].key === monthKey) { manifest.months[i] = entry; found = true; }
     else if (isCurrent && manifest.months[i].live) {
-      // Only one month can be the live one. A previous live month that has been
-      // archived now points at its frozen file instead.
+      // Only one month can be live. A month that was live and has since been
+      // archived must point at its frozen files instead of the -current ones.
       manifest.months[i].live = false;
-      manifest.months[i].file = DATA_DIR + "/" + manifest.months[i].key + ".json";
+      manifest.months[i].files = fileSet(manifest.months[i].key, false);
+      delete manifest.months[i].file;     // drop any schema-1 single-file key
     }
   }
   if (!found) manifest.months.push(entry);
 
   manifest.months.sort(function (a, b) { return a.key < b.key ? 1 : a.key > b.key ? -1 : 0; });
+  manifest.schema = SNAPSHOT_SCHEMA;
   manifest.current = isCurrent ? monthKey : manifest.current;
   manifest.updated = lastUpdated;
-
-  githubPut(MANIFEST_PATH, JSON.stringify(manifest, null, 2), "Update dashboard data manifest (" + monthKey + ")");
+  return manifest;
 }
 
 // ===========================================================================
@@ -470,12 +604,90 @@ function monthLabel(monthKey) {
   return (names[mi] || parts[1]) + " " + parts[0];
 }
 
-/** Convenience: create the daily trigger. Run once, from the editor. */
-function installDailyTrigger() {
+/**
+ * SET THE DAILY SCHEDULE IN IST — run this one.
+ *
+ *   installDailyTriggerIST()     -> 10:00 IST (default; Redash lands by ~09:00)
+ *   installDailyTriggerIST(11)   -> 11:00 IST
+ *
+ * Why this exists: Apps Script's atHour() uses the SCRIPT PROJECT's timezone,
+ * which is not necessarily the spreadsheet's and not necessarily yours. Rather
+ * than hard-code an offset — which would also be wrong for half the year, since
+ * IST has no daylight saving but US timezones do — the offset is measured at run
+ * time by rendering the same instant in both zones. The result is rounded UP to
+ * the next whole hour so the job can never fire BEFORE the IST time you asked
+ * for, only after.
+ *
+ * Apps Script also runs time-based triggers within a one-hour window, so asking
+ * for 10:00 IST means "some time between 10:00 and 11:00 IST".
+ */
+function installDailyTriggerIST(istHour) {
+  istHour = (istHour == null) ? 10 : Number(istHour);
+  if (!(istHour >= 0 && istHour <= 23)) throw new Error("istHour must be 0-23");
+
+  var scriptTz = Session.getScriptTimeZone();
+  var mapped = istHourToScriptHour(istHour, scriptTz);
+  installDailyTrigger(mapped.hour);
+
+  Logger.log("---------------------------------------------------------------");
+  Logger.log("Requested        : " + pad2(istHour) + ":00 IST");
+  Logger.log("Script timezone  : " + scriptTz);
+  Logger.log("Trigger set to   : " + pad2(mapped.hour) + ":00 " + scriptTz +
+             "  (= " + mapped.backInIst + " IST)");
+  Logger.log("Sheet timezone   : " + SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone() +
+             "   (only affects how dates are written, not when this runs)");
+  Logger.log("Apps Script fires within an hour of the set time.");
+  if (mapped.rounded) {
+    Logger.log("NOTE: rounded up to a whole hour, so it runs slightly after " +
+               pad2(istHour) + ":00 IST rather than before it.");
+  }
+  Logger.log("If your timezone observes daylight saving, this can drift by an");
+  Logger.log("hour when the clocks change — re-run this function if it matters.");
+  Logger.log("---------------------------------------------------------------");
+  return mapped;
+}
+
+function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+/** Minutes past midnight for an instant, as seen in a given timezone. */
+function tzMinutes(d, tz) {
+  var p = Utilities.formatDate(d, tz, "HH:mm").split(":");
+  return Number(p[0]) * 60 + Number(p[1]);
+}
+
+/**
+ * Convert an IST hour to the whole hour in scriptTz that lands at or just after
+ * it. Offsets are measured, not assumed, so this stays correct across zones.
+ */
+function istHourToScriptHour(istHour, scriptTz) {
+  var now = new Date();
+  var diff = tzMinutes(now, scriptTz) - tzMinutes(now, "Asia/Kolkata");
+  // Same wall-clock reading can sit either side of midnight; normalise to +/-12h.
+  while (diff > 720) diff -= 1440;
+  while (diff < -720) diff += 1440;
+
+  var targetMin = (istHour * 60 + diff + 1440) % 1440;
+  var hour = Math.ceil(targetMin / 60) % 24;          // never earlier than asked
+  var backMin = (hour * 60 - diff + 1440) % 1440;
+  return {
+    hour: hour,
+    rounded: (targetMin % 60) !== 0,
+    backInIst: pad2(Math.floor(backMin / 60)) + ":" + pad2(backMin % 60)
+  };
+}
+
+/**
+ * Lower-level: set the trigger using an hour in the SCRIPT's timezone.
+ * Prefer installDailyTriggerIST() unless you specifically want that.
+ */
+function installDailyTrigger(hour) {
+  hour = (hour == null) ? 7 : Number(hour);
+  if (!(hour >= 0 && hour <= 23)) throw new Error("hour must be 0-23");
+
   var existing = ScriptApp.getProjectTriggers();
   for (var i = 0; i < existing.length; i++) {
     if (existing[i].getHandlerFunction() === "dailySnapshot") ScriptApp.deleteTrigger(existing[i]);
   }
-  ScriptApp.newTrigger("dailySnapshot").timeBased().atHour(7).everyDays(1).create();
-  Logger.log("Daily trigger installed for ~07:00 in the script's timezone.");
+  ScriptApp.newTrigger("dailySnapshot").timeBased().atHour(hour).everyDays(1).create();
+  Logger.log("Daily trigger installed for ~" + pad2(hour) + ":00 " + Session.getScriptTimeZone() + ".");
 }

@@ -45,6 +45,35 @@
   };
   var REFRESH_MS = 5 * 60 * 1000;   // re-check the snapshot every 5 minutes
 
+  // The snapshot is published as three parts (see tools/snapshot-generator.gs).
+  // Fetch only what this dashboard can display: a Legacy viewer has no use for
+  // IPA's 71k mistake rows, which are the bulk of the payload.
+  var SNAP_PARTS = {
+    legacy: ["core", "legacy"],
+    ipa:    ["core", "ipa"],
+    split:  ["core", "legacy", "ipa"]
+  };
+
+  // Combine parts into the single object applySnapshot_ expects. Metadata comes
+  // from whichever part answered first; they are written together so it matches.
+  function mergeParts(list) {
+    var merged = null;
+    list.forEach(function (p) {
+      if (!p) return;
+      if (!merged) {
+        merged = { schema: p.schema, month: p.month, label: p.label, lastUpdated: p.lastUpdated,
+                   timezone: p.timezone, generator: p.generator, counts: {}, warnings: [], data: {} };
+      }
+      Object.keys(p.data || {}).forEach(function (k) { merged.data[k] = p.data[k]; });
+      Object.keys(p.counts || {}).forEach(function (k) {
+        if (k === "totalRows") merged.counts.totalRows = (merged.counts.totalRows || 0) + p.counts[k];
+        else merged.counts[k] = p.counts[k];
+      });
+      (p.warnings || []).forEach(function (w) { if (merged.warnings.indexOf(w) === -1) merged.warnings.push(w); });
+    });
+    return merged;
+  }
+
   function fetchJSON(url, timeoutMs) {
     // Cache-busted so a refresh cannot be served a stale copy by the browser or
     // an intermediate proxy; Netlify sets long cache headers on static assets.
@@ -135,7 +164,11 @@
       analyst_login: row[m.username], team_lead_login: row[m.team],
       entered_value: m.ent ? row[m.ent] : "", closed_value: m.clo ? row[m.clo] : "",
       current_value: m.cur ? row[m.cur] : "", status: m.st ? row[m.st] : "", order_url: m.url ? row[m.url] : "",
-      differs_from_closed: m.diffClo ? row[m.diffClo] : "" };
+      differs_from_closed: m.diffClo ? row[m.diffClo] : "",
+      // Which portal this row came from. Needed to tell a Legacy analyst error
+      // from an IPA one on the Split dashboard, where both are merged and
+      // TEAM_SETS cannot distinguish them (it lists every team under "split").
+      __portal: src };
   }
 
   var cfg = CONFIG[TARGET] || CONFIG.legacy;
@@ -478,7 +511,10 @@
           M.lp ? (r[M.lp] || "") : "", M.ent ? (r[M.ent] || "") : "",
           M.clo ? (r[M.clo] || "") : "", M.cur ? (r[M.cur] || "") : "",
           M.st ? (r[M.st] !== "" && r[M.st] != null && si[r[M.st]] != null ? si[r[M.st]] : -1) : -1, r[M.url] || "", M.org ? (r[M.org] || "") : "",
-          diffClo
+          diffClo,
+          // Split merges both portals via normMist, which tags each row. Single-
+          // portal dashboards read their tab directly, so fall back to TARGET.
+          r.__portal || (TARGET === "split" ? "" : TARGET)
         ]);
       });
       QA = { url_prefix: "", dates: qdates, areas: areas, vars: vars, statuses: statuses, analysts: analysts, records: qrecords };
@@ -975,11 +1011,24 @@
 
   function cfgFor(t) { return CONFIG[t] || CONFIG.legacy; }
 
-  function loadSnapshot(file, monthKey) {
+  // Accepts a manifest entry. schema 2 carries a files{} map of parts; schema 1
+  // carried a single file, still honoured so an older manifest keeps working.
+  function loadSnapshot(entry, monthKey) {
     window.__QA_LOADING = true;
-    return fetchJSON(file, 45000).then(function (snap) {
+    var want = SNAP_PARTS[TARGET] || SNAP_PARTS.legacy;
+    var urls;
+    if (entry && entry.files) {
+      urls = want.map(function (p) { return entry.files[p]; }).filter(Boolean);
+      if (!urls.length) return Promise.reject(new Error("manifest lists no parts this dashboard can use"));
+    } else {
+      urls = [(entry && entry.file) || entry];
+    }
+    return Promise.all(urls.map(function (u) { return fetchJSON(u, 45000); })).then(function (parts) {
+      var snap = (parts.length === 1 && !(entry && entry.files)) ? parts[0] : mergeParts(parts);
+      if (!snap) throw new Error("snapshot parts were empty");
       applySnapshot_(snap, monthKey);
       lsSet("snap_" + (snap.month || monthKey || "current"), { v: SNAPSHOT_VERSION, ts: Date.now(), snap: snap });
+      console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
       return true;
     });
   }
@@ -992,7 +1041,7 @@
       snapMonths = m.months;
       var src = {};
       m.months.forEach(function (mo) {
-        src["snap_" + mo.key] = { label: mo.label + (mo.live ? " (current)" : ""), snapshot: mo.file, month: mo.key };
+        src["snap_" + mo.key] = { label: mo.label + (mo.live ? " (current)" : ""), snapshot: mo, month: mo.key };
       });
       window.__QA_SOURCES = src;
       window.__QA_ACTIVE_SOURCE_KEY = "snap_" + (m.current || m.months[0].key);
@@ -1051,7 +1100,7 @@
         var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
         if (have && want.lastUpdated && want.lastUpdated === have) return;   // unchanged
         console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");
-        loadSnapshot(want.file, want.key).catch(function (e) {
+        loadSnapshot(want, want.key).catch(function (e) {
           console.warn("[snapshot] auto-refresh failed, keeping current view: " + e.message);
         });
       }).catch(function () { /* offline or deploying — try again next tick */ });
@@ -1080,7 +1129,7 @@
       var cur = null;
       m.months.forEach(function (mo) { if (mo.key === (m.current || m.months[0].key)) cur = mo; });
       cur = cur || m.months[0];
-      return loadSnapshot(cur.file, cur.key);
+      return loadSnapshot(cur, cur.key);
     }).then(function () {
       startAutoRefresh();
     }).catch(function (e) {
