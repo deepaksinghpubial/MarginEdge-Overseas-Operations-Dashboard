@@ -96,6 +96,14 @@ var MANIFEST_PATH = DATA_DIR + "/manifest.json";
 //  ENTRY POINTS
 // ===========================================================================
 
+/**
+ * Archive July 2026 from its own workbook. A named wrapper so nobody has to
+ * paste a spreadsheet id, and so the id is recorded in one place.
+ */
+function archiveJul2026() {
+  return archiveMonth("2026-07", "1uCFShcJrAG41WU50z-VAFaxucM1k3GbXR44vpuqTMdk");
+}
+
 /** Attach the daily time-driven trigger to this one. */
 function dailySnapshot() {
   return buildAndPublish({ publish: true });
@@ -116,16 +124,22 @@ function dryRunSnapshot() {
 }
 
 /**
- * Freeze a finished month. Copies the current snapshot to data/<month>.json and
- * marks it archived in the manifest, so the dashboard's month dropdown keeps
- * offering it after the live sheet has moved on to the next month.
- * Call as: archiveMonth("2026-08")
+ * Freeze a finished month so the dashboard's month dropdown keeps offering it
+ * after the live sheet has moved on.
+ *
+ *   archiveMonth("2026-08")                 <- reads THIS workbook
+ *   archiveMonth("2026-07", "1uCFSh...")    <- reads an archived workbook
+ *
+ * Pass the sheetId whenever the month you are archiving no longer lives in this
+ * workbook. Archiving July from the August book would otherwise publish August's
+ * numbers labelled as July, and nothing downstream could tell.
  */
-function archiveMonth(monthKey) {
+function archiveMonth(monthKey, sheetId) {
   if (!/^\d{4}-\d{2}$/.test(String(monthKey || ""))) {
     throw new Error('archiveMonth needs a month like "2026-08"');
   }
-  var built = buildSnapshot(monthKey);
+  var built = buildSnapshot(monthKey, sheetId);
+  if (sheetId) Logger.log("Reading from archived workbook " + sheetId);
   var parts = splitSnapshot(built.snapshot);
   var files = {};
   Object.keys(parts).forEach(function (p) {
@@ -201,8 +215,11 @@ function buildAndPublish(opts) {
   return { summary: built.summary, json: json };
 }
 
-function buildSnapshot(monthKey) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function buildSnapshot(monthKey, sheetId) {
+  // sheetId lets a FINISHED month be read from its own archived workbook. Without
+  // it, archiveMonth("2026-07") would have read the live August book and
+  // published August's figures under a July label - silently wrong data.
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
   var data = {}, counts = {}, warnings = [], total = 0;
 

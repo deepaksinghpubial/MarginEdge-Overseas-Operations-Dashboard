@@ -158,6 +158,27 @@
       productivity_score: row[c.productivity], total_errors: errs, total_possible_error_points: pts,
       error_rate: row[c.errorRate], final_score: row[c.finalScore], __src: src };
   }
+  // Reviews arrive from two places - the daily snapshot and the live overlay
+  // below - so the mapping lives in one function to keep them identical.
+  function mapReviewRows(rows) {
+    return (rows || []).map(function (r) {
+      return {
+        review_id: String(r.review_id || ""),
+        review_date: String(r.review_date || ""),
+        reviewer_username: String(r.reviewer_username || ""),
+        reviewer_designation: String(r.reviewer_designation || ""),
+        portal: String(r.portal || ""),
+        mistake_key: String(r.mistake_key || ""),
+        mistake_date: String(r.mistake_date || ""),
+        order_url: String(r.order_url || ""),
+        target_login: String(r.target_login || ""),
+        target_designation: String(r.target_designation || ""),
+        verdict: String(r.verdict || ""),
+        remarks: String(r.remarks || "")
+      };
+    }).filter(function (r) { return r.mistake_key; });
+  }
+
   function normMist(row, src) {
     var m = CONFIG[src].mistakes.cols;
     return { mistake_date: row[m.date], mistake_area: row[m.area], variable: row[m.variable],
@@ -543,22 +564,7 @@
         return out;
       })(),
       DESIGNATIONS: { byLogin: desigByLogin, byName: desigMap },
-      REVIEWS: (reviewRows || []).map(function (r) {
-        return {
-          review_id: String(r.review_id || ""),
-          review_date: String(r.review_date || ""),
-          reviewer_username: String(r.reviewer_username || ""),
-          reviewer_designation: String(r.reviewer_designation || ""),
-          portal: String(r.portal || ""),
-          mistake_key: String(r.mistake_key || ""),
-          mistake_date: String(r.mistake_date || ""),
-          order_url: String(r.order_url || ""),
-          target_login: String(r.target_login || ""),
-          target_designation: String(r.target_designation || ""),
-          verdict: String(r.verdict || ""),
-          remarks: String(r.remarks || "")
-        };
-      }).filter(function (r) { return r.mistake_key; }),
+      REVIEWS: mapReviewRows(reviewRows),
       LOCATIONS: { locations: locations, map: locMap, counts: lCounts },
       AMS: { map: amMap },
       TEAM_SETS: (function () {
@@ -602,6 +608,50 @@
       return out;
     });
   }
+
+  // ---- Live overlay for error reviews ---------------------------------------
+  // The heavy data (productivity, mistakes) changes once a day when Redash runs,
+  // which is exactly what the daily snapshot is for. REVIEWS do not: people
+  // record verdicts all through the day, and waiting until tomorrow to see this
+  // morning's work is useless. So the reviews tab - about 1,200 small rows - is
+  // re-read live over the top of the snapshot.
+  //
+  // Cost is negligible: one Apps Script call, served from its own 60-second
+  // cache, so fifty viewers cost roughly one sheet read a minute. Failure is
+  // silent by design - the snapshot's own copy stays in place.
+  function refreshReviewsLive(reason) {
+    if (!WEBAPP_URL) return Promise.resolve(false);
+    return jsonp([SHARED.reviews.tab], 30000, activeSheetId).then(function (tabs) {
+      var rows = tabs[SHARED.reviews.tab];
+      if (!rows) return false;                       // tab absent = nothing saved yet
+      var mapped = mapReviewRows(rows);
+      var before = (window.REVIEWS || []).length;
+
+      // The server response is cached for 60 seconds, so a review saved moments
+      // ago may not be in it yet. Overwriting blindly would make the reviewer's
+      // own entry disappear from their screen and reappear a minute later, which
+      // looks like the save failed. Any local review the server has not caught
+      // up with is therefore carried over.
+      var seen = {};
+      mapped.forEach(function (r) { seen[r.mistake_key] = 1; });
+      var carried = 0;
+      (window.REVIEWS || []).forEach(function (r) {
+        if (r && r.mistake_key && !seen[r.mistake_key]) { mapped.push(r); carried++; }
+      });
+      if (carried) console.log("[reviews] kept " + carried + " just-saved review(s) the server has not returned yet.");
+
+      window.REVIEWS = mapped;
+      window.__QA_REVIEWS_LIVE = { at: new Date().toISOString(), count: mapped.length };
+      console.log("[reviews] live refresh (" + reason + "): " + mapped.length +
+        " reviews" + (mapped.length !== before ? " (was " + before + " in the snapshot)" : " (unchanged)"));
+      if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
+      return true;
+    }).catch(function (e) {
+      console.log("[reviews] live refresh skipped (" + e.message + ") — keeping the snapshot's copy.");
+      return false;
+    });
+  }
+  window.__QA_REFRESH_REVIEWS = refreshReviewsLive;
 
   // ---- Saving an error review -----------------------------------------------
   // Appends (or corrects) one row in the workbook's "Error Reviews" tab via the
@@ -1029,6 +1079,9 @@
       applySnapshot_(snap, monthKey);
       lsSet("snap_" + (snap.month || monthKey || "current"), { v: SNAPSHOT_VERSION, ts: Date.now(), snap: snap });
       console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
+      // Verdicts recorded since the snapshot ran would otherwise be invisible
+      // until tomorrow.
+      refreshReviewsLive("after snapshot load");
       return true;
     });
   }
@@ -1074,6 +1127,7 @@
     var snapSrc = (window.__QA_SOURCES || {})[key];
     if (snapSrc && snapSrc.snapshot) {
       console.log("[snapshot] manual refresh");
+      refreshReviewsLive("manual refresh");
       loadSnapshot(snapSrc.snapshot, snapSrc.month).catch(function (e) {
         console.warn("[snapshot] refresh failed, keeping what is on screen: " + e.message);
       });
@@ -1098,7 +1152,11 @@
         m.months.forEach(function (mo) { if ("snap_" + mo.key === key) want = mo; });
         if (!want) return;
         var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
-        if (have && want.lastUpdated && want.lastUpdated === have) return;   // unchanged
+        if (have && want.lastUpdated && want.lastUpdated === have) {
+          // Snapshot unchanged, but reviews move all day - pick those up.
+          refreshReviewsLive("5-minute poll");
+          return;
+        }
         console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");
         loadSnapshot(want, want.key).catch(function (e) {
           console.warn("[snapshot] auto-refresh failed, keeping current view: " + e.message);
