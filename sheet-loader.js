@@ -236,11 +236,20 @@
   };
   var normRole = function (d) {
     if (!d) return null;
-    var s = String(d).trim().toLowerCase();
-    if (/special/i.test(d)) return "Specialist";    // any specialist designation
-    if (/lead/i.test(d)) return "Lead Analyst";
+    // LEAD is tested before SPECIAL, and as a whole word.
+    //
+    // It used to be the other way round, which read "Lead Analyst, Special Task
+    // Team" as a Specialist - the word "Special" in a TEAM NAME outranked the
+    // person's actual grade, misfiling them in the role filter, the specialist
+    // rankings, and the reviewer list.
+    //
+    // Audited against all 51 distinct designations in the roster: exactly one
+    // changes. "Client service specialist", "EDI Integration Specialist",
+    // "US Accounting Specialist" and the rest carry no "lead" and stay Specialist.
+    if (/\blead\b/i.test(d)) return "Lead Analyst";
+    if (/special/i.test(d)) return "Specialist";
     if (/assistant|manager|\bam\b/i.test(d)) return "Assistant Manager";
-    if (/analyst/i.test(d)) return "Analyst";       // any analyst designation
+    if (/analyst/i.test(d)) return "Analyst";
     return null;
   };
   var idx = function (list) { var m = {}; list.forEach(function (v, i) { m[v] = i; }); return m; };
@@ -641,39 +650,76 @@
   // Cost is negligible: one Apps Script call, served from its own 60-second
   // cache, so fifty viewers cost roughly one sheet read a minute. Failure is
   // silent by design - the snapshot's own copy stays in place.
-  function refreshReviewsLive(reason) {
+  // The heavy tabs are ~113k rows and take Apps Script about two minutes to read,
+  // which is why they come from a daily snapshot and not a per-viewer call.
+  // Everything else in the workbook is small and hand-edited all day - Role
+  // Details (adding someone, correcting a designation), Location Details, team
+  // mapping, FR Details and Error Reviews are well under a megabyte between them.
+  //
+  // Those five are re-read on every page load, on the five-minute poll and on
+  // Refresh, then merged over the snapshot. Edit the sheet, refresh, and the
+  // change is there - no waiting for 10:00. One Apps Script call behind its own
+  // 60-second cache, so fifty viewers cost about one sheet read a minute.
+  var lastHeavy = null;            // the snapshot's productivity + mistake rows
+  var lastRefFingerprint = null;   // tells a real change from a no-op
+
+  function refFingerprint(tabs) {
+    // Reviews are excluded on purpose: they change constantly and do not need the
+    // full rebuild a roster change does.
+    return [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab]
+      .map(function (t) { var r = tabs[t] || []; return r.length + ":" + JSON.stringify(r).length; })
+      .join("|");
+  }
+
+  function refreshCoreLive(reason) {
     if (!WEBAPP_URL) return Promise.resolve(false);
-    return jsonp([SHARED.reviews.tab], 30000, activeSheetId).then(function (tabs) {
-      var rows = tabs[SHARED.reviews.tab];
-      if (!rows) return false;                       // tab absent = nothing saved yet
-      var mapped = mapReviewRows(rows);
-      var before = (window.REVIEWS || []).length;
+    var want = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab, SHARED.reviews.tab];
+    return jsonp(want, 30000, activeSheetId).then(function (tabs) {
+      var fp = refFingerprint(tabs);
+      var refsChanged = (lastRefFingerprint !== null && fp !== lastRefFingerprint);
 
-      // The server response is cached for 60 seconds, so a review saved moments
-      // ago may not be in it yet. Overwriting blindly would make the reviewer's
-      // own entry disappear from their screen and reappear a minute later, which
-      // looks like the save failed. Any local review the server has not caught
-      // up with is therefore carried over.
-      var seen = {};
-      mapped.forEach(function (r) { seen[r.mistake_key] = 1; });
-      var carried = 0;
-      (window.REVIEWS || []).forEach(function (r) {
-        if (r && r.mistake_key && !seen[r.mistake_key]) { mapped.push(r); carried++; }
-      });
-      if (carried) console.log("[reviews] kept " + carried + " just-saved review(s) the server has not returned yet.");
+      if (tabs[SHARED.reviews.tab]) {
+        var liveReviews = mapReviewRows(tabs[SHARED.reviews.tab]);
+        var seen = {};
+        liveReviews.forEach(function (r) { seen[r.mistake_key] = 1; });
+        var carried = 0;
+        (window.REVIEWS || []).forEach(function (r) {
+          // A review saved seconds ago may not be in the cached response yet.
+          // Dropping it would make the reviewer's own entry vanish and return a
+          // minute later, which reads as a failed save.
+          if (r && r.mistake_key && !seen[r.mistake_key]) { liveReviews.push(r); carried++; }
+        });
+        window.REVIEWS = liveReviews;
+        if (carried) console.log("[live] kept " + carried + " just-saved review(s) not yet in the cached response.");
+      }
 
-      window.REVIEWS = mapped;
-      window.__QA_REVIEWS_LIVE = { at: new Date().toISOString(), count: mapped.length };
-      console.log("[reviews] live refresh (" + reason + "): " + mapped.length +
-        " reviews" + (mapped.length !== before ? " (was " + before + " in the snapshot)" : " (unchanged)"));
+      if (refsChanged && lastHeavy) {
+        // ROLES, LOCATIONS, AMS, ROSTER, DESIGNATIONS and the FR totals are
+        // derived from these tabs rather than stored, so they must be recomputed.
+        var g = build(lastHeavy.daily, lastHeavy.mist,
+                      tabs[SHARED.role.tab] || [], tabs[SHARED.location.tab] || [],
+                      tabs[SHARED.teams.tab] || [], tabs[SHARED.fr.tab] || [],
+                      tabs[SHARED.reviews.tab] || []);
+        window.SCORES = g.SCORES; window.QA_DATA = g.QA_DATA;
+        window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS;
+        window.TEAM_SETS = g.TEAM_SETS; window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS;
+        window.REVIEWS = g.REVIEWS;
+        console.log("[live] reference tabs changed (" + reason + ") — rebuilt roles, locations, teams and FR from the sheet.");
+      } else {
+        console.log("[live] " + reason + ": " + (window.REVIEWS || []).length + " reviews, reference tabs unchanged.");
+      }
+      lastRefFingerprint = fp;
+      window.__QA_LIVE = { at: new Date().toISOString(), reviews: (window.REVIEWS || []).length, rebuilt: !!refsChanged };
       if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       return true;
     }).catch(function (e) {
-      console.log("[reviews] live refresh skipped (" + e.message + ") — keeping the snapshot's copy.");
+      console.log("[live] refresh skipped (" + e.message + ") — keeping the snapshot's copy.");
       return false;
     });
   }
-  window.__QA_REFRESH_REVIEWS = refreshReviewsLive;
+  var refreshReviewsLive = refreshCoreLive;   // the save path calls this name
+  window.__QA_REFRESH_REVIEWS = refreshCoreLive;
+  window.__QA_REFRESH_LIVE = refreshCoreLive;
 
   // ---- Saving an error review -----------------------------------------------
   // Appends (or corrects) one row in the workbook's "Error Reviews" tab via the
@@ -1070,6 +1116,10 @@
       mist = tabs[cfgFor(TARGET).mistakes.tab] || [];
     }
 
+    // Kept so the small reference tabs can be re-read live and rebuilt against the
+    // same heavy rows, without refetching 100k+ mistake rows.
+    lastHeavy = { daily: daily, mist: mist };
+    lastRefFingerprint = refFingerprint(tabs);
     var g = build(daily, mist, tabs[SHARED.role.tab] || [], tabs[SHARED.location.tab] || [],
                   tabs[SHARED.teams.tab] || [], tabs[SHARED.fr.tab] || [], tabs[SHARED.reviews.tab] || []);
     window.SCORES = g.SCORES; window.QA_DATA = g.QA_DATA;
@@ -1133,7 +1183,7 @@
       console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
       // Verdicts recorded since the snapshot ran would otherwise be invisible
       // until tomorrow.
-      refreshReviewsLive("after snapshot load");
+      refreshCoreLive("after snapshot load");
       return true;
     });
   }
@@ -1184,7 +1234,7 @@
     var snapSrc = (window.__QA_SOURCES || {})[key];
     if (snapSrc && snapSrc.snapshot) {
       console.log("[snapshot] manual refresh");
-      refreshReviewsLive("manual refresh");
+      refreshCoreLive("manual refresh");
       loadSnapshot(snapSrc.snapshot, snapSrc.month).catch(function (e) {
         console.warn("[snapshot] refresh failed, keeping what is on screen: " + e.message);
       });
@@ -1211,7 +1261,7 @@
         var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
         if (have && want.lastUpdated && want.lastUpdated === have) {
           // Snapshot unchanged, but reviews move all day - pick those up.
-          refreshReviewsLive("5-minute poll");
+          refreshCoreLive("5-minute poll");
           return;
         }
         console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");

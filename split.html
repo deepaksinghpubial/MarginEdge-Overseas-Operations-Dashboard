@@ -1102,16 +1102,30 @@ class Component extends DCLogic {
   // Specialist being NAMED as the reviewer of an error; it cannot stop a person
   // opening the box and choosing somebody else's name. Real enforcement would
   // need per-user authentication.
+  // Mirrors normRole() in sheet-loader.js exactly, or someone could be classified
+  // one way for the role filter and another for reviewing.
+  // LEAD is tested first, and as a whole word: "Lead Analyst, Special Task Team"
+  // is a Lead Analyst whose TEAM is called Special, not a Specialist.
   designationRole(d){
     if(!d) return null;
+    if(/\blead\b/i.test(d)) return "Lead Analyst";
     if(/special/i.test(d)) return "Specialist";
-    if(/lead/i.test(d)) return "Lead Analyst";
     if(/assistant|manager|\bam\b/i.test(d)) return "Assistant Manager";
     if(/analyst/i.test(d)) return "Analyst";
     return null;
   }
   reviewerBlockedRoles(){ return ["Analyst","Specialist"]; }
+  // Reviewing is a separate question from grade, so it gets its own rule.
+  //
+  // QA people are the obvious case: "Specialist, QA" and "Specialist, Training/QA"
+  // classify as Specialists for SCORING purposes - which is right, they are
+  // measured as individual contributors - but checking others' work is literally
+  // their job, so barring them made no sense. QA is therefore allowed through
+  // regardless of grade, WITHOUT touching designationRole, so nobody moves in or
+  // out of Specialist Performance as a side effect.
+  qaDesignation(d){ return !!d && /\bqa\b|quality/i.test(d); }
   canReview(designation){
+    if(this.qaDesignation(designation)) return true;
     return this.reviewerBlockedRoles().indexOf(this.designationRole(designation)) === -1;
   }
   eligibleReviewers(){
