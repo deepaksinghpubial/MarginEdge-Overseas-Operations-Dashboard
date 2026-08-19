@@ -533,10 +533,10 @@ class Component extends DCLogic {
     var el=this._q("#qa-content"); if(!el) return;
     var rws=this.srows(), p=this.st.page, html="";
     var failB=this.liveFailBanner();
-    if(p==="roles"){ el.innerHTML=failB+this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=failB+this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="spprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
-    if(p==="anprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceReviewModal(); return; }
+    if(p==="roles"){ el.innerHTML=failB+this.pageRoles(this.srows(true)); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceTableFilter(el); this.enhanceReviewModal(); return; }
+    if(p==="specialist"){ var _sr=this.srows(true); el.innerHTML=failB+this.pageSpecialist(_sr)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(_sr.filter(r=>this.roleOf(this.S.analysts[r[this.SD.AN]])==="Specialist")).map(a=>a.an)),"all specialists"); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceTableFilter(el); this.enhanceReviewModal(); return; }
+    if(p==="spprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Specialist",teamKey:"spTeam",anKey:"spAnalyst",teamAct:"spteam",anAct:"spanalyst",title:"Individual Specialist drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceTableFilter(el); this.enhanceReviewModal(); return; }
+    if(p==="anprofile"){ el.innerHTML=failB+this._profile(this.srows(true),{role:"Analyst",teamKey:"anTeamK",anKey:"anAnalystK",teamAct:"anteam",anAct:"ananalyst",title:"Individual Analyst drill-down",anim:true}); this.enhanceKpiFx(el); this.enhanceTableExport(el); this.enhanceTableFilter(el); this.enhanceReviewModal(); return; }
     if(p==="summary") html=this.pageSummary(rws);
     else if(p==="overview") html=this.pageOverview(rws);
     else if(p==="leaderboard") html=this.pageLeaderboard(rws)+this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(rws).map(a=>a.an)),"all shown");
@@ -554,7 +554,7 @@ class Component extends DCLogic {
     else if(p==="compare") html=this.pageCompare(rws);
     el.innerHTML=failB+html;
     this.enhanceKpiFx(el);
-    this.enhanceTableExport(el); this.enhanceReviewModal();
+    this.enhanceTableExport(el); this.enhanceTableFilter(el); this.enhanceReviewModal();
     if(this._caret!=null){ var s=this._q(this._caretErr?"#qa-errsearch":this._caretSp?"#qa-spsearch":"#qa-lbsearch"); if(s){ s.focus(); try{ s.setSelectionRange(this._caret,this._caret); }catch(_){} } }
   }
 
@@ -1588,6 +1588,121 @@ class Component extends DCLogic {
   }
 
 
+  // ---- per-column filter row on every table --------------------------------
+  // Typing a restaurant name in the Restaurant box shows only that restaurant's
+  // errors. Built as a post-render DOM pass, like the CSV export beside it, so
+  // one implementation covers every table on every page rather than each one
+  // growing its own search box.
+  //
+  // Filtering deliberately does NOT re-render. It shows and hides the rows
+  // already on screen, which keeps typing instant and keeps the caret in the box
+  // - re-rendering on each keystroke was what made the leaderboard search feel
+  // broken before.
+  tblFilterKey(card){
+    var h=card.querySelector(".card-head");
+    if(!h) return "t";
+    var c=h.cloneNode(true);
+    var kill=c.querySelectorAll(".tbl-export-btn,.ctrl-row,.kpi-tip,select,button");
+    for(var i=0;i<kill.length;i++) kill[i].parentNode.removeChild(kill[i]);
+    return (c.textContent||"").replace(/\s+/g," ").split("—")[0].trim().slice(0,60)||"t";
+  }
+  applyTblFilter(table){
+    var head=table.querySelector("thead .tbl-filter");
+    if(!head) return;
+    var ins=head.querySelectorAll("input"), active=[];
+    for(var i=0;i<ins.length;i++){
+      var v=(ins[i].value||"").trim().toLowerCase();
+      if(v) active.push({col:+ins[i].getAttribute("data-col"), v:v});
+    }
+    var body=table.querySelector("tbody"), trs=body?body.children:[];
+    var shown=0, total=0;
+    for(var r=0;r<trs.length;r++){
+      var tds=trs[r].children;
+      if(!tds.length) continue;
+      total++;
+      var ok=true;
+      for(var a=0;a<active.length;a++){
+        var cell=tds[active[a].col];
+        var txt=cell?(cell.textContent||"").toLowerCase():"";
+        if(txt.indexOf(active[a].v)===-1){ ok=false; break; }
+      }
+      trs[r].style.display=ok?"":"none";
+      if(ok) shown++;
+    }
+    var note=table.parentNode.querySelector(".tbl-filter-note")
+      || (table.parentNode.parentNode&&table.parentNode.parentNode.querySelector(".tbl-filter-note"));
+    if(note){
+      note.textContent=active.length?("Filter: showing "+shown.toLocaleString()+" of "+total.toLocaleString()+" rows"):"";
+      note.style.display=active.length?"":"none";
+    }
+  }
+  enhanceTableFilter(root){
+    if(!root) return;
+    var self=this;
+    this._tblFilters=this._tblFilters||{};
+    var cards=root.querySelectorAll(".card");
+    for(var i=0;i<cards.length;i++){
+      var card=cards[i];
+      var table=card.querySelector("table.tbl");
+      if(!table) continue;
+      var thead=table.querySelector("thead"), body=table.querySelector("tbody");
+      if(!thead||!body||thead.querySelector(".tbl-filter")) continue;
+      var headRow=thead.querySelector("tr");
+      if(!headRow) continue;
+      // Not worth the clutter on a handful of rows.
+      var rowCount=body.children.length;
+      if(rowCount<6) continue;
+
+      var key=this.tblFilterKey(card);
+      var saved=this._tblFilters[key]||{};
+      var tr=document.createElement("tr");
+      tr.className="tbl-filter";
+      var any=false;
+      for(var c=0;c<headRow.children.length;c++){
+        var th=document.createElement("th");
+        var label=(headRow.children[c].textContent||"").replace(/[▲▼]/g,"").trim();
+        // Skip the row-number column and the unlabelled spacer columns that hold
+        // bars - there is nothing meaningful to type against them.
+        if(!label||/^s\.?\s*no\.?$/i.test(label)||/^rank$/i.test(label)){ tr.appendChild(th); continue; }
+        var inp=document.createElement("input");
+        inp.type="text";
+        inp.className="tbl-filter-in";
+        inp.placeholder=label.length>14?"Filter…":("Filter "+label.toLowerCase());
+        inp.setAttribute("data-col",c);
+        inp.setAttribute("aria-label","Filter by "+label);
+        if(saved[c]){ inp.value=saved[c]; }
+        th.appendChild(inp);
+        tr.appendChild(th);
+        any=true;
+      }
+      if(!any) continue;
+      thead.appendChild(tr);
+
+      // A note under the table, so a short list is never mistaken for missing data.
+      if(!card.querySelector(".tbl-filter-note")){
+        var note=document.createElement("div");
+        note.className="tbl-filter-note";
+        note.style.display="none";
+        table.parentNode.appendChild(note);
+      }
+
+      (function(tbl,k){
+        tr.addEventListener("input",function(e){
+          var t=e.target;
+          if(!t||!t.classList.contains("tbl-filter-in")) return;
+          self._tblFilters[k]=self._tblFilters[k]||{};
+          var col=t.getAttribute("data-col");
+          if((t.value||"").trim()) self._tblFilters[k][col]=t.value; else delete self._tblFilters[k][col];
+          self.applyTblFilter(tbl);
+        });
+        // Typing must not reach the header's sort handler.
+        tr.addEventListener("click",function(e){ if(e.target&&e.target.classList.contains("tbl-filter-in")) e.stopPropagation(); });
+      })(table,key);
+
+      if(Object.keys(saved).length) this.applyTblFilter(table);
+    }
+  }
+
   exportTableEl(table, headEl){
     var ths=table.querySelectorAll("thead th");
     var headers=Array.prototype.map.call(ths,function(th){ return th.textContent.replace(/[\u25B2\u25BC]/g,"").trim().replace(/\s+/g," "); });
@@ -1601,6 +1716,9 @@ class Component extends DCLogic {
     for(var i=0;i<trs.length;i++){
       var tds=trs[i].querySelectorAll("td");
       if(!tds.length) continue;
+      // A column filter hides rows rather than removing them. Exporting those
+      // too would quietly contradict what the user is looking at.
+      if(trs[i].style.display==="none") continue;
       var row=Array.prototype.map.call(tds,function(td){ return td.textContent.trim().replace(/\s+/g," "); });
       if(hasLinks){
         var lk=trs[i].querySelector("a.order-link");
@@ -2841,6 +2959,11 @@ class Component extends DCLogic {
 .qa .dim-bar-fill{height:100%;background:var(--accent);border-radius:5px 0 0 5px;}
 .qa .dim-errs{color:var(--accent);font-weight:800;}
 .qa .dim-cap-note{font-size:11.5px;color:var(--muted);margin-top:10px;}
+.qa tr.tbl-filter th{padding:4px 8px 8px;background:var(--neutral-50,#f8fafc);border-bottom:1px solid var(--border);}
+.qa .tbl-filter-in{width:100%;min-width:56px;box-sizing:border-box;font-family:var(--font-body);font-size:11px;font-weight:500;padding:4px 6px;border:1px solid var(--neutral-300,#cbd5e1);border-radius:5px;background:#fff;color:var(--text);text-transform:none;letter-spacing:normal;}
+.qa .tbl-filter-in::placeholder{color:var(--neutral-300,#cbd5e1);font-weight:500;}
+.qa .tbl-filter-in:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+.qa .tbl-filter-note{font-size:11px;color:var(--muted);padding:8px 20px 0;font-family:var(--font-body);font-weight:600;}
 .qa .tbl-export-btn{margin-left:auto;font-size:11px;padding:4px 8px;white-space:nowrap;flex-shrink:0;}
 .qa .dim-sub{color:var(--muted);font-weight:600;font-size:11px;font-family:var(--font-num);}
 .qa .dim-drill{background:none;border:none;padding:0;font:inherit;font-weight:700;font-family:var(--font-body);color:var(--accent);cursor:pointer;text-align:left;border-bottom:1px dotted var(--accent);}
