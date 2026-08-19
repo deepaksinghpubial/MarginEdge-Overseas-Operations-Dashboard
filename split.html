@@ -1196,6 +1196,11 @@ class Component extends DCLogic {
     }).join('');
     var targetDesig=this.designationOf(o.target);
     var noRoster=!roster.length;
+    // If the live read of Role Details failed, the reviewer list is frozen as of
+    // the daily snapshot. Saying so beats leaving someone to conclude the
+    // eligibility rules are wrong when the sheet is in fact already correct.
+    var staleRoster=(window.__QA_LIVE&&window.__QA_LIVE.ok===false&&window.__QA_SNAPSHOT&&window.__QA_SNAPSHOT.lastUpdated)
+      ?String(window.__QA_SNAPSHOT.lastUpdated).slice(0,10):null;
     var link=o.order_url?'<a class="order-link" href="'+this.esc((this.Q&&this.Q.url_prefix||"")+o.order_url)+'" target="_blank" rel="noopener">open order ↗</a>':'—';
     return '<div class="rev-overlay" data-act="revcancel">'
       +'<div class="rev-dialog" role="dialog" aria-modal="true" data-act="revstop">'
@@ -1209,6 +1214,7 @@ class Component extends DCLogic {
         ? '<input type="text" data-act="revreviewer" value="'+this.esc(o.reviewer||"")+'" placeholder="Role Details not loaded — type a username">'
         : '<select data-act="revreviewer">'+rOpts+'</select>')
       +      (blockedN>0?'<span class="rev-hint-sm">'+blockedN+' Analyst/Specialist entries are not listed \u2014 they cannot review errors.</span>':'')
+      +      (staleRoster?'<span class="rev-hint-stale">This list is from the '+this.esc(staleRoster)+' snapshot \u2014 the live read of Role Details failed, so a designation changed since then is not reflected yet. Press Refresh, or reload the page.</span>':'')
       +      '</label>'
       +    '<label class="rev-f"><span class="rev-l">Designation</span>'
       +      '<input type="text" value="'+this.esc(desig)+'" readonly placeholder="'+(o.reviewer?'not set in Role Details':'auto-fills from the reviewer')+'"></label>'
@@ -3044,7 +3050,8 @@ class Component extends DCLogic {
 .qa .rev-err{margin:0 20px 12px;padding:9px 12px;background:#fee2e2;color:#991b1b;border-radius:7px;font-size:12px;font-weight:600;}
 .qa .rev-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--neutral-200);}
 .qa .rev-hint{font-size:11px;color:var(--muted);margin-right:auto;max-width:280px;}
-.qa .rev-hint-sm{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35;}
+.qa .rev-hint-stale{display:block;margin-top:6px;font-size:11px;line-height:1.45;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px}
+    .rev-hint-sm{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35;}
 .qa .rev-btn{font-family:var(--font-body);font-size:13px;font-weight:700;padding:8px 18px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;}
 .qa .rev-btn:hover:not(:disabled){filter:brightness(1.08);}
 .qa .rev-btn:disabled{opacity:.6;cursor:default;}

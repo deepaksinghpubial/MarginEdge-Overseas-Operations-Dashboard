@@ -663,11 +663,35 @@
   var lastHeavy = null;            // the snapshot's productivity + mistake rows
   var lastRefFingerprint = null;   // tells a real change from a no-op
 
+  function hash32(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
   function refFingerprint(tabs) {
     // Reviews are excluded on purpose: they change constantly and do not need the
     // full rebuild a roster change does.
+    //
+    // This hashes the cell VALUES rather than JSON.stringify(rows).length, for
+    // two reasons. Length missed any edit that kept the character count the
+    // same - swapping two designations of equal length read as "no change".
+    // And the snapshot's rows and the proxy's rows are assembled by different
+    // code, so their key order can differ; hashing sorted key=value pairs makes
+    // the two sides genuinely comparable instead of accidentally unequal.
     return [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab]
-      .map(function (t) { var r = tabs[t] || []; return r.length + ":" + JSON.stringify(r).length; })
+      .map(function (t) {
+        var rows = tabs[t] || [], acc = "";
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          if (r && typeof r === "object" && !(r instanceof Array)) {
+            var ks = Object.keys(r).sort();
+            for (var j = 0; j < ks.length; j++) acc += ks[j] + "=" + r[ks[j]] + "\u0001";
+          } else { acc += String(r); }
+          acc += "\u0002";
+        }
+        return rows.length + ":" + hash32(acc);
+      })
       .join("|");
   }
 
@@ -676,7 +700,11 @@
     var want = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab, SHARED.reviews.tab];
     return jsonp(want, 30000, activeSheetId).then(function (tabs) {
       var fp = refFingerprint(tabs);
-      var refsChanged = (lastRefFingerprint !== null && fp !== lastRefFingerprint);
+      // A snapshot is up to 24 hours old by definition, so the first live read
+      // after loading one is exactly when a roster edit is most likely to be
+      // waiting. Gating that first comparison out (the old "!== null" test)
+      // meant a designation changed after 10:00 stayed invisible all day.
+      var refsChanged = (fp !== lastRefFingerprint);
 
       if (tabs[SHARED.reviews.tab]) {
         var liveReviews = mapReviewRows(tabs[SHARED.reviews.tab]);
@@ -709,10 +737,14 @@
         console.log("[live] " + reason + ": " + (window.REVIEWS || []).length + " reviews, reference tabs unchanged.");
       }
       lastRefFingerprint = fp;
-      window.__QA_LIVE = { at: new Date().toISOString(), reviews: (window.REVIEWS || []).length, rebuilt: !!refsChanged };
+      window.__QA_LIVE = { at: new Date().toISOString(), ok: true, reviews: (window.REVIEWS || []).length, rebuilt: !!refsChanged };
       if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
       return true;
     }).catch(function (e) {
+      // Recorded, not swallowed: when this fails the roster silently stays as
+      // of the last snapshot, which looks identical to a bug in the reviewer
+      // rules. The dashboard reads this to say so on screen.
+      window.__QA_LIVE = { at: new Date().toISOString(), ok: false, reason: reason, error: e.message };
       console.log("[live] refresh skipped (" + e.message + ") — keeping the snapshot's copy.");
       return false;
     });
