@@ -85,10 +85,21 @@
     return merged;
   }
 
-  function fetchJSON(url, timeoutMs) {
-    // Cache-busted so a refresh cannot be served a stale copy by the browser or
-    // an intermediate proxy; Netlify sets long cache headers on static assets.
-    var u = url + (url.indexOf("?") < 0 ? "?" : "&") + "_=" + Date.now();
+  function fetchJSON(url, timeoutMs, version) {
+    // The URL is stamped with the snapshot's OWN version, not a timestamp.
+    //
+    // It used to append Date.now(), which made every request unique and so
+    // defeated the browser cache completely: each page load re-downloaded the
+    // whole month - 7 MB on Legacy, 17 MB on IPA, 23 MB on Split - even though
+    // the file only changes once a day. That is the load time everyone was
+    // feeling, and it got worse as the month grew.
+    //
+    // Keying on lastUpdated instead means the browser reuses the file all day,
+    // and a new snapshot changes the URL so the new copy is picked up
+    // immediately. Callers with nothing to version by (the small manifest, which
+    // must always be fresh to notice new data) still get a timestamp.
+    var stamp = version ? ("v=" + encodeURIComponent(String(version))) : ("_=" + Date.now());
+    var u = url + (url.indexOf("?") < 0 ? "?" : "&") + stamp;
     if (typeof fetch !== "function") return Promise.reject(new Error("fetch unavailable"));
     var ctl = (typeof AbortController === "function") ? new AbortController() : null;
     var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs || 30000) : null;
@@ -683,7 +694,22 @@
       "verdict", "remarks"].forEach(function (k) {
         if (rec[k] != null && rec[k] !== "") q += "&" + k + "=" + encodeURIComponent(String(rec[k]));
       });
-    return jsonpFull(q, 45000, activeSheetId).then(function (j) {
+    // Retry, with a pause between attempts.
+    //
+    // The paged READ path has always retried three times; this write did not, so
+    // a single transient hiccup - Apps Script briefly refusing a request while
+    // several people save at once - surfaced to the reviewer as "Nothing was
+    // recorded" even though nothing was actually wrong. Saving is the one action
+    // where losing the user's typing matters most, so it now behaves like the
+    // reads. A genuine rejection from the sheet (bad payload) is NOT retried.
+    function attempt(n) {
+      return jsonpFull(q, 45000, activeSheetId).catch(function (e) {
+        if (n >= 2) throw e;
+        console.log("[review] save attempt " + (n + 1) + " failed (" + e.message + ") — retrying…");
+        return new Promise(function (res) { setTimeout(res, 800 * (n + 1)); }).then(function () { return attempt(n + 1); });
+      });
+    }
+    return attempt(0).then(function (j) {
       if (!j || !j.ok) throw new Error((j && j.error) || "the sheet rejected the save");
       var saved = j.review || rec;
       window.REVIEWS = window.REVIEWS || [];
@@ -1097,7 +1123,9 @@
     } else {
       urls = [(entry && entry.file) || entry];
     }
-    return Promise.all(urls.map(function (u) { return fetchJSON(u, 45000); })).then(function (parts) {
+    // Version by the month's lastUpdated so these large files stay cacheable.
+    var ver = (entry && entry.lastUpdated) || null;
+    return Promise.all(urls.map(function (u) { return fetchJSON(u, 45000, ver); })).then(function (parts) {
       var snap = (parts.length === 1 && !(entry && entry.files)) ? parts[0] : mergeParts(parts);
       if (!snap) throw new Error("snapshot parts were empty");
       applySnapshot_(snap, monthKey, entry && entry.live);

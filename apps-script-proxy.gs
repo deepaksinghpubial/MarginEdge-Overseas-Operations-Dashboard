@@ -292,10 +292,30 @@ function doGet(e) {
   }
 
   if (p.action === "saveReview") {
-    var sh = reviewSheet();
-    var now = new Date();
     var mk = String(p.mistake_key || "").trim();
     if (!mk) return send({ ok: false, error: "mistake_key is required" });
+
+    // Serialise writes. Several reviewers save at the same time, and each save
+    // reads the mistake_key column to decide append-or-overwrite. Without a lock
+    // two overlapping saves can both read "not present" and both append, leaving
+    // duplicate rows for one mistake - or race on the same row. Waiting briefly
+    // is far better than either.
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(25000);
+    } catch (eLock) {
+      return send({ ok: false, error: "the sheet is busy with other saves — please try again in a moment" });
+    }
+    try {
+      return saveReviewLocked(p, mk);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  function saveReviewLocked(p, mk) {
+    var sh = reviewSheet();
+    var now = new Date();
 
     var rec = {
       review_id: String(p.review_id || "").trim() || (Utilities.getUuid ? Utilities.getUuid() : "r" + now.getTime()),

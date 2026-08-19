@@ -26,6 +26,28 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The snapshot data files are requested with a ?v=<lastUpdated> stamp, so a given
+# URL's contents never change - a new snapshot produces a new URL. They can
+# therefore be cached hard, which is the point: these are 7-23 MB and were being
+# re-downloaded on every single page load.
+[[headers]]
+  for = "/data/*-current.json"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
+
+# Archived months never change at all once written.
+[[headers]]
+  for = "/data/*-2*.json"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The manifest is the one file that must always be fresh: it is how a dashboard
+# discovers that a newer snapshot exists. Small enough that this costs nothing.
+[[headers]]
+  for = "/data/manifest.json"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/assets/*"
   [headers.values]
