@@ -1513,14 +1513,27 @@ class Component extends DCLogic {
       if(vFilter==="ingenuine" && f.genuine) return false;
       return true;
     });
-    var d2opts=[];
+    var d2opts=[], d2count={};
     if(d1!=="all"){
-      var seen={};
       afterCat.forEach(function(f){
         var v=(d1==="am")?f.am:(d1==="lead")?f.lead:f.loc;
-        if(v&&!seen[v]){ seen[v]=1; d2opts.push(v); }
+        if(v) d2count[v]=(d2count[v]||0)+1;
       });
-      d2opts.sort(function(a,b){ return String(a).localeCompare(String(b)); });
+      // Offer every name at this level, not only those with a review already.
+      // Scoping the list to names that had something to show meant an Assistant
+      // Manager whose team had not been reviewed yet was simply absent, which
+      // reads as the dashboard having lost them rather than as a count of zero.
+      var pool={};
+      if(d1==="am"){
+        var amMap=(this.AM&&this.AM.map)||{};
+        Object.keys(amMap).forEach(function(t){ var a=amMap[t]; if(a&&a!=="Unassigned AM") pool[a]=1; });
+      } else if(d1==="lead"){
+        (this.S.teams||[]).forEach(function(t){ if(t&&t!=="Unassigned") pool[t]=1; });
+      } else {
+        ((this.LOC&&this.LOC.locations)||[]).forEach(function(l){ if(l&&l!=="Unknown") pool[l]=1; });
+      }
+      Object.keys(d2count).forEach(function(v){ pool[v]=1; });
+      d2opts=Object.keys(pool).sort(function(a,b){ return String(a).localeCompare(String(b)); });
     }
     var d2=this.sel.revD2||"";
     if(d1==="all"||d2opts.indexOf(d2)===-1) d2="";
@@ -1537,7 +1550,7 @@ class Component extends DCLogic {
       +((d1==="all")
         ? '<select disabled title="Pick a level first"><option>—</option></select>'
         : '<select data-act="revd2" title="Which '+this.esc(d1def.noun)+'"'+(d2opts.length?'':' disabled')+'>'
-          +opt("","All "+d1def.noun+"s",d2)+d2opts.map(function(v){return opt(v,v,d2);}).join('')+'</select>')
+          +opt("","All "+d1def.noun+"s",d2)+d2opts.map(function(v){return opt(v,v+" ("+(d2count[v]||0)+")",d2);}).join('')+'</select>')
       +'<select data-act="revd3" title="Which population the error is attributed to">'+D3.map(function(x){return opt(x.key,x.label,d3);}).join('')+'</select>'
       +'<select data-act="revverdict" title="Limit to one verdict">'+verdicts2.map(function(x){return opt(x.key,x.label,vFilter);}).join('')+'</select>'
       +'</span>';

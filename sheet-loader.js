@@ -392,11 +392,32 @@
       }
     });
 
+    // mgrOf is a majority vote across the whole range, which decides who belongs
+    // on this dashboard at all. It must NOT decide which team they sit in today:
+    // a transfer is a minority of the range for weeks, so majority vote hid
+    // every mid-month move until the new team out-counted the old one. Current
+    // team is therefore the lead on the member's most recent day - preferring an
+    // allowlisted lead, so moving to the other portal does not blank the team.
+    var lastAllowedLead = {}, lastAnyLead = {};
+    daily.forEach(function (r) {
+      var u = String(r[C.username] || "").trim(); if (!u) return;
+      var d = normDate(r[C.date]), tl = String(r[C.team] || "").trim();
+      if (!d || !tl) return;
+      if (!lastAnyLead[u] || d >= lastAnyLead[u].date) lastAnyLead[u] = { date: d, lead: tl };
+      if (inAllow(tl) && (!lastAllowedLead[u] || d >= lastAllowedLead[u].date)) lastAllowedLead[u] = { date: d, lead: tl };
+    });
+    var curOf = {};
+    logins.forEach(function (u) {
+      curOf[u] = (lastAllowedLead[u] && lastAllowedLead[u].lead)
+              || (lastAnyLead[u] && lastAnyLead[u].lead)
+              || mgrOf[u] || "";
+    });
+
     // Learn login -> proper team-lead name from the details tab (Team Lead
     // Name column), keyed by the productivity team_lead_login.
     var leadNameVotes = {};
     logins.forEach(function (u) {
-      var login = mgrOf[u], nm = leadByLogin[u.toLowerCase()];
+      var login = curOf[u], nm = leadByLogin[u.toLowerCase()];
       if (login && nm) { (leadNameVotes[login] = leadNameVotes[login] || []).push(nm); }
     });
     var leadNameOf = {};
@@ -460,19 +481,51 @@
     });
     var frDates = uniqSort(frDateCols.map(function (c) { return c.iso; }));
 
-    // --- teams = distinct allowlisted team-lead logins of the kept members ---
-    var teamLogins = uniqSort(order.map(function (u) { return mgrOf[u]; }).filter(inAllow));
+    // --- teams = allowlisted leads the kept members sit under NOW, plus every
+    //     allowlisted lead who had one of them earlier in the range. With
+    //     per-day attribution those earlier leads still need a bucket to hold
+    //     the days they actually owned. ---
+    var keptSet = {};
+    order.forEach(function (u) { keptSet[u] = 1; });
+    var teamSeen = {};
+    order.forEach(function (u) { var c = curOf[u]; if (c && inAllow(c)) teamSeen[c] = 1; });
+    daily.forEach(function (r) {
+      if (!keptSet[String(r[C.username] || "").trim()]) return;
+      var tl = String(r[C.team] || "").trim();
+      if (tl && inAllow(tl)) teamSeen[tl] = 1;
+    });
+    mist.forEach(function (r) {
+      if (!keptSet[String(r[M.username] || "").trim()]) return;
+      var tl = String(r[M.team] || "").trim();
+      if (tl && inAllow(tl)) teamSeen[tl] = 1;
+    });
+    var teamLogins = uniqSort(Object.keys(teamSeen));
     var teamName = {}; teamLogins.forEach(function (tl) { teamName[tl] = leadNameOf[tl] || disp[tl] || titleCase(tl) || tl; });
     var teamDisplays = teamLogins.map(function (tl) { return teamName[tl]; });
     // ensure unique + stable order
     var teams = uniqSort(teamDisplays);
     var teamIdx = idx(teams);
     var teamOfLogin = {};
-    order.forEach(function (u) { var tl = mgrOf[u]; teamOfLogin[u] = (tl && inAllow(tl) && teamName[tl]) ? teamName[tl] : "Unassigned"; });
+    order.forEach(function (u) { var tl = curOf[u]; teamOfLogin[u] = (tl && inAllow(tl) && teamName[tl]) ? teamName[tl] : "Unassigned"; });
     if (teams.indexOf("Unassigned") === -1 && order.some(function (u) { return teamOfLogin[u] === "Unassigned"; })) {
       teams.push("Unassigned"); teamIdx = idx(teams);
     }
     var analyst_team = order.map(function (u) { return teamIdx[teamOfLogin[u]]; });
+
+    // Per-day attribution. Every productivity and mistake row already carries
+    // the lead who owned that person that day, so a row counts toward them
+    // rather than toward whichever team the person is in now. A transfer moves
+    // future days without rewriting past ones, which keeps a team's history
+    // honest when someone joins or leaves mid-range.
+    var teamIdxByLead = {};
+    teamLogins.forEach(function (tl) {
+      var nm = teamName[tl];
+      if (nm != null && teamIdx[nm] != null) teamIdxByLead[tl] = teamIdx[nm];
+    });
+    var rowTeamIdx = function (tl, fallback) {
+      var t = teamIdxByLead[String(tl || "").trim()];
+      return t == null ? fallback : t;
+    };
 
     // --- AM per team: the Assistant Manager most of the team's members are
     //     allocated to in the Role Details tab (Allocated Asst Manager) ---
@@ -511,7 +564,7 @@
       var er = num(r[C.errorRate]); if (!ERROR_RATE_IS_FRACTION) er = er / 100;
       var errs = C.errs ? num(r[C.errs]) : (errCount[u + "|" + d] || 0);
       var pts = C.pts ? num(r[C.pts]) : 0;
-      records.push([ sdi[d], an, analyst_team[an], +num(r[C.productivity]).toFixed(2),
+      records.push([ sdi[d], an, rowTeamIdx(r[C.team], analyst_team[an]), +num(r[C.productivity]).toFixed(2),
                      errs, pts, +er.toFixed(5), +num(r[C.finalScore]).toFixed(2) ]);
     });
     var SCORES = { dates: sdates, analysts: analysts, teams: teams, analyst_team: analyst_team, records: records, frDaily: frDaily, frTotal: frTotal, frDates: frDates };
@@ -559,7 +612,7 @@
           : /^false$/i.test(String(diffCloRaw).trim()) ? false
           : null;
         qrecords.push([
-          qdi[d], ai[r[M.area]] || 0, vi[r[M.variable]] || 0, an, analyst_team[an],
+          qdi[d], ai[r[M.area]] || 0, vi[r[M.variable]] || 0, an, rowTeamIdx(r[M.team], analyst_team[an]),
           M.lp ? (r[M.lp] || "") : "", M.ent ? (r[M.ent] || "") : "",
           M.clo ? (r[M.clo] || "") : "", M.cur ? (r[M.cur] || "") : "",
           M.st ? (r[M.st] !== "" && r[M.st] != null && si[r[M.st]] != null ? si[r[M.st]] : -1) : -1, r[M.url] || "", M.org ? (r[M.org] || "") : "",
