@@ -406,22 +406,58 @@
       if (!lastAnyLead[u] || d >= lastAnyLead[u].date) lastAnyLead[u] = { date: d, lead: tl };
       if (inAllow(tl) && (!lastAllowedLead[u] || d >= lastAllowedLead[u].date)) lastAllowedLead[u] = { date: d, lead: tl };
     });
-    var curOf = {};
+    var dataLeadOf = {};
     logins.forEach(function (u) {
-      curOf[u] = (lastAllowedLead[u] && lastAllowedLead[u].lead)
-              || (lastAnyLead[u] && lastAnyLead[u].lead)
-              || mgrOf[u] || "";
+      dataLeadOf[u] = (lastAllowedLead[u] && lastAllowedLead[u].lead)
+                   || (lastAnyLead[u] && lastAnyLead[u].lead)
+                   || mgrOf[u] || "";
     });
 
     // Learn login -> proper team-lead name from the details tab (Team Lead
     // Name column), keyed by the productivity team_lead_login.
     var leadNameVotes = {};
     logins.forEach(function (u) {
-      var login = curOf[u], nm = leadByLogin[u.toLowerCase()];
+      var login = dataLeadOf[u], nm = leadByLogin[u.toLowerCase()];
       if (login && nm) { (leadNameVotes[login] = leadNameVotes[login] || []).push(nm); }
     });
     var leadNameOf = {};
     Object.keys(leadNameVotes).forEach(function (lg) { leadNameOf[lg] = mode(leadNameVotes[lg]); });
+
+    // The sheet is the authority for who sits on which team: Role Details'
+    // Allocated Team Lead is what ops edits when someone transfers, so the
+    // dashboard must follow it rather than waiting for the reporting data to
+    // catch up. The sheet holds a display name ("Arun Kumar") while the data
+    // uses a login ("arun"), so resolve names to a lead login - first by the
+    // name the data itself reports for that lead, then by the longest lead
+    // login that the collapsed name starts with.
+    var nameKey = function (x) { return String(x || "").toLowerCase().replace(/[^a-z0-9]/g, ""); };
+    var leadLoginByName = {};
+    Object.keys(leadNameOf).forEach(function (lg) {
+      var k = nameKey(leadNameOf[lg]); if (k) leadLoginByName[k] = lg;
+    });
+    var allowedLeadLogins = Object.keys(teamAllow);
+    var resolveLead = function (nm) {
+      var k = nameKey(nm); if (!k) return "";
+      if (leadLoginByName[k] && inAllow(leadLoginByName[k])) return leadLoginByName[k];
+      var best = "";
+      allowedLeadLogins.forEach(function (lg) {
+        if (lg && k.indexOf(lg) === 0 && lg.length > best.length) best = lg;
+      });
+      // Honorifics: the sheet writes "Md. Rafiqul Islam" where the data reports
+      // "rafiqulislam", so a prefix test alone misses it. Longest containment
+      // keeps that from matching a shorter, unrelated login.
+      if (!best) allowedLeadLogins.forEach(function (lg) {
+        if (lg && lg.length >= 5 && k.indexOf(lg) > 0 && lg.length > best.length) best = lg;
+      });
+      return best;
+    };
+    // Falls back to the data when the sheet names a lead this dashboard does not
+    // own - a move across portals should not blank the team on either side.
+    var curOf = {};
+    logins.forEach(function (u) {
+      var fromSheet = resolveLead(leadByLogin[u.toLowerCase()]);
+      curOf[u] = (fromSheet && inAllow(fromSheet)) ? fromSheet : dataLeadOf[u];
+    });
 
     // Keep only members whose team lead is in THIS dashboard's allowlist, and
     // whose designation qualifies them as a Specialist or Analyst.

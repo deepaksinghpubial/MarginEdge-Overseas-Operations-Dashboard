@@ -2011,7 +2011,16 @@ class Component extends DCLogic {
     var days=mine.length;
     var avgFs=mine.reduce((s,r)=>s+r[D.FS],0)/days, avgEr=mine.reduce((s,r)=>s+r[D.ER],0)/days, avgProd=mine.reduce((s,r)=>s+r[D.PROD],0)/days;
     var totErr=mine.reduce((s,r)=>s+r[D.ERRS],0);
-    var members=this.aggAnalysts(mine).sort((a,b)=>b.fs-a.fs);
+    // Rows attributed to this team include days worked under this lead by people
+    // who have since transferred out. Those days are part of the team's history
+    // and stay in its totals. The roster is a different question: it must be who
+    // is on the team NOW, per Role Details' Allocated Team Lead, or someone who
+    // left lingers in their old team's list for the rest of the month.
+    var teamOfName={}; S.analysts.forEach(function(n,i){ teamOfName[n]=S.teams[S.analyst_team[i]]; });
+    var everyone=this.aggAnalysts(mine).sort((a,b)=>b.fs-a.fs);
+    var members=everyone.filter(a=>teamOfName[a.an]===teamName);
+    var movedOut=everyone.filter(a=>teamOfName[a.an]!==teamName);
+    var movedDays=movedOut.reduce((s,a)=>s+a.days,0);
     var dF=avgFs-med.fs;
     var ds=this.datesInRange();
     var dayProd=ds.map(d=>{ var v=mine.filter(r=>S.dates[r[D.DATE]]===d); return v.length?v.reduce((s,r)=>s+r[D.PROD],0)/v.length:0; });
@@ -2020,7 +2029,7 @@ class Component extends DCLogic {
     var dayErrCount=ds.map(d=>{ var n=0; mine.forEach(r=>{ if(S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
     var labs=ds.map(d=>d.slice(5));
     var kpi='<div class="kpi-row">'
-      +'<div class="kpi"><div class="k-label">Team</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)"><button class="team-link" data-act="teamname" data-arg="'+this.esc(teamName)+'">'+this.esc(teamName)+'</button></div><div class="k-sub">'+(this.amOf(teamName)?'AM <button class="team-link" style="font-weight:700" data-act="am" data-arg="'+this.esc(this.amOf(teamName))+'">'+this.esc(this.amOf(teamName))+'</button> \u00b7 ':'')+members.length+' analysts \u00b7 '+days.toLocaleString()+' analyst-days</div></div>'
+      +'<div class="kpi"><div class="k-label">Team</div><div class="k-val" style="font-size:17px;font-family:var(--font-body)"><button class="team-link" data-act="teamname" data-arg="'+this.esc(teamName)+'">'+this.esc(teamName)+'</button></div><div class="k-sub">'+(this.amOf(teamName)?'AM <button class="team-link" style="font-weight:700" data-act="am" data-arg="'+this.esc(this.amOf(teamName))+'">'+this.esc(this.amOf(teamName))+'</button> \u00b7 ':'')+members.length+' analysts \u00b7 '+days.toLocaleString()+' analyst-days'+(movedOut.length?' \u00b7 incl. '+movedDays.toLocaleString()+' day'+(movedDays===1?'':'s')+' from '+movedOut.length+' since moved out':'')+'</div></div>'
       +'<div class="kpi"><div class="k-label">Avg final score</div><div class="k-val" style="color:'+this.fsColor(avgFs,med.fs)+'">'+this.fs1(avgFs)+'</div><div class="k-sub">median '+this.fs1(med.fs)+'</div></div>'
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
@@ -2071,7 +2080,11 @@ class Component extends DCLogic {
     var fpFxT=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0).");
     var specRoster=specs.length?'<div class="card"><div class="card-head">Specialists \u2014 '+specs.length+', ranked by Final Points after considering FR counts'+fpFxT+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Final points after FR</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+specs.map(rowFnSp).join("")+'</tbody></table></div></div>':'';
     var roster=specRoster+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
-    if(!specs.length&&!anas.length&&!others.length) roster=rosterTbl("Team roster",members);
+    if(!specs.length&&!anas.length&&!others.length){
+      roster=members.length
+        ? rosterTbl("Team roster",members)
+        : '<div class="card"><div class="placeholder-msg">No one is currently allocated to '+this.esc(teamName)+' in Role Details'+(movedOut.length?' \u2014 the '+movedDays.toLocaleString()+' analyst-day(s) in range were worked by '+movedOut.length+' member(s) who have since moved':'')+'.</div></div>';
+    }
     var mcat=this.mistakeExecCards(this.qaRowsForLogins(members.map(a=>a.an)),"this team");
     return back+kpi+roster+charts+charts2+mcat;
   }
