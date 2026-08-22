@@ -1051,6 +1051,30 @@ class Component extends DCLogic {
     return [Q.dates[r[F.DATE]], Q.areas[r[F.AREA]], Q.vars[r[F.VAR]],
       Q.analysts[r[F.AN]], (r[F.LP]==null?"":r[F.LP]), (r[F.URL]||"")].join("|");
   }
+  // A verdict must decorate exactly one error. Even after identical duplicates
+  // are collapsed, distinct rows can still share a review key - it has no line
+  // item position to separate them, so two flags on one order that differ only
+  // in their entered or closed values land on the same key. The first row in the
+  // data's own order claims the verdict; the rest stay unreviewed. Without this,
+  // one tick was counted as several reviews and the reviewed total ran ahead of
+  // the Error Reviews tab.
+  reviewClaim(r){
+    var Q=this.Q; if(!Q) return null;
+    var list=window.REVIEWS||this.REVIEWS||[];
+    // O(1) staleness check. The loader bumps __QA_REV_SEQ whenever the review
+    // list is replaced or added to, so the O(rows) resolve below runs on a save
+    // or a live refresh - not once per row drawn.
+    var sig=(window.__QA_REV_SEQ||0)+":"+list.length;
+    if(Q.__claimSig!==sig){
+      var rmap=this.reviewMap(), claimed={}, m=new Map(), recs=Q.records;
+      for(var i=0;i<recs.length;i++){
+        var k=this.mistKey(recs[i]), rv=rmap[k];
+        if(rv&&!claimed[k]){ claimed[k]=1; m.set(recs[i],rv); }
+      }
+      Q.__claims=m; Q.__claimSig=sig;
+    }
+    return Q.__claims.get(r)||null;
+  }
   reviewMap(){
     // Rebuilt per render rather than cached: window.REVIEWS is mutated in place
     // by the loader when a save succeeds, so a stale cache would hide it.
@@ -1080,7 +1104,7 @@ class Component extends DCLogic {
   // rmap is optional but callers rendering a whole table should pass one:
   // rebuilding it per row is O(rows x reviews) and degrades as reviews pile up.
   reviewCell(r, rmap){
-    var key=this.mistKey(r), rv=(rmap||this.reviewMap())[key];
+    var key=this.mistKey(r), rv=this.reviewClaim(r);
     var an=this.Q.analysts[r[this.QF.AN]]||"";
     return '<td class="rev-cell" data-rev-key="'+this.esc(key)+'">'
       +'<label class="rev-box" title="'+(rv?'Reviewed — click to view or correct':'Click to review this error')+'">'
@@ -1387,7 +1411,7 @@ class Component extends DCLogic {
     // ---- resolve every reviewed error once -------------------------------
     var all=[], totalErrors=mrows.length;
     for(var i=0;i<mrows.length;i++){
-      var rv=rmap[this.mistKey(mrows[i])];
+      var rv=this.reviewClaim(mrows[i]);
       if(rv) all.push(this.reviewFacts(mrows[i], rv));
     }
 
@@ -1406,7 +1430,10 @@ class Component extends DCLogic {
       +'<div class="kpi"><div class="k-label">Genuine</div><div class="k-val">'+pc(gen,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
       +'<div class="kpi"><div class="k-label">Ingenuine</div><div class="k-val">'+pc(ing,nRev)+'</div><div class="k-sub">of reviewed errors</div></div>'
       +'</div>';
-    var topCard=head+kpi+'<div class="dim-note">Tick the <b>Review</b> box beside any error on the Individual Analyst or Specialist pages to record a verdict. Reviews are stored in the workbook, so the whole team sees the same audit trail.</div></div></div>';
+    var dupN=(Q&&Q.dupCollapsed)||0;
+    var topCard=head+kpi+'<div class="dim-note">Tick the <b>Review</b> box beside any error on the Individual Analyst or Specialist pages to record a verdict. Reviews are stored in the workbook, so the whole team sees the same audit trail.'
+      +(dupN?' The export repeats a flag once per affected line item without recording which line, so '+dupN.toLocaleString()+' identical repeats are counted once each \u2014 one verdict, one error.':'')
+      +'</div></div></div>';
 
     if(!nRev){
       return topCard+'<div class="card"><div class="card-head">Reviewed errors — 0</div>'

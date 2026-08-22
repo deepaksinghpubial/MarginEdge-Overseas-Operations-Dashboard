@@ -322,6 +322,30 @@
 
   function build(daily, mist, roleRows, locRows, teamRows, frRows, reviewRows) {
     var C = cfg.daily.cols, M = cfg.mistakes.cols;
+
+    // Identical duplicate flags. The export repeats a mistake once per affected
+    // line item, but line_item_position is empty in every row, so the repeats
+    // carry nothing that separates them - one order had 36 LINE_PRICE rows with
+    // the same entered, closed and current values. Counting those 36 times both
+    // inflated the error totals and made one verdict look like 36 reviews, so
+    // rows identical on every recorded field collapse to one reviewable error.
+    // Deliberately done here, before anything is derived, so error counts, the
+    // Error Explorer, mistake detail and the review KPIs cannot disagree.
+    var mistDupes = 0;
+    (function () {
+      var seen = {}, out = [];
+      for (var i = 0; i < mist.length; i++) {
+        var r = mist[i];
+        var k = [r[M.date], r[M.area], r[M.variable], r[M.username], r[M.team],
+                 M.lp ? r[M.lp] : "", M.ent ? r[M.ent] : "", M.clo ? r[M.clo] : "",
+                 M.cur ? r[M.cur] : "", M.st ? r[M.st] : "", r[M.url] || "",
+                 M.org ? r[M.org] : "", M.diffClo ? r[M.diffClo] : "",
+                 r.__portal || ""].join("\u0001");
+        if (seen[k]) { mistDupes++; continue; }
+        seen[k] = 1; out.push(r);
+      }
+      mist = out;
+    })();
     DOMINANT_MONTH = computeDominantMonth(daily, C.date) || computeDominantMonth(mist, M.date);
 
     // --- Team Details tab: two columns of team-lead logins ---
@@ -658,7 +682,7 @@
           r.__portal || (TARGET === "split" ? "" : TARGET)
         ]);
       });
-      QA = { url_prefix: "", dates: qdates, areas: areas, vars: vars, statuses: statuses, analysts: analysts, records: qrecords };
+      QA = { url_prefix: "", dates: qdates, areas: areas, vars: vars, statuses: statuses, analysts: analysts, records: qrecords, dupCollapsed: mistDupes };
     }
 
     // --- ROLES / LOCATIONS / AMS ---
@@ -749,6 +773,12 @@
   // Refresh, then merged over the snapshot. Edit the sheet, refresh, and the
   // change is there - no waiting for 10:00. One Apps Script call behind its own
   // 60-second cache, so fifty viewers cost about one sheet read a minute.
+  // Bumped whenever the review list is replaced or mutated. The dashboard needs
+  // an O(1) way to ask "have reviews changed since I last resolved them?" - it
+  // was hashing all 6,000+ reviews on every row it drew, which cost 26 seconds
+  // on the IPA mistake set.
+  function bumpReviews() { window.__QA_REV_SEQ = (window.__QA_REV_SEQ || 0) + 1; }
+
   var lastHeavy = null;            // the snapshot's productivity + mistake rows
   var lastRefFingerprint = null;   // tells a real change from a no-op
 
@@ -806,7 +836,7 @@
           // minute later, which reads as a failed save.
           if (r && r.mistake_key && !seen[r.mistake_key]) { liveReviews.push(r); carried++; }
         });
-        window.REVIEWS = liveReviews;
+        window.REVIEWS = liveReviews; bumpReviews();
         if (carried) console.log("[live] kept " + carried + " just-saved review(s) not yet in the cached response.");
       }
 
@@ -820,7 +850,7 @@
         window.SCORES = g.SCORES; window.QA_DATA = g.QA_DATA;
         window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS;
         window.TEAM_SETS = g.TEAM_SETS; window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS;
-        window.REVIEWS = g.REVIEWS;
+        window.REVIEWS = g.REVIEWS; bumpReviews();
         console.log("[live] reference tabs changed (" + reason + ") — rebuilt roles, locations, teams and FR from the sheet.");
       } else {
         console.log("[live] " + reason + ": " + (window.REVIEWS || []).length + " reviews, reference tabs unchanged.");
@@ -879,11 +909,12 @@
     return attempt(0).then(function (j) {
       if (!j || !j.ok) throw new Error((j && j.error) || "the sheet rejected the save");
       var saved = j.review || rec;
-      window.REVIEWS = window.REVIEWS || [];
+      window.REVIEWS = window.REVIEWS || []; bumpReviews();
       var i = window.REVIEWS.findIndex
         ? window.REVIEWS.findIndex(function (r) { return r.mistake_key === saved.mistake_key; })
         : -1;
       if (i >= 0) window.REVIEWS[i] = saved; else window.REVIEWS.push(saved);
+      bumpReviews();
       return { ok: true, review: saved, updated: !!j.updated };
     });
   };
@@ -1038,7 +1069,7 @@
     window.SCORES = s.SCORES; window.QA_DATA = s.QA_DATA;
     window.ROLES = s.ROLES; window.LOCATIONS = s.LOCATIONS; window.AMS = s.AMS; window.TEAM_SETS = s.TEAM_SETS;
     window.ROSTER = s.ROSTER || []; window.DESIGNATIONS = s.DESIGNATIONS || { byLogin: {}, byName: {} };
-    window.REVIEWS = s.REVIEWS || [];
+    window.REVIEWS = s.REVIEWS || []; bumpReviews();
   }
 
   var activeSheetId = null;   // null = the live, bound workbook
@@ -1121,7 +1152,7 @@
       CORE.reviews = tabs[SHARED.reviews.tab] || [];   // absent until the first review is saved
       var g = build(CORE.daily, [], CORE.role, CORE.loc, CORE.team, CORE.fr, CORE.reviews);
       window.SCORES = g.SCORES; window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
-      window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS;
+      window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS; bumpReviews();
       console.log("[sheet-loader] phase 1: " + g.SCORES.analysts.length + " people, " + g.SCORES.records.length +
         " analyst-days through " + g.SCORES.dates[g.SCORES.dates.length - 1] + " — mistakes loading…");
       window.QA_DATA = null;
@@ -1149,7 +1180,7 @@
         var g2 = build(CORE.daily, mist, CORE.role, CORE.loc, CORE.team, CORE.fr, CORE.reviews);
         window.SCORES = g2.SCORES; window.QA_DATA = g2.QA_DATA;
         window.ROLES = g2.ROLES; window.LOCATIONS = g2.LOCATIONS; window.AMS = g2.AMS; window.TEAM_SETS = g2.TEAM_SETS;
-        window.ROSTER = g2.ROSTER; window.DESIGNATIONS = g2.DESIGNATIONS; window.REVIEWS = g2.REVIEWS;
+        window.ROSTER = g2.ROSTER; window.DESIGNATIONS = g2.DESIGNATIONS; window.REVIEWS = g2.REVIEWS; bumpReviews();
         console.log("[sheet-loader] phase 2: " + (g2.QA_DATA ? g2.QA_DATA.records.length + " mistakes across " + g2.QA_DATA.analysts.length + " analysts" : "no mistakes") + " merged.");
         window.__QA_LOADING = false;
         window.__QA_LOAD_PROGRESS = null;
@@ -1245,7 +1276,7 @@
                   tabs[SHARED.teams.tab] || [], tabs[SHARED.fr.tab] || [], tabs[SHARED.reviews.tab] || []);
     window.SCORES = g.SCORES; window.QA_DATA = g.QA_DATA;
     window.ROLES = g.ROLES; window.LOCATIONS = g.LOCATIONS; window.AMS = g.AMS; window.TEAM_SETS = g.TEAM_SETS;
-    window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS;
+    window.ROSTER = g.ROSTER; window.DESIGNATIONS = g.DESIGNATIONS; window.REVIEWS = g.REVIEWS; bumpReviews();
     window.__QA_LOAD_FAILED = null;
     window.__QA_LOADING = false;
     window.__QA_LOAD_PROGRESS = null;
