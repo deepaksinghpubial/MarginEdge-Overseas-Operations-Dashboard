@@ -164,6 +164,25 @@
     }
   };
 
+  // Split reads rows that normDaily/normMist have already rewritten into
+  // Legacy-style names, so it needs its own column map rather than borrowing
+  // Legacy's: the names match Legacy's but line_item_position must be READ,
+  // which Legacy sets to null because its own export has no such column.
+  // Deliberately not done by adding lp to Legacy's map - that works today only
+  // because the Legacy tab lacks the column, and would silently rekey every
+  // stored Legacy review the day someone added it.
+  CONFIG.split = {
+    daily: { tab: null, cols: {
+      username: "analyst_login", team: "team_lead_login", date: "completed_date",
+      productivity: "productivity_score", errs: "total_errors",
+      pts: "total_possible_error_points", errorRate: "error_rate", finalScore: "final_score" } },
+    mistakes: { tab: null, cols: {
+      date: "mistake_date", area: "mistake_area", variable: "variable",
+      username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
+      ent: "entered_value", clo: "closed_value", cur: "current_value",
+      st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
+  };
+
   // error_rate in the sheet is already a 0–1 fraction (e.g. 0.0125), not a %.
   var ERROR_RATE_IS_FRACTION = true;
   // ---------------------------------------------------------------------------
@@ -207,6 +226,12 @@
       analyst_login: row[m.username], team_lead_login: row[m.team],
       entered_value: m.ent ? row[m.ent] : "", closed_value: m.clo ? row[m.clo] : "",
       current_value: m.cur ? row[m.cur] : "", status: m.st ? row[m.st] : "", order_url: m.url ? row[m.url] : "",
+      // Carried through deliberately. IPA records which line of the order was
+      // flagged and the review key includes it, so dropping it here gave an IPA
+      // error a different key on Split than on the IPA dashboard - 240 verdicts
+      // stopped matching, and IPA rows differing only by line collapsed as
+      // duplicates. Legacy has no such column; it stays empty there.
+      line_item_position: m.lp ? row[m.lp] : "",
       differs_from_closed: m.diffClo ? row[m.diffClo] : "",
       // Which portal this row came from. Needed to tell a Legacy analyst error
       // from an IPA one on the Split dashboard, where both are merged and
@@ -1303,6 +1328,9 @@
     if (typeof window.__QA_RELOAD === "function") window.__QA_RELOAD();
   }
 
+  // CONFIG.split has no tab of its own - split merges the two real tabs - so
+  // callers only ever use its cols; the TARGET checks around the tab lookups
+  // keep it out of them.
   function cfgFor(t) { return CONFIG[t] || CONFIG.legacy; }
 
   // Accepts a manifest entry. schema 2 carries a files{} map of parts; schema 1
