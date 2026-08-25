@@ -960,13 +960,35 @@ class Component extends DCLogic {
     if(!s||!s.lastUpdated) return "";
     var d=new Date(s.lastUpdated);
     if(isNaN(d.getTime())) return "";
+    var out="";
     var mins=Math.round((Date.now()-d.getTime())/60000);
-    if(mins<=36*60) return "";          // healthy: say nothing
-    var age=mins<1440?Math.round(mins/60)+" h old":Math.round(mins/1440)+" d old";
-    var when=d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
-    return '<span class="ds-stamp stale" title="Snapshot generated '+this.esc(when)
-      +' \u2014 the 10:00 IST job may not have run. Click \u21bb to re-read, or check Apps Script \u25b8 Executions.">'
-      +'\u26a0 Data '+this.esc(age)+'</span>';
+    if(mins>36*60){
+      var age=mins<1440?Math.round(mins/60)+" h old":Math.round(mins/1440)+" d old";
+      var when=d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
+      out+='<span class="ds-stamp stale" title="Snapshot generated '+this.esc(when)
+        +' \u2014 the 10:00 IST job may not have run. Click \u21bb to re-read, or check Apps Script \u25b8 Executions.">'
+        +'\u26a0 Data '+this.esc(age)+'</span>';
+    }
+    // A second, quite different failure, and the one age cannot see: the job ran
+    // on time but the workbook's productivity tabs had not been refreshed yet,
+    // so a brand-new snapshot carries figures several days old. That is exactly
+    // what happened on 24 Aug - reviews were current to the 23rd while scores
+    // stopped on the 20th. One day behind is normal (yesterday's numbers land in
+    // the morning); two or more means the sheet, not the dashboard, is behind.
+    var dates=(this.S&&this.S.dates)||[];
+    var last=dates.length?dates[dates.length-1]:null;
+    var snapDay=String(s.lastUpdated).slice(0,10);
+    if(last&&/^\d{4}-\d{2}-\d{2}$/.test(last)&&/^\d{4}-\d{2}-\d{2}$/.test(snapDay)){
+      var lag=Math.round((Date.parse(snapDay+"T00:00:00Z")-Date.parse(last+"T00:00:00Z"))/86400000);
+      if(lag>=2){
+        var ld=new Date(last+"T00:00:00Z");
+        var lbl=ld.getUTCDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][ld.getUTCMonth()];
+        out+='<span class="ds-stamp stale" title="The snapshot itself is current (taken '+this.esc(snapDay)
+          +'), but the newest scored day in it is '+this.esc(last)+' \u2014 '+lag+' days earlier. That means the Redash refresh into the workbook is behind, not the dashboard. Once the sheet is updated, run runSnapshotNow in Apps Script or wait for the 10:00 IST job.">'
+          +'\u26a0 Scores through '+this.esc(lbl)+'</span>';
+      }
+    }
+    return out;
   }
 
   // Shown at the top of every page when the live sheet could not be reached.
