@@ -49,7 +49,7 @@
 <script type="text/x-dc" data-dc-script>
 class Component extends DCLogic {
   rootRef = React.createRef();
-  SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
+  SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7, PORTAL:8};
   QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12, PORTAL:13};
   PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", reviewaudit:"Error Genuineness Review", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
@@ -436,6 +436,92 @@ class Component extends DCLogic {
     var S=this.S, D=this.SD, m={};
     rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]); });
     return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, series:ser, trend:this.trendOf(ser)}; });
+  }
+  // ---- Split-only per-platform row model -------------------------------
+  // Both Portals lists people who work Legacy AND IPA, so a single blended
+  // average hides which side the performance came from. These rows carry each
+  // platform separately, computed from the rows in the SELECTED range rather
+  // than from platformStats, which is a whole-month figure and would ignore the
+  // date filter.
+  //
+  // Final score = avg Legacy final + (avg IPA final / 2) + FR x 2
+  //   IPA is halved because an IPA day is scored on a scale roughly twice
+  //   Legacy's, so adding it raw would let IPA volume swamp the ranking.
+  //   FR counts only for Specialists; Analysts do not do final review.
+  //   FR is the per-day average, matching the three averages it is added to.
+  // Days worked = the higher of the two platform day counts, not the sum: a day
+  //   spent on both portals is one working day, not two.
+  splitRows(rws, isSpecialist){
+    var S=this.S, D=this.SD, self=this;
+    var frDaily=(S&&S.frDaily)||{}, frTotal=(S&&S.frTotal)||{};
+    var frFrom=this.st.from, frTo=this.st.to, FR_MIN=50;
+    var m={};
+    rws.forEach(function(r){
+      var k=r[D.AN], o=m[k]||(m[k]={lg:{f:0,e:0,p:0,n:0},ip:{f:0,e:0,p:0,n:0},errs:0,pts:0,ser:[]});
+      var side=(r[D.PORTAL]==="ipa")?o.ip:o.lg;
+      side.f+=r[D.FS]; side.e+=r[D.ER]; side.p+=r[D.PROD]; side.n++;
+      o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]);
+    });
+    return Object.keys(m).map(function(k){
+      var o=m[k], an=+k;
+      var lgN=o.lg.n, ipN=o.ip.n;
+      var lgFs=lgN?o.lg.f/lgN:null, lgEr=lgN?o.lg.e/lgN:null;
+      var ipFs=ipN?o.ip.f/ipN:null, ipEr=ipN?o.ip.e/ipN:null;
+      // FR: average of the days that cleared the >=50 threshold, exactly as the
+      // Specialist page has always measured it, so rankings stay comparable.
+      var fr=null, frSum=0, frDays=null, daily=frDaily[an];
+      if(daily){
+        var vals=Object.keys(daily).filter(function(d){return d>=frFrom&&d<=frTo;})
+                       .map(function(d){return daily[d];}).filter(function(v){return v>=FR_MIN;});
+        frDays=vals.length; frSum=vals.reduce(function(a,b){return a+b;},0);
+        fr=vals.length?frSum/vals.length:null;
+      } else if(frTotal[an]!=null){ frSum=frTotal[an]; fr=frTotal[an]; }
+      var frPart=(isSpecialist&&fr!=null)?fr*2:0;
+      var ser=o.ser.slice().sort(function(a,b){return a[0]-b[0];}).map(function(x){return x[1];});
+      return {
+        an:S.analysts[an], anIdx:an, team:S.teams[S.analyst_team[an]],
+        lgFs:lgFs, lgEr:lgEr, lgN:lgN, ipFs:ipFs, ipEr:ipEr, ipN:ipN,
+        fr:fr, frSum:frSum, frDays:frDays,
+        days:Math.max(lgN,ipN),
+        final:(lgFs||0)+((ipFs||0)/2)+frPart,
+        errs:o.errs, pts:o.pts, prod:(o.lg.p+o.ip.p)/(lgN+ipN||1),
+        er:(o.lg.e+o.ip.e)/(lgN+ipN||1), fs:(o.lg.f+o.ip.f)/(lgN+ipN||1),
+        series:ser, trend:self.trendOf(ser)
+      };
+    });
+  }
+  // The 9-column Specialist / 8-column Analyst table the Both Portals view uses.
+  splitTable(list, isSpecialist, title, tblId){
+    var self=this;
+    var d=v=>v==null?'<span class="c-dash">\u2014</span>':v;
+    var mx=Math.max.apply(null,list.map(a=>a.final).concat([0.0001]));
+    var fx=this.fxInline(title,
+      "Final score = avg Legacy final score + (avg IPA final score \u00f7 2)"
+      +(isSpecialist?" + (FR count \u00d7 2)":"")
+      +". IPA is halved because an IPA day is scored on roughly twice Legacy's scale."
+      +(isSpecialist?" FR is the average of days with 50 or more final reviews.":" Analysts do not do final review, so FR is not counted.")
+      +" Days worked is the higher of the two platform day counts \u2014 a day on both portals is one working day.");
+    var rows=list.map(function(a,i){
+      return '<tr><td class="r">'+(i+1)+'</td>'
+        +'<td class="c-name"><button class="team-link" data-act="profile" data-arg="'+self.esc(a.an)+'">'+self.esc(a.an)+'</button></td>'
+        +'<td class="r"><div class="ibar-wrap"><span class="fs-v" style="color:var(--honey-600);font-weight:800">'+self.fs1(a.final)+'</span>'
+          +'<div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.final/mx*100).toFixed(1)+'%;background:var(--honey-600)"></div></div></div></td>'
+        +'<td class="r">'+d(a.lgFs==null?null:self.fs1(a.lgFs))+'</td>'
+        +'<td class="r er-v">'+d(a.lgEr==null?null:self.pct(a.lgEr))+'</td>'
+        +'<td class="r">'+d(a.ipFs==null?null:self.fs1(a.ipFs))+'</td>'
+        +'<td class="r er-v">'+d(a.ipEr==null?null:self.pct(a.ipEr))+'</td>'
+        +(isSpecialist?'<td class="r">'+d(a.fr==null?null:self.fs1(a.fr))+'</td>':'')
+        +'<td class="r c-mut">'+a.days+'</td></tr>';
+    }).join("");
+    return '<div class="card"><div class="card-head">'+self.esc(title)+' \u2014 '+list.length+fx+'</div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr>'
+      +'<th class="r">Sl No.</th><th>Name</th>'
+      +'<th class="r">Final score'+(isSpecialist?' (incl. FR)':'')+'</th>'
+      +'<th class="r">Avg final score (Legacy)</th><th class="r">Avg error rate (Legacy)</th>'
+      +'<th class="r">Avg final score (IPA)</th><th class="r">Avg error rate (IPA)</th>'
+      +(isSpecialist?'<th class="r">FR counts</th>':'')
+      +'<th class="r">Days working</th>'
+      +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }
   trendOf(ser){ if(!ser||ser.length<2) return {dir:"flat",delta:0}; var mid=Math.floor(ser.length/2); var e=ser.slice(0,mid), l=ser.slice(mid); var ea=e.reduce((s,v)=>s+v,0)/(e.length||1), la=l.reduce((s,v)=>s+v,0)/(l.length||1); var d=la-ea, rel=ea?d/Math.abs(ea):0; return {dir:rel>0.05?"up":rel<-0.05?"down":"flat", delta:d}; }
   trendArrow(t){ if(!t||t.dir==="flat") return '<span class="tr tr-f">\u2013</span>'; return t.dir==="up" ? '<span class="tr tr-u">\u25B2</span>' : '<span class="tr tr-d">\u25BC</span>'; }
@@ -1851,45 +1937,10 @@ class Component extends DCLogic {
     var D=this.SD;
     rws=rws.filter(r=>this.roleOf(this.S.analysts[r[D.AN]])!=="Specialist");
     if(!rws.length) return '<div class="card"><div class="placeholder-msg">No Analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
-    var med=this.windowMedians(rws);
-    var tblId="lb";
-    var list=this.aggAnalysts(rws);
-    list.forEach(a=>{ a.delta=a.fs-med.fs; });
-    var sort=this.sel.lbSort;
-    list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
-    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,days:a.days}[col]));
-    var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
-    var q=this.sel.lbSearch.toLowerCase();
-    var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
-    var lbLimit=this.rowLimit("lb");
-    var capped=shown.slice(0,lbLimit);
-    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
-    var rowsH=capped.map((a,i)=>{
-      var rk=i+1, top3=(!hdrSort&&sort==="finalDesc"&&rk<=3);
-      var dF=a.delta;
-      var fsc=this.fsColor(a.fs,med.fs);
-      var ps=(this.S.platformStats||{})[a.anIdx]||{};
-      var pdErr=s=>s?'Prod '+this.fs1(s.prod)+' \u00b7 Err '+this.pct(s.er):'<span class="c-dash">\u2014</span>';
-      var portalPill=ps.portals?'<span class="tag portal-pill">'+this.esc(ps.portals)+'</span>':'<span class="c-dash">\u2014</span>';
-      return '<tr><td><span class="rank-badge '+(top3?'rk-top':'rk-nom')+'">'+rk+'</span></td>'
-        +'<td class="c-name"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
-        +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
-        +'<td>'+portalPill+'</td>'
-        +'<td class="c-plat">'+pdErr(ps.legacy)+'</td>'
-        +'<td class="c-plat">'+pdErr(ps.ipa)+'</td>'
-        +'<td class="r"><div class="ibar-wrap"><span class="fs-v" style="color:'+fsc+'">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+fsc+'"></div></div></div></td>'
-        +'<td><div class="traj">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
-        +'<td class="r er-v" style="color:'+this.erColor(a.er,med.er)+'">'+this.pct(a.er)+'</td>'
-        +'<td class="r">'+this.fs1(a.prod)+'</td>'
-        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
-        +'<td class="r c-proc">'+a.errs+'</td>'
-        +'<td class="r c-mut">'+a.days+'</td></tr>';
-    }).join("");
-    var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
-    return '<div class="card"><div class="card-head">Analyst leaderboard \u2014 '+list.length+' analysts \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)
-      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-lbsearch" data-act="lbsearch" placeholder="Search analyst or team\u2026" value="'+this.esc(this.sel.lbSearch)+'"><select data-act="lbsort">'+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("prodDesc","Productivity \u2193")+sortOpt("errorsDesc","Most errors")+'</select></span></div>'
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Analyst","name")+this.tblTh(tblId,"Team","team")+'<th>Portal(s)</th><th>Legacy (Prod/Err)</th><th>IPA (Prod/Err)</th>'+this.tblTh(tblId,"Avg final score","fs",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
-      +this.moreControls("lb",capped.length,shown.length,"analysts")+'</div>';
+    // Both Portals reports each platform separately - see splitRows(). Analysts
+    // do not do final review, so FR is neither a column nor part of the score.
+    var splitListA=this.splitRows(rws,false).sort((a,b)=>b.final-a.final);
+    return this.splitTable(splitListA,false,"Analysts","lbsplit");
   }
 
   pageTeams(rws){
@@ -1927,76 +1978,9 @@ class Component extends DCLogic {
     var D=this.SD;
     var sp=rws.filter(r=>this.roleOf(this.S.analysts[r[D.AN]])==="Specialist");
     if(!sp.length) return '<div class="card"><div class="placeholder-msg">No Specialist analyst-day rows in the selected range'+(this.st.loc?' for '+this.esc(this.st.loc):'')+'.</div></div>';
-    var med=this.windowMedians(sp);
-    var tblId="sp";
-    var frDaily=(this.S&&this.S.frDaily)||{}, frTotal=(this.S&&this.S.frTotal)||{};
-    var frFrom=this.st.from, frTo=this.st.to, FR_MIN=50;
-    var list=this.aggAnalysts(sp).map(a=>{
-      var daily=frDaily[a.anIdx];
-      if(daily){
-        var vals=Object.keys(daily).filter(d=>d>=frFrom&&d<=frTo).map(d=>daily[d]).filter(v=>v>=FR_MIN);
-        a.frDays=vals.length;
-        a.frSum=vals.reduce((s,v)=>s+v,0);
-        a.fr=vals.length?a.frSum/vals.length:null;
-      } else if(frTotal[a.anIdx]!=null){
-        a.frDays=null; a.frSum=frTotal[a.anIdx]; a.fr=frTotal[a.anIdx];
-      } else {
-        a.frDays=null; a.frSum=0; a.fr=null;
-      }
-      return a;
-    });
-    var maxFr=Math.max.apply(null,list.map(a=>a.fr||0).concat([0.0001]));
-    var hasFr=list.some(a=>a.fr!=null);
-    // FR-blended position score: final score rewarded by Final-Review volume (up to +25%).
-    list.forEach(a=>{ a.pos=a.fs*(1+0.25*((a.fr||0)/maxFr)); a.delta=a.fs-med.fs; });
-    // Final points after considering FR counts: FR count x2 + final score, averaged
-    // per day over the specialist's scored days in range (raw daily FR value, no
-    // threshold -- days with no FR record on file count as 0).
-    var fpSumByAn={}, fpDaysByAn={};
-    sp.forEach(r=>{
-      var an=r[D.AN], d=this.S.dates[r[D.DATE]];
-      var daily=frDaily[an];
-      var frv=(daily&&daily[d]!=null)?daily[d]:0;
-      fpSumByAn[an]=(fpSumByAn[an]||0)+(frv*2+r[D.FS]);
-      fpDaysByAn[an]=(fpDaysByAn[an]||0)+1;
-    });
-    list.forEach(a=>{ a.fp=fpDaysByAn[a.anIdx]?fpSumByAn[a.anIdx]/fpDaysByAn[a.anIdx]:a.fs; });
-    var sort=this.sel.spSort||"fpDesc";
-    list.sort(sort==="fpDesc"?(a,b)=>b.fp-a.fp:sort==="posDesc"?(a,b)=>b.pos-a.pos:sort==="frDesc"?(a,b)=>(b.fr||0)-(a.fr||0):sort==="finalDesc"?(a,b)=>b.fs-a.fs:sort==="errorAsc"?(a,b)=>a.er-b.er:(a,b)=>b.fp-a.fp);
-    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,fr:(a.fr||0),pos:a.pos,fp:a.fp,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,days:a.days}[col]));
-    var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
-    var q=(this.sel.spSearch||"").toLowerCase();
-    var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
-    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
-    var fpFx=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the specialist\u2019s scored days in range (days with no FR record on file count as 0).");
-    var spLimit=this.rowLimit("sp");
-    var spShownN=Math.min(shown.length,spLimit);
-    var rowsH=shown.slice(0,spLimit).map((a,i)=>{
-      var rk=i+1, top3=(!hdrSort&&sort==="fpDesc"&&rk<=3);
-      var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
-      var dF=a.delta;
-      var frBar=a.fr!=null?'<div class="ibar-wrap"><span style="color:var(--me-blue);font-weight:800;font-family:var(--font-num)">'+this.fs1(a.fr)+'</span>'+(a.frDays!=null?' <span style="color:var(--neutral-300);font-size:10.5px">('+a.frDays+'d\u226550)</span>':'')+'<div class="ibar-bg"><div class="ibar-fill me-grow" style="width:'+Math.min(100,(a.fr/maxFr*100)).toFixed(1)+'%;background:var(--me-blue)"></div></div></div>':'<span style="color:var(--neutral-300)">\u2014</span>';
-      return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
-        +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
-        +'<td><button class="tag tag-team team-tag-link" data-act="teamname" data-arg="'+this.esc(a.team)+'">'+this.esc(a.team)+'</button></td>'
-        +'<td class="r" style="font-weight:800;color:var(--honey-600);font-family:var(--font-num)">'+this.fs1(a.fp)+'</td>'
-        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
-        +'<td class="r">'+frBar+'</td>'
-        +'<td class="r" style="color:var(--muted)">'+this.fs1(a.pos)+'</td>'
-        +'<td><div style="display:flex;align-items:center;gap:6px">'+this.trendArrow(a.trend)+this.sparkline(a.series,a.trend.dir==="down"?"var(--red)":a.trend.dir==="up"?"var(--green)":"var(--muted)")+'</div></td>'
-        +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
-        +'<td class="r">'+this.fs1(a.prod)+'</td>'
-        +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
-        +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
-        +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
-    }).join("");
-    var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
-    var totFr=list.reduce((s,a)=>s+(a.frSum||0),0);
-    return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews in range':'')
-      +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("fpDesc","Final points (FR) \u2193")+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Avg FR/day \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
-      +(hasFr?'<div class="note-strip">Ranked by Final Points after considering FR counts'+fpFx+' \u2014 FR count \u00d7 2 + final score, averaged per day. Position score (shown alongside) instead blends avg final score with average daily FR volume, lifting standing by up to 25% relative to the top reviewer. Avg FR/day only counts days with 50 or more FRs; older archives without daily FR data show a flat total instead.</div>':'')
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
-      +this.moreControls("sp",spShownN,shown.length,"specialists")+'</div>';
+    // Both Portals reports each platform separately - see splitRows().
+    var splitList=this.splitRows(sp,true).sort((a,b)=>b.final-a.final);
+    return this.splitTable(splitList,true,"Specialists","spsplit");
   }
   gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
   gotoAM(amName){ this.sel.amReport=amName; this.setPage("amreport"); }
@@ -2128,7 +2112,14 @@ class Component extends DCLogic {
       +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
     var fpFxT=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0).");
     var specRoster=specs.length?'<div class="card"><div class="card-head">Specialists \u2014 '+specs.length+', ranked by Final Points after considering FR counts'+fpFxT+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Final points after FR</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+specs.map(rowFnSp).join("")+'</tbody></table></div></div>':'';
-    var roster=specRoster+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
+    // Both Portals: the team's specialists and analysts use the same per-platform
+    // layout as their leaderboards, so a reader is not comparing a blended
+    // average here against a split one there.
+    var pick=(names,isSpec)=>this.splitRows(mine,isSpec)
+      .filter(x=>names.indexOf(x.an)!==-1).sort((a,b)=>b.final-a.final);
+    var specSplit=specs.length?this.splitTable(pick(specs.map(a=>a.an),true),true,"Specialists","tr-sp"):'';
+    var anaSplit=anas.length?this.splitTable(pick(anas.map(a=>a.an),false),false,"Analysts","tr-an"):'';
+    var roster=specSplit+anaSplit+rosterTbl("Other members",others);
     if(!specs.length&&!anas.length&&!others.length){
       roster=members.length
         ? rosterTbl("Team roster",members)

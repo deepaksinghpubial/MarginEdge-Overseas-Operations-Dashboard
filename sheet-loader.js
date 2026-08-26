@@ -649,8 +649,13 @@
       var er = num(r[C.errorRate]); if (!ERROR_RATE_IS_FRACTION) er = er / 100;
       var errs = C.errs ? num(r[C.errs]) : (errCount[u + "|" + d] || 0);
       var pts = C.pts ? num(r[C.pts]) : 0;
-      records.push([ sdi[d], an, rowTeamIdx(r[C.team], analyst_team[an]), +num(r[C.productivity]).toFixed(2),
-                     errs, pts, +er.toFixed(5), +num(r[C.finalScore]).toFixed(2) ]);
+      var rec = [ sdi[d], an, rowTeamIdx(r[C.team], analyst_team[an]), +num(r[C.productivity]).toFixed(2),
+                  errs, pts, +er.toFixed(5), +num(r[C.finalScore]).toFixed(2) ];
+      // Split needs to separate Legacy from IPA within whatever range the reader
+      // has selected. platformStats cannot do that - it is computed once over the
+      // whole month - so the portal travels on the row itself.
+      if (TARGET === "split") rec.push(r.__src === "ipa" ? "ipa" : "legacy");
+      records.push(rec);
     });
     var SCORES = { dates: sdates, analysts: analysts, teams: teams, analyst_team: analyst_team, records: records, frDaily: frDaily, frTotal: frTotal, frDates: frDates };
 
@@ -662,14 +667,15 @@
         if (loginIdx[u] == null) return;
         var an = loginIdx[u], src = r.__src === "ipa" ? "ipa" : "legacy";
         var er = num(r[C.errorRate]); if (!ERROR_RATE_IS_FRACTION) er = er / 100;
-        var o = plat[an] || (plat[an] = { legacy: { p: 0, e: 0, n: 0 }, ipa: { p: 0, e: 0, n: 0 } });
-        o[src].p += num(r[C.productivity]); o[src].e += er; o[src].n++;
+        var o = plat[an] || (plat[an] = { legacy: { p: 0, e: 0, f: 0, n: 0 }, ipa: { p: 0, e: 0, f: 0, n: 0 } });
+        o[src].p += num(r[C.productivity]); o[src].e += er;
+        o[src].f += num(r[C.finalScore]); o[src].n++;
       });
       var ps = {};
       Object.keys(plat).forEach(function (an) {
         var o = plat[an], has = [];
-        var lg = o.legacy.n ? { prod: o.legacy.p / o.legacy.n, er: o.legacy.e / o.legacy.n, n: o.legacy.n } : null;
-        var ip = o.ipa.n ? { prod: o.ipa.p / o.ipa.n, er: o.ipa.e / o.ipa.n, n: o.ipa.n } : null;
+        var lg = o.legacy.n ? { prod: o.legacy.p / o.legacy.n, er: o.legacy.e / o.legacy.n, fs: o.legacy.f / o.legacy.n, n: o.legacy.n } : null;
+        var ip = o.ipa.n ? { prod: o.ipa.p / o.ipa.n, er: o.ipa.e / o.ipa.n, fs: o.ipa.f / o.ipa.n, n: o.ipa.n } : null;
         if (lg) has.push("Legacy"); if (ip) has.push("IPA");
         ps[an] = { legacy: lg, ipa: ip, portals: has.slice().reverse().join(" + ") };
       });
