@@ -88,9 +88,45 @@ The job needs permission to save the file into GitHub.
     `legacy-current.json`, `ipa-current.json` and `manifest.json` — all four
     written as a **single commit**, so Netlify runs one deploy, not four.
 
-### Turn on the daily schedule
+### Turn on the schedule
 
-12. Pick **`installDailyTriggerIST`** from the dropdown → **Run**.
+12. Pick **`installPoller`** from the dropdown → **Run**.
+
+    This is the recommended setup. It checks the sheet **every 15 minutes** and
+    publishes only when the data has actually changed, so figures reach the
+    dashboard within a quarter of an hour of landing in the workbook, whatever
+    time Redash finishes.
+
+    A check that finds nothing new costs about two seconds. It reads only the
+    row and column counts of the eight source tabs — not the 180,000 mistake
+    rows — and if they match what was last published it stops there: no build,
+    no GitHub commit, and therefore **no Netlify deploy and no credits**. The
+    sheet genuinely changes about once a day, so the running cost stays where
+    the daily job left it.
+
+    `Error Reviews` is deliberately not watched. Verdicts are saved all day and
+    the dashboard already reads them live, so watching that tab would fire a
+    deploy on every review — the exact cost this design avoids.
+
+    It also installs one **daily forced publish at 10:00 IST** as a safety net,
+    for the case where a correction replaces a row rather than adding one and
+    the row counts therefore look unchanged.
+
+    Run **`pollerStatus`** any time to see what the poller can see and whether
+    it would publish right now.
+
+    To use a different interval: **`installPoller(30)`**. Apps Script accepts
+    1, 5, 10, 15 or 30 minutes.
+
+<details>
+<summary>Alternative: the original once-a-day schedule</summary>
+
+Pick **`installDailyTriggerIST`** from the dropdown → **Run**.
+
+    Be aware of the trade-off that prompted the poller: anything Redash writes
+    after the run waits until the next morning. On 25 Aug the job published at
+    10:43 with data through the 24th, and the 25th's figures sat in the sheet
+    for a full day.
 
     This sets the job to **10:00 IST** — an hour after your Redash update lands
     at ~09:00, with a little margin.
@@ -110,6 +146,8 @@ The job needs permission to save the file into GitHub.
 
     ⚠️ If the clocks change where your script timezone lives, the trigger can
     drift by an hour. Re-run `installDailyTriggerIST()` if that matters.
+
+</details>
 
 ---
 

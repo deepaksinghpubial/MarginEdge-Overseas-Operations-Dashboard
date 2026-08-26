@@ -109,6 +109,130 @@ function dailySnapshot() {
   return buildAndPublish({ publish: true });
 }
 
+/* ===========================================================================
+ * checkAndPublish - the 15-minute poller
+ *
+ * Publishing once a day meant anything Redash wrote after the run sat in the
+ * sheet until the next morning: on 25 Aug the job published at 10:43 with data
+ * through the 24th, and the 25th's figures then waited a full day.
+ *
+ * Running the full build every 15 minutes would be worse - each publish is a
+ * GitHub commit, and every commit is a Netlify production deploy at 15 credits,
+ * about 4,500 a month.
+ *
+ * So this probes first and builds second. getLastRow() and getLastColumn() are
+ * metadata reads costing milliseconds, not a scan of 180,000 rows. If nothing
+ * has grown since the last publish it returns in a couple of seconds having
+ * touched nothing: no build, no commit, no deploy, no credits. The sheet still
+ * changes about once a day, so the credit cost stays where it was while the
+ * data becomes current within 15 minutes of arriving.
+ *
+ * Error Reviews is deliberately NOT part of the signature. Verdicts are saved
+ * all day and the dashboard already reads them live, so including them would
+ * fire a deploy on every review - the exact cost this is avoiding.
+ * ======================================================================== */
+var WATCH_TABS = [
+  "Legacy Productivity", "Legacy Mistakes", "IPA Productivity", "IPA Mistakes",
+  "Role Details", "Location Details", "Team Details - Legacy & IPA", "FR Details"
+];
+var SHAPE_PROP = "LAST_PUBLISHED_SHAPE";
+
+/** Cheap shape of the watched tabs: rows and columns, nothing read. */
+function sheetShape() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = [];
+  for (var i = 0; i < WATCH_TABS.length; i++) {
+    var sh = ss.getSheetByName(WATCH_TABS[i]);
+    out.push(WATCH_TABS[i] + "=" + (sh ? sh.getLastRow() + "x" + sh.getLastColumn() : "missing"));
+  }
+  return out.join("|");
+}
+
+/**
+ * Trigger entry point. Publishes only when the watched tabs have changed.
+ * Pass true to publish regardless, which is what the daily safety net uses.
+ */
+function checkAndPublish(force) {
+  var props = PropertiesService.getScriptProperties();
+  var shape = sheetShape();
+  var last = props.getProperty(SHAPE_PROP);
+
+  if (!force && last === shape) {
+    Logger.log("No change since the last publish — nothing to do. (" + shape + ")");
+    return { published: false, reason: "unchanged", shape: shape };
+  }
+
+  // Two triggers can overlap if a build runs long. Without this, both would
+  // build and both would commit, costing two deploys for one change.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    Logger.log("Another run holds the lock — skipping this tick.");
+    return { published: false, reason: "locked" };
+  }
+  try {
+    Logger.log(force ? "Forced publish." : "Change detected.\n  was: " + (last || "(nothing recorded)") + "\n  now: " + shape);
+    var r = buildAndPublish({ publish: true });
+    // Recorded only after a successful publish, so a failed run is retried on
+    // the next tick instead of being remembered as done.
+    props.setProperty(SHAPE_PROP, shape);
+    Logger.log("Published. Netlify will redeploy.");
+    return { published: true, shape: shape, summary: r.summary };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Install the 15-minute poller, replacing the once-a-day trigger.
+ * Also keeps ONE daily run as a safety net: if the shape somehow matches while
+ * the contents differ - a correction that replaces a row rather than adding one
+ * - the sheet would otherwise never republish.
+ */
+function installPoller(everyMinutes) {
+  everyMinutes = everyMinutes || 15;
+  if ([1, 5, 10, 15, 30].indexOf(everyMinutes) === -1) {
+    throw new Error("Apps Script allows 1, 5, 10, 15 or 30 minute intervals");
+  }
+  var removed = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) {
+    var fn = all[i].getHandlerFunction();
+    if (fn === "dailySnapshot" || fn === "checkAndPublish" || fn === "dailyForcePublish") {
+      ScriptApp.deleteTrigger(all[i]); removed++;
+    }
+  }
+  ScriptApp.newTrigger("checkAndPublish").timeBased().everyMinutes(everyMinutes).create();
+
+  var scriptTz = Session.getScriptTimeZone();
+  var mapped = istHourToScriptHour(10, scriptTz);
+  ScriptApp.newTrigger("dailyForcePublish").timeBased().atHour(mapped.hour).everyDays(1).create();
+
+  Logger.log("---------------------------------------------------------------");
+  Logger.log("Removed " + removed + " old trigger(s).");
+  Logger.log("checkAndPublish   : every " + everyMinutes + " minutes");
+  Logger.log("dailyForcePublish : once daily at " + pad2(mapped.hour) + ":00 " + scriptTz +
+             " (= " + mapped.backInIst + " IST) as a safety net");
+  Logger.log("");
+  Logger.log("A tick that finds no change costs about two seconds and does not");
+  Logger.log("touch GitHub, so it does not cost a Netlify deploy.");
+  Logger.log("---------------------------------------------------------------");
+  return { everyMinutes: everyMinutes, removed: removed };
+}
+
+/** The daily safety net: publishes whether or not the shape changed. */
+function dailyForcePublish() { return checkAndPublish(true); }
+
+/** Read-only: what the poller can see right now, and whether it would publish. */
+function pollerStatus() {
+  var shape = sheetShape();
+  var last = PropertiesService.getScriptProperties().getProperty(SHAPE_PROP);
+  Logger.log("current shape  : " + shape);
+  Logger.log("last published : " + (last || "(nothing recorded yet)"));
+  Logger.log("would publish  : " + (last === shape ? "no - unchanged" : "YES - changed"));
+  var t = ScriptApp.getProjectTriggers(), names = [];
+  for (var i = 0; i < t.length; i++) names.push(t[i].getHandlerFunction());
+  Logger.log("triggers       : " + (names.join(", ") || "(none)"));
+  return { shape: shape, lastPublished: last, wouldPublish: last !== shape, triggers: names };
+}
+
 /** Run from the editor to test end to end. Publishes exactly like the trigger. */
 function runSnapshotNow() {
   var r = buildAndPublish({ publish: true });
