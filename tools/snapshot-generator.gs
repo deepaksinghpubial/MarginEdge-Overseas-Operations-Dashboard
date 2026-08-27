@@ -161,6 +161,22 @@ function checkAndPublish(force) {
     return { published: false, reason: "unchanged", shape: shape };
   }
 
+  // Rate limit. I assumed the watched tabs changed about once a day; they change
+  // all day, so on 26 Aug this published 63 times and every publish was a paid
+  // Netlify deploy. On a host that charges per deploy, set MIN_PUBLISH_GAP_MIN
+  // to the smallest number of minutes you are willing to pay for. On GitHub
+  // Pages, where deploys are free, leave it at 0.
+  var gapMin = Number(props.getProperty("MIN_PUBLISH_GAP_MIN") || 0);
+  if (!force && gapMin > 0) {
+    var lastAt = Number(props.getProperty("LAST_PUBLISH_AT") || 0);
+    var sinceMin = lastAt ? (Date.now() - lastAt) / 60000 : Infinity;
+    if (sinceMin < gapMin) {
+      Logger.log("Change detected, but the last publish was " + Math.round(sinceMin) +
+                 " min ago and the minimum gap is " + gapMin + " min. Waiting.");
+      return { published: false, reason: "rate-limited", waitMin: Math.ceil(gapMin - sinceMin) };
+    }
+  }
+
   // Two triggers can overlap if a build runs long. Without this, both would
   // build and both would commit, costing two deploys for one change.
   var lock = LockService.getScriptLock();
@@ -174,6 +190,7 @@ function checkAndPublish(force) {
     // Recorded only after a successful publish, so a failed run is retried on
     // the next tick instead of being remembered as done.
     props.setProperty(SHAPE_PROP, shape);
+    props.setProperty("LAST_PUBLISH_AT", String(Date.now()));
     Logger.log("Published. Netlify will redeploy.");
     return { published: true, shape: shape, summary: r.summary };
   } finally {
