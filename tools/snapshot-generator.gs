@@ -805,23 +805,21 @@ function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
 //  OPTIONAL WEB APP  (off unless ENABLE_WEB_APP = "true")
 // ===========================================================================
 
-function doGet(e) {
-  var props = PropertiesService.getScriptProperties();
-  if (String(props.getProperty("ENABLE_WEB_APP")) !== "true") {
-    return ContentService.createTextOutput(JSON.stringify({ error: "disabled" }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  try {
-    var json = JSON.stringify(buildSnapshot(currentMonthKey()).snapshot);
-    var cb = e && e.parameter && e.parameter.callback;
-    return cb
-      ? ContentService.createTextOutput(cb + "(" + json + ");").setMimeType(ContentService.MimeType.JAVASCRIPT)
-      : ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ error: String(err && err.message || err) }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+/*
+ * There is deliberately NO doGet here.
+ *
+ * This file lives in the same Apps Script project as the dashboard's proxy, and
+ * every .gs file in a project shares ONE global scope. This file used to define
+ * a doGet as a debugging convenience; because it sorts after Code.gs, its doGet
+ * silently replaced the proxy's. The web app then answered {"error":"disabled"}
+ * instead of the JSONP the dashboard expects, so the reviewer list fell back to
+ * the last snapshot and every attempt to save a verdict failed with "JSONP
+ * failed to load" - with nothing to suggest the two files were the cause.
+ *
+ * Publishing here goes through GitHub, not a web app, so no entry point is
+ * needed. If you ever want to serve the snapshot over HTTP, add it to the proxy
+ * as a new action rather than as a second doGet.
+ */
 
 // ===========================================================================
 //  HELPERS
