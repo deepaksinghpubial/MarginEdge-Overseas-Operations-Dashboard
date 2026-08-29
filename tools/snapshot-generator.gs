@@ -104,6 +104,32 @@ function archiveJul2026() {
   return archiveMonth("2026-07", "1uCFShcJrAG41WU50z-VAFaxucM1k3GbXR44vpuqTMdk");
 }
 
+/**
+ * Freeze August 2026. Pick this from the dropdown and press Run - no arguments
+ * to type.
+ *
+ * No spreadsheet id, unlike July: August IS the live workbook, so this reads the
+ * sheet it is attached to. That is also the deadline. It copies what is in the
+ * tabs RIGHT NOW into permanent data/*-2026-08.json files, so it has to run
+ * while August's rows are still there - after ops pastes September over them
+ * there is nothing left to read.
+ *
+ * Run it once, on 1 or 2 September, before the September paste. Running it
+ * twice is harmless: it simply overwrites the same files with the same data.
+ *
+ * Skipping it is what does damage. September's first publish overwrites the
+ * -current files and marks August archived, and the month dropdown would then
+ * point at frozen files that were never written.
+ */
+function archiveAug2026() {
+  var r = archiveMonth("2026-08");
+  Logger.log("");
+  Logger.log("August 2026 is frozen. Check the month dropdown on the dashboard —");
+  Logger.log("it should offer July 2026, August 2026 and (once September data");
+  Logger.log("arrives) September 2026.");
+  return r;
+}
+
 /** Attach the daily time-driven trigger to this one. */
 function dailySnapshot() {
   return buildAndPublish({ publish: true });
