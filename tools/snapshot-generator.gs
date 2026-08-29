@@ -136,6 +136,8 @@ var WATCH_TABS = [
   "Role Details", "Location Details", "Team Details - Legacy & IPA", "FR Details"
 ];
 var SHAPE_PROP = "LAST_PUBLISHED_SHAPE";
+var RUN_FLAG = "PUBLISH_RUNNING_AT";   // set while a build is in flight
+var RUN_STALE_MIN = 20;                // a flag older than this is a dead run
 
 /** Cheap shape of the watched tabs: rows and columns, nothing read. */
 function sheetShape() {
@@ -177,13 +179,25 @@ function checkAndPublish(force) {
     }
   }
 
-  // Two triggers can overlap if a build runs long. Without this, both would
+  // Two triggers can overlap if a build runs long. Without a guard, both would
   // build and both would commit, costing two deploys for one change.
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) {
-    Logger.log("Another run holds the lock — skipping this tick.");
-    return { published: false, reason: "locked" };
+  //
+  // Deliberately NOT LockService. The dashboard's saveReview takes the script
+  // lock too, waiting 25 seconds before giving up, and a build holds it for
+  // about two minutes - so for two minutes in every fifteen, every reviewer
+  // trying to save a verdict was told "the sheet is busy with other saves".
+  // A property flag keeps two publisher ticks apart without touching the lock
+  // that people's saves depend on.
+  //
+  // The flag is timestamped so a run that dies mid-build (timeout, quota) does
+  // not wedge publishing forever: anything older than RUN_STALE_MIN is ignored.
+  var runningAt = Number(props.getProperty(RUN_FLAG) || 0);
+  var runningMin = runningAt ? (Date.now() - runningAt) / 60000 : Infinity;
+  if (runningMin < RUN_STALE_MIN) {
+    Logger.log("A publish started " + Math.round(runningMin) + " min ago is still running — skipping this tick.");
+    return { published: false, reason: "already-running" };
   }
+  props.setProperty(RUN_FLAG, String(Date.now()));
   try {
     Logger.log(force ? "Forced publish." : "Change detected.\n  was: " + (last || "(nothing recorded)") + "\n  now: " + shape);
     var r = buildAndPublish({ publish: true });
@@ -191,10 +205,10 @@ function checkAndPublish(force) {
     // the next tick instead of being remembered as done.
     props.setProperty(SHAPE_PROP, shape);
     props.setProperty("LAST_PUBLISH_AT", String(Date.now()));
-    Logger.log("Published. Netlify will redeploy.");
+    Logger.log("Published.");
     return { published: true, shape: shape, summary: r.summary };
   } finally {
-    lock.releaseLock();
+    props.deleteProperty(RUN_FLAG);
   }
 }
 
