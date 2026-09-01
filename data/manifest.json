@@ -2,8 +2,8 @@
   "schema": 2,
   "months": [
     {
-      "key": "2026-08",
-      "label": "August 2026",
+      "key": "2026-09",
+      "label": "September 2026",
       "files": {
         "core": [
           "data/core-current.json"
@@ -19,8 +19,19 @@
           "data/ipa-current.4.json"
         ]
       },
-      "lastUpdated": "2026-08-31T23:55:49-07:00",
+      "lastUpdated": "2026-09-01T00:30:02-07:00",
       "live": true
+    },
+    {
+      "key": "2026-08",
+      "label": "August 2026",
+      "files": {
+        "core": "data/core-2026-08.json",
+        "legacy": "data/legacy-2026-08.json",
+        "ipa": "data/ipa-2026-08.json"
+      },
+      "lastUpdated": "2026-08-31T23:55:49-07:00",
+      "live": false
     },
     {
       "key": "2026-07",
@@ -44,6 +55,6 @@
       "live": false
     }
   ],
-  "current": "2026-08",
-  "updated": "2026-08-31T23:55:49-07:00"
+  "current": "2026-09",
+  "updated": "2026-09-01T00:30:02-07:00"
 }
