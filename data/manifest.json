@@ -26,11 +26,21 @@
       "key": "2026-08",
       "label": "August 2026",
       "files": {
-        "core": "data/core-2026-08.json",
-        "legacy": "data/legacy-2026-08.json",
-        "ipa": "data/ipa-2026-08.json"
+        "core": [
+          "data/core-2026-08.json"
+        ],
+        "legacy": [
+          "data/legacy-2026-08.1.json",
+          "data/legacy-2026-08.2.json"
+        ],
+        "ipa": [
+          "data/ipa-2026-08.1.json",
+          "data/ipa-2026-08.2.json",
+          "data/ipa-2026-08.3.json",
+          "data/ipa-2026-08.4.json"
+        ]
       },
-      "lastUpdated": "2026-08-31T23:55:49-07:00",
+      "lastUpdated": "2026-09-01T20:45:49-07:00",
       "live": false
     },
     {
@@ -56,5 +66,5 @@
     }
   ],
   "current": "2026-09",
-  "updated": "2026-09-01T20:33:38-07:00"
+  "updated": "2026-09-01T20:45:49-07:00"
 }
