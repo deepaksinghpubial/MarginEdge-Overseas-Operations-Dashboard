@@ -9,17 +9,13 @@
           "data/core-current.json"
         ],
         "legacy": [
-          "data/legacy-current.1.json",
-          "data/legacy-current.2.json"
+          "data/legacy-current.json"
         ],
         "ipa": [
-          "data/ipa-current.1.json",
-          "data/ipa-current.2.json",
-          "data/ipa-current.3.json",
-          "data/ipa-current.4.json"
+          "data/ipa-current.json"
         ]
       },
-      "lastUpdated": "2026-09-01T21:29:25-07:00",
+      "lastUpdated": "2026-09-01T21:42:07-07:00",
       "live": true
     },
     {
@@ -66,5 +62,5 @@
     }
   ],
   "current": "2026-09",
-  "updated": "2026-09-01T21:29:25-07:00"
+  "updated": "2026-09-01T21:42:07-07:00"
 }
