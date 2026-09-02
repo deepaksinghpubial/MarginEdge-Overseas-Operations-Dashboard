@@ -404,6 +404,37 @@ function buildSnapshot(monthKey, sheetId) {
     }
 
     var t = readTab(sh, spec, tz);
+
+    // Error Reviews is one running log covering every month, so a copy of it
+    // taken whole put September's verdicts inside August's archive - 12,965 rows
+    // where a few thousand belong. They never displayed, because a verdict only
+    // shows against the error it was recorded on and that error is not in the
+    // month being viewed, but they made every archive larger to download for no
+    // benefit. Keep only the verdicts whose ERROR falls in this month.
+    //
+    // Rows whose mistake_date cannot be read are KEPT, not dropped: if the date
+    // is unreadable there is no way to tell which month a verdict belongs to,
+    // and silently discarding somebody's review would be far worse than a few
+    // extra rows.
+    if (spec.key === "errorReviews" && t.rows.length) {
+      var di = t.cols.indexOf("mistake_date");
+      if (di >= 0) {
+        var kept = [], dropped = 0, undated = 0;
+        for (var r = 0; r < t.rows.length; r++) {
+          var md = String(t.rows[r][di] || "");
+          var ym = md.length >= 7 ? md.slice(0, 7) : "";
+          if (!/^\d{4}-\d{2}$/.test(ym)) { kept.push(t.rows[r]); undated++; continue; }
+          if (ym === monthKey) kept.push(t.rows[r]); else dropped++;
+        }
+        Logger.log("  Error Reviews: kept " + kept.length + " for " + monthKey +
+                   ", left out " + dropped + " from other months" +
+                   (undated ? ", kept " + undated + " with an unreadable date" : ""));
+        t.rows = kept;
+      } else {
+        Logger.log("  Error Reviews: no mistake_date column — keeping every row.");
+      }
+    }
+
     data[spec.key] = { cols: t.cols, rows: t.rows };
     counts[spec.key] = t.rows.length;
     total += t.rows.length;
