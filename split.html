@@ -722,6 +722,27 @@ class Component extends DCLogic {
   normTrendChart(labels, series, chartId){
     chartId=chartId||"trend";
     var hidden=(this.sel.chartHidden&&this.sel.chartHidden[chartId])||{};
+    // One day in range cannot make a trend, and this chart fails badly at it
+    // rather than obviously: each line is scaled to ITS OWN range, so with a
+    // single value (v - lo) / span is 0 for every series and all of them land on
+    // the same pixel, while the line path is a bare move command that draws
+    // nothing. The result is an empty-looking chart with a few dots stacked on
+    // top of each other near the bottom - which reads as broken. Say what is
+    // happening instead; the legend above still carries the day's values.
+    if(!labels || labels.length < 2){
+      var vals=series.map(function(s){
+        var v=null; for(var i=(s.values||[]).length-1;i>=0;i--){ if(s.values[i]!=null&&isFinite(s.values[i])){ v=s.values[i]; break; } }
+        return '<span style="display:inline-flex;align-items:center;gap:8px;margin:0 14px;font-size:13px;font-weight:700;color:var(--text)">'
+          +'<span style="width:18px;height:3px;border-radius:2px;background:'+s.color+';display:inline-block"></span>'
+          +s.name+' <span style="color:'+s.color+';font-family:var(--font-num)">('+(v!=null?s.fmt(v):"\u2014")+')</span></span>';
+      }).join('');
+      return '<div style="text-align:center;margin-bottom:12px">'+vals+'</div>'
+        +'<div class="placeholder-msg" style="margin:0">'
+        +(labels&&labels.length===1
+            ? 'Only one day ('+this.esc(labels[0])+') falls in the selected range, so there is no trend to draw yet. The values for that day are above. A line needs at least two days \u2014 widen the range, or come back once more of the month has been recorded.'
+            : 'No days fall in the selected range.')
+        +'</div>';
+    }
     var w=1080,h=380,padL=26,padR=26,padT=22,padB=30, iw=w-padL-padR, ih=h-padT-padB;
     var xAt=function(i){ return padL+(labels.length===1?iw/2:i/(labels.length-1)*iw); };
     var grid=''; for(var t=0;t<=3;t++){ var y=padT+(t/3*ih); grid+='<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>'; }
