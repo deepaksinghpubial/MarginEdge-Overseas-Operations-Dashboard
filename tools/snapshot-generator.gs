@@ -324,7 +324,9 @@ function archiveMonth(monthKey, sheetId) {
   var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/false);
   w.files[MANIFEST_PATH] = JSON.stringify(
     buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false, w.fileMap), null, 2);
-  githubPutMany(w.files, "Archive dashboard snapshot for " + monthKey);
+  var goneArch = stalePartFiles(monthKey, /*isCurrent=*/false, Object.keys(w.files));
+  if (goneArch.length) Logger.log("Removing superseded archive file(s): " + goneArch.join(", "));
+  githubPutMany(w.files, "Archive dashboard snapshot for " + monthKey, goneArch);
   Logger.log("Archived " + monthKey + " (" + built.snapshot.counts.totalRows + " rows)");
   return built.summary;
 }
@@ -371,7 +373,9 @@ function buildAndPublish(opts) {
   if (opts.publish) {
     w.files[MANIFEST_PATH] = JSON.stringify(
       buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true, w.fileMap), null, 2);
-    githubPutMany(w.files, "Daily dashboard snapshot " + built.snapshot.lastUpdated);
+    var goneNow = stalePartFiles(monthKey, /*isCurrent=*/true, Object.keys(w.files));
+    if (goneNow.length) Logger.log("Removing superseded part file(s): " + goneNow.join(", "));
+    githubPutMany(w.files, "Daily dashboard snapshot " + built.snapshot.lastUpdated, goneNow);
     Logger.log("Published to GitHub. Netlify will redeploy automatically.");
   } else {
     Logger.log("Dry run — GitHub not touched.");
@@ -645,6 +649,51 @@ function splitSnapshot(snap) {
   return out;
 }
 
+/**
+ * Files this month's parts left behind.
+ *
+ * The number of chunks tracks the data volume, so it changes: a full August
+ * needed legacy-current.1.json and .2.json, while a two-day September fits in
+ * legacy-current.json. Writing the new shape does not remove the old one, so
+ * 45 MB of August chunks sat in the repo unreferenced - served by nobody, but
+ * cloned by everybody.
+ *
+ * Deliberately narrow. It asks GitHub what is actually in data/, matches ONLY
+ * the "<part>-<current|monthKey>[.n].json" names this run is responsible for,
+ * and keeps anything the run just wrote. Another month's files can never match,
+ * and a name that does not fit the pattern is never considered.
+ */
+function stalePartFiles(monthKey, isCurrent, keepPaths) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(DATA_DIR) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) {
+    Logger.log("Could not list " + DATA_DIR + " (" + res.getResponseCode() + ") — skipping cleanup, which is harmless.");
+    return [];
+  }
+  var listing;
+  try { listing = JSON.parse(res.getContentText()); } catch (e) { return []; }
+  if (!listing || !listing.length) return [];
+
+  var keep = {};
+  (keepPaths || []).forEach(function (p) { keep[p] = 1; });
+  var tag = isCurrent ? "current" : monthKey;
+  var stale = [];
+  for (var i = 0; i < listing.length; i++) {
+    var name = listing[i].name, path = DATA_DIR + "/" + name;
+    if (listing[i].type !== "file" || keep[path]) continue;
+    for (var p in PARTS) {
+      // "<part>-<tag>.json" or "<part>-<tag>.<n>.json" and nothing else.
+      var re = new RegExp("^" + p + "-" + tag.replace(/[-]/g, "\\-") + "(\\.\\d+)?\\.json$");
+      if (re.test(name)) { stale.push(path); break; }
+    }
+  }
+  return stale;
+}
+
 function partFileName(part, monthKey, isCurrent, chunk) {
   var base = DATA_DIR + "/" + part + "-" + (isCurrent ? "current" : monthKey);
   return base + (chunk ? "." + chunk : "") + ".json";
@@ -774,7 +823,7 @@ function ghConf() {
  *
  * files: { "path/in/repo.json": "contents", ... }
  */
-function githubPutMany(files, message) {
+function githubPutMany(files, message, deletePaths) {
   var c = ghConf();
   var api = "https://api.github.com/repos/" + c.repo;
   var hdr = { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" };
@@ -796,6 +845,11 @@ function githubPutMany(files, message) {
   var baseCommit = call(api + "/git/commits/" + baseCommitSha, "get");
 
   var tree = [];
+  // Deletions ride in the same tree, so a chunk count changing from 2 files to 1
+  // is one commit and one deploy - not a write followed by a separate delete.
+  (deletePaths || []).forEach(function (path) {
+    tree.push({ path: path, mode: "100644", type: "blob", sha: null });
+  });
   Object.keys(files).forEach(function (path) {
     // base64 so the blob survives regardless of the JSON's contents.
     var blob = call(api + "/git/blobs", "post", {
@@ -813,8 +867,9 @@ function githubPutMany(files, message) {
   });
   call(api + "/git/refs/heads/" + encodeURIComponent(c.branch), "patch", { sha: commit.sha, force: false });
 
-  Logger.log("GitHub: committed " + tree.length + " file(s) as " + commit.sha.slice(0, 7) +
-    " - one commit, so one Netlify deploy.");
+  Logger.log("GitHub: committed " + Object.keys(files).length + " file(s)" +
+    ((deletePaths && deletePaths.length) ? " and removed " + deletePaths.length : "") +
+    " as " + commit.sha.slice(0, 7) + " - one commit, so one deploy.");
 }
 
 /**
