@@ -947,6 +947,10 @@ class Component extends DCLogic {
       return '<tr><td class="r">'+(i+1)+'</td><td>'+self.esc(Q.dates[r[F.DATE]])+'</td>'+anH
         +'<td><span class="'+areaTag(area)+'">'+self.esc(prettyArea(area))+'</span></td>'
         +'<td style="font-family:var(--font-body)"><a class="order-link" href="'+self.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order ↗">'+self.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">↗</span></a></td>'
+        // A verdict can be recorded from here too. Error Explorer is where an
+        // error is usually FOUND - sending someone to a profile page to tick the
+        // box, after they had already located the row, was the long way round.
+        +self.reviewCell(r)
         +'<td>'+org+'</td>'+restH
         +'<td>'+self.esc(self.S.teams[r[F.TEAM]]||'—')+'</td>'
         +'<td class="r">'+(r[F.LP]||'—')+'</td>'
@@ -955,7 +959,7 @@ class Component extends DCLogic {
         +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.CUR])||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+self.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join('');
-    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead>';
+    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Review</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead>';
     var big=page.length>60;
     var tableH='<div class="'+(big?'dim-scroll':'dim-xscroll')+'" style="margin-top:0"><table class="tbl">'+thead+'<tbody>'+detailRows+'</tbody></table></div>';
     var left=sorted.length-page.length;
