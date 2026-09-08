@@ -1093,10 +1093,44 @@ class Component extends DCLogic {
   // combination that uniquely identifies one: the order it belongs to plus the
   // exact field and position flagged on it. Deliberately portal-agnostic, so a
   // verdict recorded in the Split view is the same verdict Legacy/IPA see.
-  mistKey(r){
+  // The identity a verdict was stored under BEFORE keys included the values.
+  // Kept because thousands of verdicts are already saved this way, and because
+  // the first six fields of the new key are these six, in the same order, so
+  // openReview can still read the date, analyst and order out of either.
+  mistKeyBase(r){
     var F=this.QF, Q=this.Q;
     return [Q.dates[r[F.DATE]], Q.areas[r[F.AREA]], Q.vars[r[F.VAR]],
       Q.analysts[r[F.AN]], (r[F.LP]==null?"":r[F.LP]), (r[F.URL]||"")].join("|");
+  }
+  // One key per ROW, so every error on an order is reviewed on its own.
+  //
+  // The old key was date + area + variable + analyst + line position + order.
+  // line_item_position is empty in every Legacy row, so two different errors of
+  // the same variable on the same order collapsed onto one key: 1,846 Legacy
+  // rows in 463 groups. Only the first of each could be ticked. Ticking any
+  // other opened the FIRST row's verdict, and saving appeared to do nothing
+  // because the tick stayed where it was - which is what the team was hitting.
+  //
+  // Adding the entered, closed and current values plus status separates every
+  // Legacy row and all but 12 IPA rows; those last few get an occurrence
+  // number. Computed once per dataset because it is a pass over every mistake.
+  mistKeys(){
+    var Q=this.Q; if(!Q) return null;
+    if(Q.__mkeys) return Q.__mkeys;
+    var F=this.QF, m=new Map(), seen={};
+    for(var i=0;i<Q.records.length;i++){
+      var r=Q.records[i];
+      var rich=this.mistKeyBase(r)+"|"+r[F.ENT]+"|"+r[F.CLO]+"|"+r[F.CUR]+"|"+r[F.ST];
+      var n=(seen[rich]==null)?0:seen[rich]+1;
+      seen[rich]=n;
+      m.set(r, n ? rich+"#"+n : rich);
+    }
+    Q.__mkeys=m; return m;
+  }
+  mistKey(r){
+    var m=this.mistKeys();
+    var k=m?m.get(r):null;
+    return k || this.mistKeyBase(r);
   }
   // A verdict must decorate exactly one error. Even after identical duplicates
   // are collapsed, distinct rows can still share a review key - it has no line
@@ -1114,9 +1148,20 @@ class Component extends DCLogic {
     var sig=(window.__QA_REV_SEQ||0)+":"+list.length;
     if(Q.__claimSig!==sig){
       var rmap=this.reviewMap(), claimed={}, m=new Map(), recs=Q.records;
+      // NOT "var r" - var is function-scoped, so naming the loop variable r
+      // overwrote the parameter and every lookup returned the LAST row's
+      // verdict. It only bit on the first call after a review changed, because
+      // that is the only time this loop runs - which is precisely when someone
+      // has just saved one.
       for(var i=0;i<recs.length;i++){
-        var k=this.mistKey(recs[i]), rv=rmap[k];
-        if(rv&&!claimed[k]){ claimed[k]=1; m.set(recs[i],rv); }
+        var rec=recs[i];
+        // A verdict saved since the key changed belongs to exactly one row.
+        var rv=rmap[this.mistKey(rec)];
+        if(rv){ m.set(rec,rv); continue; }
+        // One saved earlier cannot say WHICH row of its group it judged, so it
+        // stays where it has always shown: the first row of that group.
+        var lk=this.mistKeyBase(rec), lrv=rmap[lk];
+        if(lrv&&!claimed[lk]){ claimed[lk]=1; m.set(rec,lrv); }
       }
       Q.__claims=m; Q.__claimSig=sig;
     }
@@ -1151,7 +1196,11 @@ class Component extends DCLogic {
   // rmap is optional but callers rendering a whole table should pass one:
   // rebuilding it per row is O(rows x reviews) and degrades as reviews pile up.
   reviewCell(r, rmap){
-    var key=this.mistKey(r), rv=this.reviewClaim(r);
+    var rv=this.reviewClaim(r);
+    // Edit under the key the verdict is actually stored with, so correcting an
+    // older one overwrites it rather than writing a second row beside it. Only
+    // an unreviewed row gets the new row-specific key.
+    var key=(rv&&rv.mistake_key)?rv.mistake_key:this.mistKey(r);
     var an=this.Q.analysts[r[this.QF.AN]]||"";
     return '<td class="rev-cell" data-rev-key="'+this.esc(key)+'">'
       +'<label class="rev-box" title="'+(rv?'Reviewed — click to view or correct':'Click to review this error')+'">'
