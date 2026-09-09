@@ -2634,6 +2634,11 @@ class Component extends DCLogic {
       else { var lr=this.aggByLocation(rws); rows.push(["Location","Analysts","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); lr.list.sort((a,b)=>b.n-a.n).forEach(L=>rows.push([L.loc,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,(L.errs/(L.days||1)).toFixed(2)])); if(lr.unmapped) rows.push(["(unmapped, excluded)","","",lr.unmapped]); }
     } else {
       var list=this.aggAnalysts(rws), sort=this.sel.lbSort;
+      // Without this the export ignored the role split the PAGE applies, so
+      // Analyst Performance exported the specialists too and vice versa.
+      var self2=this;
+      if(p==="leaderboard") list=list.filter(function(a){ return self2.roleOf(a.an)!=="Specialist"; });
+      else if(p==="specialist") list=list.filter(function(a){ return self2.roleOf(a.an)==="Specialist"; });
       list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
       var q=this.sel.lbSearch.toLowerCase();
       rows.push(["Rank","Analyst","Team","Avg final score","Avg error rate","Avg productivity","Delta vs median final","Errors","Days","Trend"]);

@@ -2663,6 +2663,31 @@ class Component extends DCLogic {
     } else if(p==="locations"){
       if(!this.LOC){ rows.push(["No location mapping loaded"]); }
       else { var lr=this.aggByLocation(rws); rows.push(["Location","Analysts","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); lr.list.sort((a,b)=>b.n-a.n).forEach(L=>rows.push([L.loc,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,(L.errs/(L.days||1)).toFixed(2)])); if(lr.unmapped) rows.push(["(unmapped, excluded)","","",lr.unmapped]); }
+    } else if(p==="leaderboard"||p==="specialist"){
+      // Both Portals shows a different table on these two pages, and the export
+      // used to fall through to the generic branch below: no role filter, so
+      // Analyst Performance exported all 528 people including the 126
+      // specialists, under columns the page does not even show.
+      var wantSpec=(p==="specialist");
+      var srcRows=wantSpec?this.srows(true):rws;
+      var self2=this;
+      var only=srcRows.filter(function(r){
+        var role=self2.roleOf(self2.S.analysts[r[self2.SD.AN]]);
+        return wantSpec?(role==="Specialist"):(role!=="Specialist");
+      });
+      var slist=this.splitRows(only,wantSpec).sort(function(a,b){return b.final-a.final;});
+      name="qa_"+(wantSpec?"specialists":"analysts")+"_"+this.st.from+"_to_"+this.st.to;
+      rows.push(["Sl No.","Name","Final score","Avg final score (Legacy)","Avg error rate (Legacy)",
+                 "Avg final score (IPA)","Avg error rate (IPA)"]
+                .concat(wantSpec?["FR counts"]:[]).concat(["Days working"]));
+      slist.forEach(function(a,i){
+        var line=[i+1,a.an,a.final.toFixed(2),
+          a.lgFs==null?"":a.lgFs.toFixed(2), a.lgEr==null?"":a.lgEr.toFixed(4),
+          a.ipFs==null?"":a.ipFs.toFixed(2), a.ipEr==null?"":a.ipEr.toFixed(4)];
+        if(wantSpec) line.push(a.fr==null?"":a.fr.toFixed(2));
+        line.push(a.days);
+        rows.push(line);
+      });
     } else {
       var list=this.aggAnalysts(rws), sort=this.sel.lbSort;
       list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
