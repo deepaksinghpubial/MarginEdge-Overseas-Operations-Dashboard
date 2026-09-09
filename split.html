@@ -457,9 +457,13 @@ class Component extends DCLogic {
     var frFrom=this.st.from, frTo=this.st.to, FR_MIN=50;
     var m={};
     rws.forEach(function(r){
-      var k=r[D.AN], o=m[k]||(m[k]={lg:{f:0,e:0,p:0,n:0},ip:{f:0,e:0,p:0,n:0},errs:0,pts:0,ser:[]});
+      var k=r[D.AN], o=m[k]||(m[k]={lg:{f:0,e:0,p:0,n:0},ip:{f:0,e:0,p:0,n:0},errs:0,pts:0,ser:[],day:{}});
       var side=(r[D.PORTAL]==="ipa")?o.ip:o.lg;
       side.f+=r[D.FS]; side.e+=r[D.ER]; side.p+=r[D.PROD]; side.n++;
+      // Also kept per DATE: the score is now built a day at a time, so it needs
+      // to know what each individual day consisted of, not just the totals.
+      var dk=S.dates[r[D.DATE]], dd=o.day[dk]||(o.day[dk]={lg:0,ip:0});
+      if(r[D.PORTAL]==="ipa") dd.ip+=r[D.FS]; else dd.lg+=r[D.FS];
       o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]);
     });
     return Object.keys(m).map(function(k){
@@ -476,14 +480,38 @@ class Component extends DCLogic {
         frDays=vals.length; frSum=vals.reduce(function(a,b){return a+b;},0);
         fr=vals.length?frSum/vals.length:null;
       } else if(frTotal[an]!=null){ frSum=frTotal[an]; fr=frTotal[an]; }
-      var frPart=(isSpecialist&&fr!=null)?fr*2:0;
+      // Final score, built one day at a time.
+      //
+      //   day value = Legacy final score + (IPA final score / 2) + (FR x 2)
+      //   final     = sum of day values / number of days worked
+      //
+      // Whatever the person did that day is what the day contributes: a Legacy
+      // only day contributes only Legacy. So days where one stream is missing
+      // need no special handling, and someone whose Legacy, IPA and FR days all
+      // line up scores exactly what the old three-averages formula gave them.
+      //
+      // A day counts as worked if there is a Legacy row, an IPA row, or a
+      // qualifying FR day on it - counted once however many of the three there
+      // are. That is also what the Days working column shows, so the denominator
+      // is on screen.
+      var dayVal={}, dk;
+      for(dk in o.day){ dayVal[dk]=(o.day[dk].lg||0)+((o.day[dk].ip||0)/2); }
+      if(isSpecialist&&daily){
+        for(dk in daily){
+          if(dk<frFrom||dk>frTo) continue;
+          if(!(daily[dk]>=FR_MIN)) continue;
+          dayVal[dk]=(dayVal[dk]||0)+daily[dk]*2;
+        }
+      }
+      var workDays=0, dayTotal=0;
+      for(dk in dayVal){ workDays++; dayTotal+=dayVal[dk]; }
       var ser=o.ser.slice().sort(function(a,b){return a[0]-b[0];}).map(function(x){return x[1];});
       return {
         an:S.analysts[an], anIdx:an, team:S.teams[S.analyst_team[an]],
         lgFs:lgFs, lgEr:lgEr, lgN:lgN, ipFs:ipFs, ipEr:ipEr, ipN:ipN,
         fr:fr, frSum:frSum, frDays:frDays,
-        days:Math.max(lgN,ipN),
-        final:(lgFs||0)+((ipFs||0)/2)+frPart,
+        days:workDays,
+        final:workDays?dayTotal/workDays:0,
         errs:o.errs, pts:o.pts, prod:(o.lg.p+o.ip.p)/(lgN+ipN||1),
         er:(o.lg.e+o.ip.e)/(lgN+ipN||1), fs:(o.lg.f+o.ip.f)/(lgN+ipN||1),
         series:ser, trend:self.trendOf(ser)
@@ -496,11 +524,14 @@ class Component extends DCLogic {
     var d=v=>v==null?'<span class="c-dash">\u2014</span>':v;
     var mx=Math.max.apply(null,list.map(a=>a.final).concat([0.0001]));
     var fx=this.fxInline(title,
-      "Final score = avg Legacy final score + (avg IPA final score \u00f7 2)"
-      +(isSpecialist?" + (FR count \u00d7 2)":"")
-      +". IPA is halved because an IPA day is scored on roughly twice Legacy's scale."
-      +(isSpecialist?" FR is the average of days with 50 or more final reviews.":" Analysts do not do final review, so FR is not counted.")
-      +" Days worked is the higher of the two platform day counts \u2014 a day on both portals is one working day.");
+      "Worked out a day at a time. Each day contributes its Legacy final score"
+      +" + (its IPA final score \u00f7 2)"
+      +(isSpecialist?" + (its FR count \u00d7 2)":"")
+      +", counting only what the person actually did that day. Those day values are added up and divided by the number of days worked."
+      +" IPA is halved because an IPA day is scored on roughly twice Legacy's scale."
+      +(isSpecialist?" Only days with 50 or more final reviews count towards FR.":" Analysts do not do final review, so FR is not counted.")
+      +" Days working counts a date once, however many of the three the person did on it \u2014 so it is the divisor above."
+      +" The four averages either side are shown for context and are NOT what the score is built from, so the row will not add up by hand.");
     var rows=list.map(function(a,i){
       return '<tr><td class="r">'+(i+1)+'</td>'
         +'<td class="c-name"><button class="team-link" data-act="profile" data-arg="'+self.esc(a.an)+'">'+self.esc(a.an)+'</button></td>'
