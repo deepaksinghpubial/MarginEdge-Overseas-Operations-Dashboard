@@ -147,7 +147,8 @@
         pts: "total_possible_error_points", errorRate: "error_rate", finalScore: "final_score" } },
       mistakes: { tab: "Legacy Mistakes", cols: {
         date: "mistake_date", area: "mistake_area", variable: "variable",
-        username: "analyst_login", team: "team_lead_login", lp: null,
+        username: "analyst_login", team: "team_lead_login", lp: "position",
+        item: "vendor_item_name",
         ent: "entered_value", clo: "closed_value", cur: "current_value",
         st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
     },
@@ -159,6 +160,7 @@
       mistakes: { tab: "IPA Mistakes", cols: {
         date: "mistake_date", area: "mistake_area", variable: "variable",
         username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
+        item: null,
         ent: "proposed_value", clo: "closed_value", cur: "current_value",
         st: "task_type", url: "order_url", org: "flow_type", diffClo: "differs_from_closed" } }
     }
@@ -179,6 +181,7 @@
     mistakes: { tab: null, cols: {
       date: "mistake_date", area: "mistake_area", variable: "variable",
       username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
+      item: "vendor_item_name",
       ent: "entered_value", clo: "closed_value", cur: "current_value",
       st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
   };
@@ -232,6 +235,7 @@
       // stopped matching, and IPA rows differing only by line collapsed as
       // duplicates. Legacy has no such column; it stays empty there.
       line_item_position: m.lp ? row[m.lp] : "",
+      vendor_item_name: m.item ? row[m.item] : "",
       differs_from_closed: m.diffClo ? row[m.diffClo] : "",
       // Which portal this row came from. Needed to tell a Legacy analyst error
       // from an IPA one on the Split dashboard, where both are merged and
@@ -710,7 +714,8 @@
           diffClo,
           // Split merges both portals via normMist, which tags each row. Single-
           // portal dashboards read their tab directly, so fall back to TARGET.
-          r.__portal || (TARGET === "split" ? "" : TARGET)
+          r.__portal || (TARGET === "split" ? "" : TARGET),
+          M.item ? (r[M.item] || "") : ""
         ]);
       });
       QA = { url_prefix: "", dates: qdates, areas: areas, vars: vars, statuses: statuses, analysts: analysts, records: qrecords, dupCollapsed: mistDupes };

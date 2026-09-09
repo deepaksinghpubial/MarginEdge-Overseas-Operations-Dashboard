@@ -50,7 +50,7 @@
 class Component extends DCLogic {
   rootRef = React.createRef();
   SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7};
-  QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12, PORTAL:13};
+  QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12, PORTAL:13, ITEM:14};
   PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", reviewaudit:"Error Genuineness Review", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
     errorexplorer:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
@@ -953,13 +953,14 @@ class Component extends DCLogic {
         +self.reviewCell(r)
         +'<td>'+org+'</td>'+restH
         +'<td>'+self.esc(self.S.teams[r[F.TEAM]]||'—')+'</td>'
+        +'<td class="c-item" title="'+self.esc(r[F.ITEM]||'')+'">'+(self.esc(r[F.ITEM])||'—')+'</td>'
         +'<td class="r">'+(r[F.LP]||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.ENT])||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.CLO])||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+(self.esc(r[F.CUR])||'—')+'</td>'
         +'<td style="font-family:var(--font-body)">'+self.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join('');
-    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Review</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead>';
+    var thead='<thead><tr><th class="r">S.No.</th><th>Date</th>'+(showAn?'<th>Analyst</th>':'')+'<th>Area</th><th>Variable — order link</th><th>Review</th><th>Type</th>'+(showRest?'<th>Restaurant</th>':'')+'<th>Team lead</th><th>Item</th><th class="r">Line pos</th><th>Entered</th><th>Closed</th><th>Current</th><th>Status</th></tr></thead>';
     var big=page.length>60;
     var tableH='<div class="'+(big?'dim-scroll':'dim-xscroll')+'" style="margin-top:0"><table class="tbl">'+thead+'<tbody>'+detailRows+'</tbody></table></div>';
     var left=sorted.length-page.length;
@@ -1104,6 +1105,12 @@ class Component extends DCLogic {
     return [Q.dates[r[F.DATE]], Q.areas[r[F.AREA]], Q.vars[r[F.VAR]],
       Q.analysts[r[F.AN]], (r[F.LP]==null?"":r[F.LP]), (r[F.URL]||"")].join("|");
   }
+  // The key as it looked before Legacy had a position column.
+  mistKeyNoPos(r){
+    var F=this.QF, Q=this.Q;
+    return [Q.dates[r[F.DATE]], Q.areas[r[F.AREA]], Q.vars[r[F.VAR]],
+      Q.analysts[r[F.AN]], "", (r[F.URL]||"")].join("|");
+  }
   // One key per ROW, so every error on an order is reviewed on its own.
   //
   // The old key was date + area + variable + analyst + line position + order.
@@ -1163,7 +1170,14 @@ class Component extends DCLogic {
         // One saved earlier cannot say WHICH row of its group it judged, so it
         // stays where it has always shown: the first row of that group.
         var lk=this.mistKeyBase(rec), lrv=rmap[lk];
-        if(lrv&&!claimed[lk]){ claimed[lk]=1; m.set(rec,lrv); }
+        if(lrv&&!claimed[lk]){ claimed[lk]=1; m.set(rec,lrv); continue; }
+        // Legacy carried no position column until September, so every verdict
+        // saved before then was keyed with that field empty. Now the column
+        // exists the row's key carries a position and no longer matches, so try
+        // the older shape too - otherwise thousands of verdicts would vanish
+        // the day the column appeared.
+        var pk=this.mistKeyNoPos(rec), prv=(pk!==lk)?rmap[pk]:null;
+        if(prv&&!claimed[pk]){ claimed[pk]=1; m.set(rec,prv); }
       }
       Q.__claims=m; Q.__claimSig=sig;
     }
@@ -2315,6 +2329,7 @@ class Component extends DCLogic {
         case "area": return prettyArea(Q.areas[r[F.AREA]])||"";
         case "var": return Q.vars[r[F.VAR]]||"";
         case "type": return r[F.DIFFCLO]===true?"Processing":r[F.DIFFCLO]===false?"Post-prod":"\u2014";
+        case "item": return r[F.ITEM]||"";
         case "lp": return r[F.LP]||"";
         case "ent": return r[F.ENT]||"";
         case "clo": return r[F.CLO]||"";
@@ -2344,9 +2359,9 @@ class Component extends DCLogic {
     var rowsH=m.slice(0,cap).map((r,i)=>{
       var org=r[F.DIFFCLO]===true?'<span class="tag tag-proc">Processing</span>':r[F.DIFFCLO]===false?'<span class="tag tag-pp">Post-prod</span>':'<span class="tag" style="background:var(--neutral-100);color:var(--muted)">\u2014</span>';
       var area=Q.areas[r[F.AREA]];
-      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td>'+this.reviewCell(r,rmap)+'<td>'+org+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
+      return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td>'+this.reviewCell(r,rmap)+'<td>'+org+'</td><td class="c-item" title="'+this.esc(r[F.ITEM]||"")+'">'+(this.esc(r[F.ITEM])||"\u2014")+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join("");
-    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+'<th>Review</th>'+th("Type","type")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+'<th>Review</th>'+th("Type","type")+th("Item","item")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
@@ -2607,8 +2622,8 @@ class Component extends DCLogic {
     } else if(p==="profile" && this.sel.prAnalyst!==""){
       var login=this.S.analysts[parseInt(this.sel.prAnalyst)], m=this.mistakesFor(login);
       if(m && m.length){ var Q=this.Q, F=this.QF; name="qa_mistakes_"+login;
-        rows.push(["Date","Area","Variable","Type","Line pos","Entered","Closed","Current","Status","Order link"]);
-        m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.DIFFCLO]===true?"Processing":r[F.DIFFCLO]===false?"Post-prod":"",r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
+        rows.push(["Date","Area","Variable","Type","Item","Line pos","Entered","Closed","Current","Status","Order link"]);
+        m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.DIFFCLO]===true?"Processing":r[F.DIFFCLO]===false?"Post-prod":"",r[F.ITEM],r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
       } else { var D=this.SD, aIdx=parseInt(this.sel.prAnalyst); name="qa_dailyscores_"+login;
         rows.push(["Date","Productivity","Errors","Possible points","Error rate","Final score"]);
         rws.filter(r=>r[D.AN]===aIdx).sort((a,b)=>a[D.DATE]-b[D.DATE]).forEach(r=>rows.push([this.S.dates[r[D.DATE]],r[D.PROD],r[D.ERRS],r[D.PTS],r[D.ER],r[D.FS]]));
@@ -3201,7 +3216,8 @@ class Component extends DCLogic {
 .qa .rev-err{margin:0 20px 12px;padding:9px 12px;background:#fee2e2;color:#991b1b;border-radius:7px;font-size:12px;font-weight:600;}
 .qa .rev-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--neutral-200);}
 .qa .rev-hint{font-size:11px;color:var(--muted);margin-right:auto;max-width:280px;}
-.qa .rev-remark-inline{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:3px;max-width:190px;font-size:11px;line-height:1.35;color:var(--muted,#64748b);white-space:normal;word-break:break-word;cursor:help}
+.qa .qa td.c-item{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-body);font-size:12px;color:var(--text2,#3d434d);}
+    .rev-remark-inline{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:3px;max-width:190px;font-size:11px;line-height:1.35;color:var(--muted,#64748b);white-space:normal;word-break:break-word;cursor:help}
     .rev-hint-stale{display:block;margin-top:6px;font-size:11px;line-height:1.45;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px}
     .rev-hint-sm{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35;}
 .qa .rev-btn{font-family:var(--font-body);font-size:13px;font-weight:700;padding:8px 18px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;}

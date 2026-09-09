@@ -48,6 +48,7 @@ var TABS = [
 
   { key: "legacyMistakes", tab: "Legacy Mistakes",
     cols: ["mistake_date", "mistake_area", "variable", "analyst_login", "team_lead_login",
+           "vendor_item_name", "position",
            "entered_value", "closed_value", "current_value", "status", "order_url",
            "differs_from_closed"] },
 
