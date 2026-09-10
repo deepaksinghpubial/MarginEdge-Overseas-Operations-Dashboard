@@ -460,6 +460,7 @@ class Component extends DCLogic {
       var k=r[D.AN], o=m[k]||(m[k]={lg:{f:0,e:0,p:0,n:0},ip:{f:0,e:0,p:0,n:0},errs:0,pts:0,ser:[],day:{}});
       var side=(r[D.PORTAL]==="ipa")?o.ip:o.lg;
       side.f+=r[D.FS]; side.e+=r[D.ER]; side.p+=r[D.PROD]; side.n++;
+      if(r[D.PORTAL]==="ipa") o.ipTasks=(o.ipTasks||0)+r[D.PTS];
       // Also kept per DATE: the score is now built a day at a time, so it needs
       // to know what each individual day consisted of, not just the totals.
       var dk=S.dates[r[D.DATE]], dd=o.day[dk]||(o.day[dk]={lg:0,ip:0});
@@ -510,6 +511,7 @@ class Component extends DCLogic {
         an:S.analysts[an], anIdx:an, team:S.teams[S.analyst_team[an]],
         lgFs:lgFs, lgEr:lgEr, lgN:lgN, ipFs:ipFs, ipEr:ipEr, ipN:ipN,
         fr:fr, frSum:frSum, frDays:frDays,
+        ipTasks:o.ipTasks||0,
         days:workDays,
         final:workDays?dayTotal/workDays:0,
         errs:o.errs, pts:o.pts, prod:(o.lg.p+o.ip.p)/(lgN+ipN||1),
@@ -542,6 +544,7 @@ class Component extends DCLogic {
         +'<td class="r">'+d(a.ipFs==null?null:self.fs1(a.ipFs))+'</td>'
         +'<td class="r er-v">'+d(a.ipEr==null?null:self.pct(a.ipEr))+'</td>'
         +(isSpecialist?'<td class="r">'+d(a.fr==null?null:self.fs1(a.fr))+'</td>':'')
+        +'<td class="r c-mut">'+(a.ipTasks?a.ipTasks.toLocaleString():'<span class="c-dash">\u2014</span>')+'</td>'
         +'<td class="r c-mut">'+a.days+'</td></tr>';
     }).join("");
     return '<div class="card"><div class="card-head">'+self.esc(title)+' \u2014 '+list.length+fx+'</div>'
@@ -551,6 +554,7 @@ class Component extends DCLogic {
       +'<th class="r">Avg final score (Legacy)</th><th class="r">Avg error rate (Legacy)</th>'
       +'<th class="r">Avg final score (IPA)</th><th class="r">Avg error rate (IPA)</th>'
       +(isSpecialist?'<th class="r">FR counts</th>':'')
+      +'<th class="r">Total tasks (IPA)</th>'
       +'<th class="r">Days working</th>'
       +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }
@@ -2693,12 +2697,13 @@ class Component extends DCLogic {
       name="qa_"+(wantSpec?"specialists":"analysts")+"_"+this.st.from+"_to_"+this.st.to;
       rows.push(["Sl No.","Name","Final score","Avg final score (Legacy)","Avg error rate (Legacy)",
                  "Avg final score (IPA)","Avg error rate (IPA)"]
-                .concat(wantSpec?["FR counts"]:[]).concat(["Days working"]));
+                .concat(wantSpec?["FR counts"]:[]).concat(["Total tasks (IPA)","Days working"]));
       slist.forEach(function(a,i){
         var line=[i+1,a.an,a.final.toFixed(2),
           a.lgFs==null?"":a.lgFs.toFixed(2), a.lgEr==null?"":a.lgEr.toFixed(4),
           a.ipFs==null?"":a.ipFs.toFixed(2), a.ipEr==null?"":a.ipEr.toFixed(4)];
         if(wantSpec) line.push(a.fr==null?"":a.fr.toFixed(2));
+        line.push(a.ipTasks||0);
         line.push(a.days);
         rows.push(line);
       });

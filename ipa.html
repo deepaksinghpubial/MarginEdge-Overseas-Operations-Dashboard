@@ -1929,7 +1929,7 @@ class Component extends DCLogic {
     list.forEach(a=>{ a.delta=a.fs-med.fs; });
     var sort=this.sel.lbSort;
     list.sort(sort==="errorAsc"?(a,b)=>a.er-b.er:sort==="prodDesc"?(a,b)=>b.prod-a.prod:sort==="errorsDesc"?(a,b)=>b.errs-a.errs:(a,b)=>b.fs-a.fs);
-    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,days:a.days}[col]));
+    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,tasks:a.pts,days:a.days}[col]));
     var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
     var q=this.sel.lbSearch.toLowerCase();
     var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
@@ -1949,12 +1949,13 @@ class Component extends DCLogic {
         +'<td class="r">'+this.fs1(a.prod)+'</td>'
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
         +'<td class="r c-proc">'+a.errs+'</td>'
+        +'<td class="r c-mut">'+a.pts.toLocaleString()+'</td>'
         +'<td class="r c-mut">'+a.days+'</td></tr>';
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
     return '<div class="card"><div class="card-head">Analyst leaderboard \u2014 '+list.length+' analysts \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)
       +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-lbsearch" data-act="lbsearch" placeholder="Search analyst or team\u2026" value="'+this.esc(this.sel.lbSearch)+'"><select data-act="lbsort">'+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("prodDesc","Productivity \u2193")+sortOpt("errorsDesc","Most errors")+'</select></span></div>'
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Analyst","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Avg final score","fs",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Analyst","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Avg final score","fs",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Total tasks","tasks",true)+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
       +this.moreControls("lb",capped.length,shown.length,"analysts")+'</div>';
   }
 
@@ -2029,7 +2030,7 @@ class Component extends DCLogic {
     list.forEach(a=>{ a.fp=fpDaysByAn[a.anIdx]?fpSumByAn[a.anIdx]/fpDaysByAn[a.anIdx]:a.fs; });
     var sort=this.sel.spSort||"fpDesc";
     list.sort(sort==="fpDesc"?(a,b)=>b.fp-a.fp:sort==="posDesc"?(a,b)=>b.pos-a.pos:sort==="frDesc"?(a,b)=>(b.fr||0)-(a.fr||0):sort==="finalDesc"?(a,b)=>b.fs-a.fs:sort==="errorAsc"?(a,b)=>a.er-b.er:(a,b)=>b.fp-a.fp);
-    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,fr:(a.fr||0),pos:a.pos,fp:a.fp,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,days:a.days}[col]));
+    list=this.applyTblSort(list,tblId,(a,col)=>({name:a.an,team:a.team,fs:a.fs,fr:(a.fr||0),pos:a.pos,fp:a.fp,er:a.er,prod:a.prod,delta:a.delta,errs:a.errs,tasks:a.pts,days:a.days}[col]));
     var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
     var q=(this.sel.spSearch||"").toLowerCase();
     var shown=list.filter(a=>!q||a.an.toLowerCase().indexOf(q)!==-1||a.team.toLowerCase().indexOf(q)!==-1);
@@ -2054,6 +2055,7 @@ class Component extends DCLogic {
         +'<td class="r">'+this.fs1(a.prod)+'</td>'
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
         +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
+        +'<td class="r" style="color:var(--muted)">'+a.pts.toLocaleString()+'</td>'
         +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(sort===v?" selected":"")+'>'+l+'</option>';
@@ -2061,7 +2063,7 @@ class Component extends DCLogic {
     return '<div class="card"><div class="card-head">Specialist performance \u2014 '+list.length+' specialists \u00b7 median final '+this.fs1(med.fs)+(hasFr?' \u00b7 '+totFr.toLocaleString()+' final reviews in range':'')
       +'<span style="margin-left:auto" class="ctrl-row"><input type="text" id="qa-spsearch" data-act="spsearch" placeholder="Search specialist or team\u2026" value="'+this.esc(this.sel.spSearch||"")+'"><select data-act="spsort">'+sortOpt("fpDesc","Final points (FR) \u2193")+sortOpt("posDesc","Position score \u2193")+sortOpt("frDesc","Avg FR/day \u2193")+sortOpt("finalDesc","Final score \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+'</select></span></div>'
       +(hasFr?'<div class="note-strip">Ranked by Final Points after considering FR counts'+fpFx+' \u2014 FR count \u00d7 2 + final score, averaged per day. Position score (shown alongside) instead blends avg final score with average daily FR volume, lifting standing by up to 25% relative to the top reviewer. Avg FR/day only counts days with 50 or more FRs; older archives without daily FR data show a flat total instead.</div>':'')
-      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
+      +'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Specialist","name")+this.tblTh(tblId,"Team","team")+this.tblTh(tblId,"Final points after FR","fp",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg FR/day","fr",true)+this.tblTh(tblId,"Position score","pos",true)+'<th>Trajectory</th>'+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Errors","errs",true,"color:var(--proc)")+this.tblTh(tblId,"Total tasks","tasks",true)+this.tblTh(tblId,"Days","days",true)+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'
       +this.moreControls("sp",spShownN,shown.length,"specialists")+'</div>';
   }
   gotoTeamName(name){ var i=this.S.teams.indexOf(name); if(i>=0) this.gotoTeam(i); }
