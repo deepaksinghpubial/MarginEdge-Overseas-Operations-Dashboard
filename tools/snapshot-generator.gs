@@ -154,13 +154,19 @@ function dailySnapshot() {
  * changes about once a day, so the credit cost stays where it was while the
  * data becomes current within 15 minutes of arriving.
  *
- * Error Reviews is deliberately NOT part of the signature. Verdicts are saved
- * all day and the dashboard already reads them live, so including them would
- * fire a deploy on every review - the exact cost this is avoiding.
+ * Error Reviews IS part of the signature, since the move to GitHub Pages made
+ * publishing free. That is what lets the dashboard stop pulling the whole
+ * reviews history out of the web app on a timer.
  * ======================================================================== */
 var WATCH_TABS = [
   "Legacy Productivity", "Legacy Mistakes", "IPA Productivity", "IPA Mistakes",
-  "Role Details", "Location Details", "Team Details - Legacy & IPA", "FR Details"
+  "Role Details", "Location Details", "Team Details - Legacy & IPA", "FR Details",
+  // Watched deliberately, which it was NOT while this ran on Netlify: there each
+  // publish cost a paid deploy, so firing one per verdict was unaffordable. On
+  // GitHub Pages a publish is free, and watching it means verdicts reach
+  // everyone through the CDN instead of every viewer pulling the whole reviews
+  // history out of the web app every five minutes.
+  "Error Reviews"
 ];
 var SHAPE_PROP = "LAST_PUBLISHED_SHAPE";
 var RUN_FLAG = "PUBLISH_RUNNING_AT";   // set while a build is in flight

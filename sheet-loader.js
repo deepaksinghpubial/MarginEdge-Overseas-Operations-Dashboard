@@ -850,9 +850,24 @@
       .join("|");
   }
 
-  function refreshCoreLive(reason) {
+  // withReviews: whether to also pull the Error Reviews tab.
+  //
+  // That tab holds every verdict ever recorded and is by far the largest thing
+  // here - about 2 MB and growing daily, against 0.08 MB for the other four put
+  // together. Sending it to roughly fifty viewers every five minutes, through a
+  // web app that allows only 30 simultaneous executions across all of them, is
+  // what was refusing requests: a refused request is exactly what "JSONP failed
+  // to load" looks like, and it explains why saves failed intermittently rather
+  // than consistently, and got worse as the tab grew.
+  //
+  // Verdicts now travel with the snapshot instead - the poller watches that tab,
+  // so a new one publishes within fifteen minutes and reaches everyone over the
+  // CDN, costing the web app nothing. It is fetched live only when someone asks
+  // for it: the Refresh button, or straight after their own save.
+  function refreshCoreLive(reason, withReviews) {
     if (!WEBAPP_URL) return Promise.resolve(false);
-    var want = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab, SHARED.reviews.tab];
+    var want = [SHARED.role.tab, SHARED.location.tab, SHARED.teams.tab, SHARED.fr.tab];
+    if (withReviews) want.push(SHARED.reviews.tab);
     return jsonp(want, 30000, activeSheetId).then(function (tabs) {
       var fp = refFingerprint(tabs);
       // A snapshot is up to 24 hours old by definition, so the first live read
@@ -904,9 +919,10 @@
       return false;
     });
   }
-  var refreshReviewsLive = refreshCoreLive;   // the save path calls this name
-  window.__QA_REFRESH_REVIEWS = refreshCoreLive;
-  window.__QA_REFRESH_LIVE = refreshCoreLive;
+  // The save path DOES want the reviews tab: the person has just written to it.
+  var refreshReviewsLive = function (reason) { return refreshCoreLive(reason || "after save", true); };
+  window.__QA_REFRESH_REVIEWS = refreshReviewsLive;
+  window.__QA_REFRESH_LIVE = function (reason) { return refreshCoreLive(reason, true); };
 
   // ---- Saving an error review -----------------------------------------------
   // Appends (or corrects) one row in the workbook's "Error Reviews" tab via the
@@ -1374,7 +1390,7 @@
       console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
       // Verdicts recorded since the snapshot ran would otherwise be invisible
       // until tomorrow.
-      refreshCoreLive("after snapshot load");
+      refreshCoreLive("after snapshot load", false);
       return true;
     });
   }
@@ -1425,7 +1441,7 @@
     var snapSrc = (window.__QA_SOURCES || {})[key];
     if (snapSrc && snapSrc.snapshot) {
       console.log("[snapshot] manual refresh");
-      refreshCoreLive("manual refresh");
+      refreshCoreLive("manual refresh", true);
       loadSnapshot(snapSrc.snapshot, snapSrc.month).catch(function (e) {
         console.warn("[snapshot] refresh failed, keeping what is on screen: " + e.message);
       });
@@ -1452,7 +1468,7 @@
         var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
         if (have && want.lastUpdated && want.lastUpdated === have) {
           // Snapshot unchanged, but reviews move all day - pick those up.
-          refreshCoreLive("5-minute poll");
+          refreshCoreLive("5-minute poll", false);
           return;
         }
         console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");
