@@ -1000,14 +1000,25 @@ class Component extends DCLogic {
     // the morning); two or more means the sheet, not the dashboard, is behind.
     var dates=(this.S&&this.S.dates)||[];
     var last=dates.length?dates[dates.length-1]:null;
+    // Measured against TODAY where the reader is, not against the snapshot's own
+    // date. The job runs about 10:00 IST, which is the previous evening in the
+    // generator's timezone, so its timestamp reads a day earlier than the day it
+    // actually ran - and the badge was quietly subtracting that day from every
+    // lag it calculated. Data two days behind looked like one and stayed silent,
+    // which is the wrong way for a staleness warning to fail.
+    var nowL=new Date();
+    var today=nowL.getFullYear()+"-"+("0"+(nowL.getMonth()+1)).slice(-2)+"-"+("0"+nowL.getDate()).slice(-2);
     var snapDay=String(s.lastUpdated).slice(0,10);
-    if(last&&/^\d{4}-\d{2}-\d{2}$/.test(last)&&/^\d{4}-\d{2}-\d{2}$/.test(snapDay)){
-      var lag=Math.round((Date.parse(snapDay+"T00:00:00Z")-Date.parse(last+"T00:00:00Z"))/86400000);
-      if(lag>=2){
+    if(last&&/^\d{4}-\d{2}-\d{2}$/.test(last)){
+      var lag=Math.round((Date.parse(today+"T00:00:00Z")-Date.parse(last+"T00:00:00Z"))/86400000);
+      // Redash now lands the day before yesterday, so a two-day gap is the
+      // normal working state and must not warn - otherwise the badge shows
+      // every single day and stops meaning anything.
+      if(lag>=3){
         var ld=new Date(last+"T00:00:00Z");
         var lbl=ld.getUTCDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][ld.getUTCMonth()];
         out+='<span class="ds-stamp stale" title="The snapshot itself is current (taken '+this.esc(snapDay)
-          +'), but the newest scored day in it is '+this.esc(last)+' \u2014 '+lag+' days earlier. That means the Redash refresh into the workbook is behind, not the dashboard. Once the sheet is updated, run runSnapshotNow in Apps Script or wait for the 10:00 IST job.">'
+          +') and published fine, but the newest scored day in it is '+this.esc(last)+' \u2014 '+lag+' days before today. Redash normally lands two days back, so three or more means the refresh into the workbook has fallen behind; the dashboard is showing what the sheet holds. Once the sheet is updated, run runSnapshotNow in Apps Script or wait for the next publish.">'
           +'\u26a0 Scores through '+this.esc(lbl)+'</span>';
       }
     }
