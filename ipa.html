@@ -454,10 +454,32 @@ class Component extends DCLogic {
     });
     return '<svg class="spk" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts.join(" ")+'" stroke="'+color+'"/><circle cx="'+this._n1(lx)+'" cy="'+this._n1(ly)+'" r="1.9" fill="'+color+'"/></svg>';
   }
+  // (Specialist avg + Analyst avg) / 2 - the two groups weighted equally,
+  // whatever their headcount.
+  //
+  // With only one group present the average is that group alone, not half of
+  // it: a team with no specialists this week has not scored zero on specialist
+  // work, it has no specialist work to score. Halving them would punish the gap
+  // in the data rather than anything they did.
+  combScore(spFs, anFs){
+    if(spFs==null && anFs==null) return 0;
+    if(spFs==null) return anFs;
+    if(anFs==null) return spFs;
+    return (spFs+anFs)/2;
+  }
   aggTeams(rws){
     var S=this.S, D=this.SD, m={};
-    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{}}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; });
-    return Object.keys(m).map(k=>{ var o=m[k]; return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts}; });
+    var self=this;
+    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},spF:0,spN:0,anF:0,anN:0}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1;
+      // Specialists and analysts are both in here and always have been, but a
+      // single blended average hid how far apart they are - about 155 against
+      // 361 - so a team with more specialists looked worse for reasons that say
+      // nothing about how it is run. Kept apart so each can be seen and scored.
+      if(self.roleOf(S.analysts[r[D.AN]])==="Specialist"){ o.spF+=r[D.FS]; o.spN++; } else { o.anF+=r[D.FS]; o.anN++; } });
+    return Object.keys(m).map(k=>{ var o=m[k];
+      var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
+      return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts,
+        spF:o.spF, spN:o.spN, anF:o.anF, anN:o.anN, spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
   }
 
   lineChart(labels, values, opts){
@@ -1975,11 +1997,11 @@ class Component extends DCLogic {
     var med=this.windowMedians(rws);
     var tblId="teams";
     var list=this.aggTeams(rws);
-    list.forEach(t=>{ t.delta=t.fs-med.fs; });
-    list.sort((a,b)=>b.fs-a.fs);
-    list=this.applyTblSort(list,tblId,(t,col)=>({team:t.team,n:t.n,fs:t.fs,er:t.er,prod:t.prod,delta:t.delta,errs:t.errs}[col]));
+    list.forEach(t=>{ t.delta=t.comb-med.fs; });
+    list.sort((a,b)=>b.comb-a.comb);
+    list=this.applyTblSort(list,tblId,(t,col)=>({team:t.team,n:t.n,fs:t.comb,sp:(t.spFs==null?-1:t.spFs),an:(t.anFs==null?-1:t.anFs),er:t.er,prod:t.prod,delta:t.delta,errs:t.errs}[col]));
     var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
-    var mxFs=Math.max.apply(null,list.map(t=>t.fs).concat([0.0001]));
+    var mxFs=Math.max.apply(null,list.map(t=>t.comb).concat([0.0001]));
     var rowsH=list.map((t,i)=>{
       var rk=i+1, top3=(!hdrSort&&rk<=3);
       var bStyle=top3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)";
@@ -1987,13 +2009,15 @@ class Component extends DCLogic {
       return '<tr><td><span class="rank-badge" style="'+bStyle+'">'+rk+'</span></td>'
         +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></td>'
         +'<td class="r">'+t.n+'</td>'
-        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(t.fs,med.fs)+';font-weight:800">'+this.fs1(t.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,t.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(t.fs,med.fs)+'"></div></div></div></td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(t.comb,med.fs)+';font-weight:800">'+this.fs1(t.comb)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,t.comb/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(t.comb,med.fs)+'"></div></div></div></td>'
+        +'<td class="r c-mut">'+(t.spFs==null?'<span class="c-dash">\u2014</span>':this.fs1(t.spFs))+'</td>'
+        +'<td class="r c-mut">'+(t.anFs==null?'<span class="c-dash">\u2014</span>':this.fs1(t.anFs))+'</td>'
         +'<td class="r" style="color:'+this.erColor(t.er,med.er)+';font-weight:700">'+this.pct(t.er)+'</td>'
         +'<td class="r">'+this.fs1(t.prod)+'</td>'
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
         +'<td class="r" style="color:var(--proc)">'+t.errs.toLocaleString()+'</td></tr>';
     }).join("");
-    return '<div class="card"><div class="card-head">Team leaderboard \u2014 ranked by avg final score (median '+this.fs1(med.fs)+')'+(this.ROLE&&this.st.role?' \u00b7 counting only each team\u2019s '+this.esc(this.st.role)+'s':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,'Team<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">named after its lead</span>',"team")+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Total errors","errs",true,"color:var(--proc)")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    return '<div class="card"><div class="card-head">Team leaderboard \u2014 ranked by avg final score (median '+this.fs1(med.fs)+')'+(this.ROLE&&this.st.role?' \u00b7 counting only each team\u2019s '+this.esc(this.st.role)+'s':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,'Team<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">named after its lead</span>',"team")+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Specialist","sp",true)+this.tblTh(tblId,"Analyst","an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Total errors","errs",true,"color:var(--proc)")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
   }
 
   gotoProfile(login){ var idx=this.S.analysts.indexOf(login); if(idx===-1) return; var role=this.roleOf(login); var team=String(this.S.analyst_team[idx]); this.sel.showAllMistakes=false;
@@ -2795,29 +2819,39 @@ class Component extends DCLogic {
   aggByAM(rws){
     var teamsAgg=this.aggTeams(rws);
     var byAM={}, unmapped=0, unmappedTeams={};
-    teamsAgg.forEach(t=>{ var am=this.amOf(t.team); if(!am){ unmapped+=t.days; unmappedTeams[t.team]=1; return; } if(!byAM[am])byAM[am]={teams:[],days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:0}; var o=byAM[am]; o.teams.push(t); o.days+=t.days; o.sP+=t.prod*t.days; o.sE+=t.er*t.days; o.sF+=t.fs*t.days; o.errs+=t.errs; o.pts+=t.pts; o.mem+=t.n; });
-    var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.fs-a.fs); return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, epd:o.errs/(o.days||1)}; });
+    var self=this;
+    teamsAgg.forEach(t=>{ var am=this.amOf(t.team); if(!am){ unmapped+=t.days; unmappedTeams[t.team]=1; return; } if(!byAM[am])byAM[am]={teams:[],days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:0,spF:0,spN:0,anF:0,anN:0}; var o=byAM[am]; o.teams.push(t); o.days+=t.days; o.sP+=t.prod*t.days; o.sE+=t.er*t.days; o.sF+=t.fs*t.days; o.errs+=t.errs; o.pts+=t.pts; o.mem+=t.n;
+      // Summed from the raw per-role totals, not by averaging the teams'
+      // averages - otherwise a three-person team would weigh the same as a
+      // forty-person one.
+      o.spF+=t.spF; o.spN+=t.spN; o.anF+=t.anF; o.anN+=t.anN; });
+    var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.comb-a.comb);
+      var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
+      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, epd:o.errs/(o.days||1),
+        spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
     return {list:list, unmapped:unmapped, unmappedTeams:Object.keys(unmappedTeams).length};
   }
   pageAMs(rws){
     if(!this.AM) return '<div class="card"><div class="card-head">AM overview</div><div class="card-body"><div class="placeholder-msg" style="text-align:left;padding:26px 8px"><div style="font-family:var(--font-display);font-weight:800;font-size:18px;color:var(--text);margin-bottom:10px">Upload an AM \u2192 team mapping</div><div style="max-width:620px">Provide a CSV of <b>team, account_manager</b> and each AM\u2019s teams will roll up here.</div></div></div></div>';
     if(!rws.length) return '<div class="card"><div class="placeholder-msg">No analyst-day rows in the selected range.</div></div>';
     var r=this.aggByAM(rws);
-    var med={ fs:this.median(r.list.map(a=>a.fs)), er:this.median(r.list.map(a=>a.er)) };
+    var med={ fs:this.median(r.list.map(a=>a.comb)), er:this.median(r.list.map(a=>a.er)) };
     var tblId="ams";
-    r.list.forEach(a=>{ a.delta=a.fs-med.fs; });
+    r.list.forEach(a=>{ a.delta=a.comb-med.fs; });
     var amSort=this.sel.amSort;
-    var list=r.list.sort(amSort==="prodDesc"?(a,b)=>b.prod-a.prod:amSort==="errorAsc"?(a,b)=>a.er-b.er:amSort==="errDayAsc"?(a,b)=>a.epd-b.epd:(a,b)=>b.fs-a.fs);
-    list=this.applyTblSort(list,tblId,(a,col)=>({am:a.am,nTeams:a.nTeams,n:a.n,fs:a.fs,er:a.er,prod:a.prod,delta:a.delta,epd:a.epd,errs:a.errs}[col]));
+    var list=r.list.sort(amSort==="prodDesc"?(a,b)=>b.prod-a.prod:amSort==="errorAsc"?(a,b)=>a.er-b.er:amSort==="errDayAsc"?(a,b)=>a.epd-b.epd:(a,b)=>b.comb-a.comb);
+    list=this.applyTblSort(list,tblId,(a,col)=>({am:a.am,nTeams:a.nTeams,n:a.n,fs:a.comb,sp:(a.spFs==null?-1:a.spFs),an:(a.anFs==null?-1:a.anFs),er:a.er,prod:a.prod,delta:a.delta,epd:a.epd,errs:a.errs}[col]));
     var hdrSort=!!(this.sel.tblSort&&this.sel.tblSort[tblId]);
     if(!list.length) return '<div class="card"><div class="placeholder-msg">No teams in this range map to an AM.</div></div>';
-    var mxFs=Math.max.apply(null,list.map(a=>a.fs).concat([0.0001]));
+    var mxFs=Math.max.apply(null,list.map(a=>a.comb).concat([0.0001]));
     var summaryRows=list.map((a,i)=>{
       var dF=a.delta;
       return '<tr><td><span class="rank-badge" style="'+((!hdrSort&&i<3)?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
         +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="am" data-arg="'+this.esc(a.am)+'">'+this.esc(a.am)+'</button></td>'
         +'<td class="r"><span class="team-count'+(a.nTeams<3?' team-count-lo':'')+'">'+a.nTeams+'</span></td><td class="r">'+a.n+'</td>'
-        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.fs,med.fs)+';font-weight:800">'+this.fs1(a.fs)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.fs/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.fs,med.fs)+'"></div></div></div></td>'
+        +'<td class="r"><div class="ibar-wrap"><span style="color:'+this.fsColor(a.comb,med.fs)+';font-weight:800">'+this.fs1(a.comb)+'</span><div class="ibar-bg"><div class="ibar-fill" style="width:'+Math.min(100,a.comb/mxFs*100).toFixed(1)+'%;background:'+this.fsColor(a.comb,med.fs)+'"></div></div></div></td>'
+        +'<td class="r c-mut">'+(a.spFs==null?'<span class="c-dash">\u2014</span>':this.fs1(a.spFs))+'</td>'
+        +'<td class="r c-mut">'+(a.anFs==null?'<span class="c-dash">\u2014</span>':this.fs1(a.anFs))+'</td>'
         +'<td class="r" style="color:'+this.erColor(a.er,med.er)+';font-weight:700">'+this.pct(a.er)+'</td>'
         +'<td class="r">'+this.fs1(a.prod)+'</td>'
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
@@ -2826,7 +2860,7 @@ class Component extends DCLogic {
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(amSort===v?" selected":"")+'>'+l+'</option>';
     var sortCtrl='<span style="margin-left:auto" class="ctrl-row"><label>Sort</label><select data-act="amsort">'+sortOpt("finalDesc","Final score / analyst \u2193")+sortOpt("prodDesc","Productivity / analyst \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("errDayAsc","Errors / day \u2191 (best)")+'</select></span>';
-    var summary='<div class="card"><div class="card-head">AM leaderboard \u2014 every column is a <b style="color:var(--accent);font-weight:800">&nbsp;per-analyst average&nbsp;</b>, so team size never affects position'+(r.unmappedTeams?'':'')+sortCtrl+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Assistant Manager","am")+this.tblTh(tblId,"Teams","nTeams",true)+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,'Avg final score<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"fs",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,'Avg productivity<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,'Errors / day<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">per analyst</span>',"epd",true,"color:var(--proc)")+this.tblTh(tblId,'Total errors<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">volume only</span>',"errs",true)+'</tr></thead><tbody>'+summaryRows+'</tbody></table></div><div class="note-strip" style="border-top:1px solid var(--border)"><b>Fair-view guarantee:</b> ranking and every column except <b>Total errors</b> are per-analyst-day averages \u2014 independent of team count. <b>Harjaspreet Singh</b> and <b>Faria</b> run 2 teams (amber); the rest run 3, yet both out-rank one or more 3-team AMs on productivity. <b>Total errors</b> is raw volume (naturally larger for more analysts) \u2014 use <b>Errors / day</b> to compare error levels fairly.</div></div>';
+    var summary='<div class="card"><div class="card-head">AM leaderboard \u2014 every column is a <b style="color:var(--accent);font-weight:800">&nbsp;per-analyst average&nbsp;</b>, so team size never affects position'+(r.unmappedTeams?'':'')+sortCtrl+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Assistant Manager","am")+this.tblTh(tblId,"Teams","nTeams",true)+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,'Avg final score<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">specialist &amp; analyst</span>',"fs",true)+this.tblTh(tblId,'Specialist<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"sp",true)+this.tblTh(tblId,'Analyst<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,'Avg productivity<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,'Errors / day<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">per analyst</span>',"epd",true,"color:var(--proc)")+this.tblTh(tblId,'Total errors<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">volume only</span>',"errs",true)+'</tr></thead><tbody>'+summaryRows+'</tbody></table></div><div class="note-strip" style="border-top:1px solid var(--border)"><b>Fair-view guarantee:</b> ranking and every column except <b>Total errors</b> are per-analyst-day averages \u2014 independent of team count. <b>Harjaspreet Singh</b> and <b>Faria</b> run 2 teams (amber); the rest run 3, yet both out-rank one or more 3-team AMs on productivity. <b>Total errors</b> is raw volume (naturally larger for more analysts) \u2014 use <b>Errors / day</b> to compare error levels fairly.</div></div>';
     var cards='<div class="am-grid">'+list.map(a=>{
       var mxTeam=Math.max.apply(null,a.teams.map(t=>t.fs).concat([0.0001]));
       var teamRows=a.teams.map(t=>{ var col=this.fsColor(t.fs,med.fs); return '<div class="am-team"><span class="am-team-name" title="'+this.esc(t.team)+'"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></span><div class="am-team-bar"><div style="width:'+Math.min(100,t.fs/mxTeam*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+col+'"></div></div><span class="am-team-fs" style="color:'+col+'">'+this.fs1(t.fs)+'</span><span class="am-team-er" style="color:'+this.erColor(t.er,med.er)+'">'+this.pct(t.er)+'</span></div>'; }).join("");
