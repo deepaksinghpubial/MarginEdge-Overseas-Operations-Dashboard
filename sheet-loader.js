@@ -952,7 +952,12 @@
     // where losing the user's typing matters most, so it now behaves like the
     // reads. A genuine rejection from the sheet (bad payload) is NOT retried.
     function attempt(n) {
-      return jsonpFull(q, 45000, activeSheetId).catch(function (e) {
+      // 75s, not 45s. Measured on 16 Sep: six requests landed in the same
+      // second and five of them were sheet reads taking 46-77 seconds, while
+      // the save itself finished in 0.869s. The save was not slow - it was
+      // timing out waiting behind them. A save that gives up at 45s cannot
+      // survive a burst that lasts 77s, however fast the save itself is.
+      return jsonpFull(q, 75000, activeSheetId).catch(function (e) {
         if (n >= 2) throw e;
         console.log("[review] save attempt " + (n + 1) + " failed (" + e.message + ") — retrying…");
         return new Promise(function (res) { setTimeout(res, 800 * (n + 1)); }).then(function () { return attempt(n + 1); });
@@ -986,7 +991,7 @@
   // refusing requests. Column projection made each page ~4x smaller and the
   // script-side cache means most requests never touch the sheet, so a lower
   // fan-out costs little and buys a much higher ceiling on concurrent viewers.
-  var PAGE_CONCURRENCY = 3;
+  var PAGE_CONCURRENCY = 2;
 
   // The Mistakes tabs dominate load time, so ask the proxy for ONLY the columns
   // we read, in the compact rows-of-arrays shape. See apps-script-proxy.gs.

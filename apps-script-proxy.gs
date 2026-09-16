@@ -212,7 +212,20 @@ function doGet(e) {
   function send(obj) { return sendRaw(JSON.stringify(obj)); }
 
   // ---- shared response cache ------------------------------------------------
-  var CACHE_TTL = 60;          // seconds; see SHARED CACHE note above
+  // 5 minutes, raised from 60 seconds.
+  //
+  // Measured on 16 Sep: five sheet reads starting in the same second, each
+  // taking 46-77 seconds, while a save in that same second finished in 0.869s.
+  // The saves were not slow, they were starved - and a 60-second cache means
+  // that every minute the first viewer to ask pays that full cost again, with
+  // everyone arriving alongside them missing the cache too and paying it in
+  // parallel.
+  //
+  // Nothing here changes faster than this. Role Details and the rest are edited
+  // occasionally; verdicts reach other people through the snapshot now, not
+  // through this endpoint. The Refresh control still sends nocache=1, so
+  // anyone who wants the sheet read this instant can have it.
+  var CACHE_TTL = 300;         // seconds; see SHARED CACHE note above
   var CACHE_CHUNK = 90000;     // chars per entry (a single entry holds ~100KB)
   var CACHE_MAX_CHUNKS = 40;   // beyond this, skip caching rather than thrash
   var cacheSvc = null;
