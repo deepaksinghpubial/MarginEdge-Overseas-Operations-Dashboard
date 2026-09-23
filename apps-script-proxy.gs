@@ -498,12 +498,16 @@ function doGet(e) {
  * row saved before those columns existed, reading both out of mistake_key.
  * Safe to run more than once - it only writes cells that are currently blank.
  * Run it from the Apps Script editor; it takes a few seconds and needs no
- * arguments. Reports how many rows it repaired.
+ * arguments - it works on the workbook this script is bound to. Pass a file id
+ * to repair an archived month's copy instead. Reports how many rows it fixed.
  */
-function backfillReviewVariables() {
-  var ss = SpreadsheetApp.openById(SHEET_ID);
+function backfillReviewVariables(sheetId) {
+  // Bound script: the workbook is simply the one this project lives in. doGet
+  // does the same thing, falling back to the active spreadsheet unless a
+  // sheetId is passed - which is how an archived month gets read.
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Error Reviews");
-  if (!sh) throw new Error("No 'Error Reviews' tab in " + SHEET_ID);
+  if (!sh) throw new Error("No 'Error Reviews' tab in " + ss.getName());
 
   var COLS = ["review_id", "review_date", "reviewer_username", "reviewer_designation",
     "portal", "mistake_key", "mistake_date", "order_url", "target_login",
