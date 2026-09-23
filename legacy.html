@@ -1324,6 +1324,12 @@ class Component extends DCLogic {
     this.sel.revOpen={
       key:key,
       mistake_date:parts[0]||"",
+      // The key is date|area|variable|analyst|position|order_url, so what was
+      // actually wrong is already here - it just was not being carried through
+      // to the saved row, which left Error Reviews unable to say which variable
+      // a verdict was about.
+      mistake_area:parts[1]||"",
+      variable:parts[2]||"",
       order_url:parts[5]||"",
       target:anName||parts[3]||"",
       reviewer:rv?rv.reviewer_username:"",
@@ -1444,7 +1450,9 @@ class Component extends DCLogic {
       target_login:o.target,
       target_designation:this.designationOf(o.target),
       verdict:o.verdict,
-      remarks:o.remarks||""
+      remarks:o.remarks||"",
+      variable:o.variable||"",
+      mistake_area:o.mistake_area||""
     };
     if(typeof window.__QA_SAVE_REVIEW!=="function"){
       this.sel.revError="Saving needs the updated Apps Script deployment — the review was not stored.";

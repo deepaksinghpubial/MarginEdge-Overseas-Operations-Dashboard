@@ -1438,12 +1438,40 @@ class Component extends DCLogic {
     return (this.ROSTER||[]).filter(function(x){ return self.canReview(x.d); });
   }
 
+  // Which portal an error belongs to, read off the record the key came from.
+  // Falls back to "split" rather than guessing, so a key we cannot match is
+  // visibly unresolved instead of quietly filed under the wrong portal.
+  portalOfKey(key){
+    var Q=this.Q; if(!Q) return "split";
+    var m=this.mistKeys();
+    if(m) for(var i=0;i<Q.records.length;i++){
+      var rec=Q.records[i];
+      if(m.get(rec)===key) return Q.records[i][this.QF.PORTAL]||"split";
+    }
+    var base=String(key).split("|").slice(0,6).join("|");
+    for(var j=0;j<Q.records.length;j++){
+      if(this.mistKeyBase(Q.records[j])===base) return Q.records[j][this.QF.PORTAL]||"split";
+    }
+    return "split";
+  }
   openReview(key,anName){
     var rv=this.reviewMap()[key]||null;
     var parts=String(key).split("|");
     this.sel.revOpen={
       key:key,
       mistake_date:parts[0]||"",
+      // The key is date|area|variable|analyst|position|order_url, so what was
+      // actually wrong is already here - it just was not being carried through
+      // to the saved row, which left Error Reviews unable to say which variable
+      // a verdict was about.
+      mistake_area:parts[1]||"",
+      variable:parts[2]||"",
+      // This page shows both portals, so "which portal" is a property of the
+      // ERROR, not of the page. It used to save the page name, stamping every
+      // verdict taken here as portal "split" - 1,190 of them by Sep 2026, all
+      // of them in fact Legacy errors, and none of them findable by anyone
+      // filtering Error Reviews for the portal they work in.
+      portal:this.portalOfKey(key),
       order_url:parts[5]||"",
       target:anName||parts[3]||"",
       reviewer:rv?rv.reviewer_username:"",
@@ -1557,14 +1585,16 @@ class Component extends DCLogic {
       review_date:this.todayISO(),
       reviewer_username:o.reviewer,
       reviewer_designation:this.designationOf(o.reviewer)||(function(rs,u){ for(var i=0;i<rs.length;i++) if(String(rs[i].u).toLowerCase()===String(u).toLowerCase()) return rs[i].d||""; return ""; })(this.ROSTER||[],o.reviewer),
-      portal:(window.__SHEET_TARGET||"legacy"),
+      portal:o.portal||(window.__SHEET_TARGET||"legacy"),
       mistake_key:o.key,
       mistake_date:o.mistake_date,
       order_url:o.order_url,
       target_login:o.target,
       target_designation:this.designationOf(o.target),
       verdict:o.verdict,
-      remarks:o.remarks||""
+      remarks:o.remarks||"",
+      variable:o.variable||"",
+      mistake_area:o.mistake_area||""
     };
     if(typeof window.__QA_SAVE_REVIEW!=="function"){
       this.sel.revError="Saving needs the updated Apps Script deployment — the review was not stored.";

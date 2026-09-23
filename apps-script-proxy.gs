@@ -289,9 +289,22 @@ function doGet(e) {
   // dashboard does not send is written blank rather than omitted, so the tab
   // stays rectangular and readable.
   var REVIEW_TAB = "Error Reviews";
+  // variable and mistake_area were APPENDED in Sep 2026 rather than inserted
+  // beside mistake_key, because thousands of rows already exist: appending lets
+  // old rows stay valid (blank in the new columns) and be backfilled in place,
+  // whereas inserting would shift every stored value one column to the right.
   var REVIEW_COLS = ["review_id", "review_date", "reviewer_username", "reviewer_designation",
     "portal", "mistake_key", "mistake_date", "order_url", "target_login",
-    "target_designation", "verdict", "remarks", "logged_at"];
+    "target_designation", "verdict", "remarks", "logged_at", "variable", "mistake_area"];
+
+  // The variable and the area are the 3rd and 2nd segments of mistake_key, so a
+  // row saved before those columns existed can be repaired without the dashboard.
+  // Used both to backfill history and as a fallback when a save arrives from a
+  // tab that has not been hard-refreshed since the change.
+  function partsOfKey(mk) {
+    var seg = String(mk || "").split("|");
+    return { area: seg[1] || "", variable: seg[2] || "" };
+  }
 
   function reviewSheet() {
     var sh = ss.getSheetByName(REVIEW_TAB);
@@ -300,6 +313,13 @@ function doGet(e) {
       sh.appendRow(REVIEW_COLS);
       sh.setFrozenRows(1);
       sh.getRange(1, 1, 1, REVIEW_COLS.length).setFontWeight("bold");
+      return sh;
+    }
+    // A tab created before a column was added is one header short, so the first
+    // appendRow would land its new values under no heading at all. Widen it once.
+    var hdr = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    if (hdr.length < REVIEW_COLS.length) {
+      sh.getRange(1, 1, 1, REVIEW_COLS.length).setValues([REVIEW_COLS]).setFontWeight("bold");
     }
     return sh;
   }
@@ -343,7 +363,11 @@ function doGet(e) {
       target_designation: String(p.target_designation || ""),
       verdict: String(p.verdict || ""),
       remarks: String(p.remarks || ""),
-      logged_at: Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss")
+      logged_at: Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss"),
+      // Sent by the dashboard; recovered from the key when an older tab does not
+      // send them, so a stale browser cannot write a row with a blank variable.
+      variable: String(p.variable || partsOfKey(mk).variable),
+      mistake_area: String(p.mistake_area || partsOfKey(mk).area)
     };
     var rowVals = REVIEW_COLS.map(function (c) { return rec[c]; });
 
@@ -467,4 +491,39 @@ function doGet(e) {
   var body = JSON.stringify({ tabs: out, tabNames: Object.keys(out), totals: totals, offset: offset, limit: limit, generated: new Date().toISOString() });
   cacheWrite(ckey, body);
   return sendRaw(body);
+}
+
+/**
+ * ONE-OFF. Fills the variable and mistake_area columns on every Error Reviews
+ * row saved before those columns existed, reading both out of mistake_key.
+ * Safe to run more than once - it only writes cells that are currently blank.
+ * Run it from the Apps Script editor; it takes a few seconds and needs no
+ * arguments. Reports how many rows it repaired.
+ */
+function backfillReviewVariables() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sh = ss.getSheetByName("Error Reviews");
+  if (!sh) throw new Error("No 'Error Reviews' tab in " + SHEET_ID);
+
+  var COLS = ["review_id", "review_date", "reviewer_username", "reviewer_designation",
+    "portal", "mistake_key", "mistake_date", "order_url", "target_login",
+    "target_designation", "verdict", "remarks", "logged_at", "variable", "mistake_area"];
+  sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight("bold");
+
+  var last = sh.getLastRow();
+  if (last < 2) return "Nothing to backfill - the tab is empty.";
+
+  var keyCol = COLS.indexOf("mistake_key") + 1;
+  var varCol = COLS.indexOf("variable") + 1;
+  var keys = sh.getRange(2, keyCol, last - 1, 1).getValues();
+  var cur = sh.getRange(2, varCol, last - 1, 2).getValues();
+
+  var filled = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var seg = String(keys[i][0] || "").split("|");
+    if (!cur[i][0]) { cur[i][0] = seg[2] || ""; if (seg[2]) filled++; }
+    if (!cur[i][1]) { cur[i][1] = seg[1] || ""; }
+  }
+  sh.getRange(2, varCol, cur.length, 2).setValues(cur);
+  return "Backfilled the variable on " + filled + " of " + keys.length + " rows.";
 }

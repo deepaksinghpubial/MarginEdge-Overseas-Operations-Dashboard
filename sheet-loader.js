@@ -218,7 +218,12 @@
         target_login: String(r.target_login || ""),
         target_designation: String(r.target_designation || ""),
         verdict: String(r.verdict || ""),
-        remarks: String(r.remarks || "")
+        remarks: String(r.remarks || ""),
+        // Added Sep 2026 so a verdict carries what was wrong, not just which
+        // order. Older rows have neither column, so fall back to the key, whose
+        // 2nd and 3rd segments are the area and the variable.
+        variable: String(r.variable || String(r.mistake_key || "").split("|")[2] || ""),
+        mistake_area: String(r.mistake_area || String(r.mistake_key || "").split("|")[1] || "")
       };
     }).filter(function (r) { return r.mistake_key; });
   }
@@ -940,7 +945,7 @@
     var q = "action=saveReview";
     ["review_id", "review_date", "reviewer_username", "reviewer_designation", "portal",
       "mistake_key", "mistake_date", "order_url", "target_login", "target_designation",
-      "verdict", "remarks"].forEach(function (k) {
+      "verdict", "remarks", "variable", "mistake_area"].forEach(function (k) {
         if (rec[k] != null && rec[k] !== "") q += "&" + k + "=" + encodeURIComponent(String(rec[k]));
       });
     // Retry, with a pause between attempts.
