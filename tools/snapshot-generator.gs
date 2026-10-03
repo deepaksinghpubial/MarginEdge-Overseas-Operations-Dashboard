@@ -918,6 +918,54 @@ function githubPutMany(files, message, deletePaths) {
 }
 
 /**
+ * Drops any month whose files are all missing from the repo.
+ *
+ * A month in the manifest is a promise that its data is there to load. Two
+ * things have broken that promise: a guessed file list for a month nobody ever
+ * archived, and - once the calendar bug made October current while the sheet
+ * held September - an entire month that never existed. Either way the dropdown
+ * offers something that fails to load, which reads as a broken dashboard
+ * rather than a missing month.
+ *
+ * Checking is one directory listing, the same call stalePartFiles already
+ * makes. The month being written is never pruned: its files are in the same
+ * commit and are not on GitHub yet.
+ */
+function pruneMissingMonths(manifest, keepKey) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(DATA_DIR) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) {
+    Logger.log("Could not list " + DATA_DIR + " - leaving the manifest alone.");
+    return;
+  }
+  var listing;
+  try { listing = JSON.parse(res.getContentText()); } catch (e) { return; }
+  if (!listing || !listing.length) return;
+
+  var there = {};
+  for (var i = 0; i < listing.length; i++) there[DATA_DIR + "/" + listing[i].name] = 1;
+
+  var kept = [], gone = [];
+  for (var m = 0; m < manifest.months.length; m++) {
+    var mon = manifest.months[m];
+    if (mon.key === keepKey) { kept.push(mon); continue; }
+    var paths = [], f = mon.files || {};
+    for (var p in f) paths = paths.concat(f[p] instanceof Array ? f[p] : [f[p]]);
+    var any = false;
+    for (var q = 0; q < paths.length; q++) if (there[paths[q]]) { any = true; break; }
+    if (any) kept.push(mon); else gone.push(mon.key);
+  }
+  if (gone.length) {
+    Logger.log("Removed from the month dropdown - no data files in the repo: " + gone.join(", "));
+    manifest.months = kept;
+  }
+}
+
+/**
  * The manifest is what the dashboard's month dropdown is built from. It is
  * read-modify-written so archiving a month never drops the others.
  */
@@ -970,6 +1018,8 @@ function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
   }
   var entry = { key: monthKey, label: monthLabel(monthKey),
                 files: files, lastUpdated: lastUpdated, live: !!isCurrent };
+
+  pruneMissingMonths(manifest, monthKey);
 
   var found = false;
   for (var i = 0; i < manifest.months.length; i++) {
