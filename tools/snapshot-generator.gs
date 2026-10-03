@@ -457,6 +457,19 @@ function installPoller(everyMinutes) {
 /** The daily safety net: publishes whether or not the shape changed. */
 function dailyForcePublish() { return checkAndPublish(true); }
 
+/**
+ * Republish the live tabs even if that month is already archived.
+ *
+ * The one deliberate way past the guard in buildAndPublish. Reach for it only
+ * when the archive itself is what is wrong and you mean to overwrite the
+ * month's entry with whatever the live tabs hold.
+ */
+function forcePublishArchivedMonth() {
+  var m = liveMonthKey();
+  Logger.log("Republishing " + monthLabel(m) + " from the live tabs, archived or not.");
+  return buildAndPublish({ publish: true, force: true });
+}
+
 /** Read-only: what the poller can see right now, and whether it would publish. */
 function pollerStatus() {
   var shape = sheetShape();
@@ -542,6 +555,24 @@ function buildAndPublish(opts) {
   opts = opts || {};
   var started = new Date();
   var monthKey = liveMonthKey();
+
+  // A month that has been ARCHIVED is finished. If the live tabs still hold it,
+  // the new month simply has not been pasted yet - and publishing anyway does
+  // real damage: buildManifest rewrites that month's entry as the live one,
+  // pointing it back at the -current files and throwing away the link to its
+  // frozen copy. Every fifteen minutes, silently, undoing whatever was just
+  // put right by hand.
+  //
+  // So: stop, and say why. Nothing is published until the new month is in the
+  // sheet, which is the only thing that actually resolves it.
+  if (!opts.force && isArchived(monthKey)) {
+    var stop = "Not publishing. " + monthLabel(monthKey) + " is already archived, " +
+      "and the live tabs still hold it - paste the new month first. " +
+      "(dailyForcePublish overrides this if you really mean to republish.)";
+    Logger.log(stop);
+    return { summary: { skipped: true, month: monthKey, reason: stop }, json: null };
+  }
+
   var built, json;
 
   try {
@@ -1073,6 +1104,34 @@ function githubPutMany(files, message, deletePaths) {
   Logger.log("GitHub: committed " + Object.keys(files).length + " file(s)" +
     ((deletePaths && deletePaths.length) ? " and removed " + deletePaths.length : "") +
     " as " + commit.sha.slice(0, 7) + " - one commit, so one deploy.");
+}
+
+/**
+ * Has this month already been frozen? True when the manifest holds an entry
+ * for it that is not live and names its "-<monthKey>" files.
+ */
+function isArchived(monthKey) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(MANIFEST_PATH) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) return false;
+  try {
+    var body = JSON.parse(res.getContentText());
+    var man = JSON.parse(Utilities.newBlob(Utilities.base64Decode(body.content)).getDataAsString());
+    var months = man.months || [];
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].key !== monthKey || months[i].live) continue;
+      var f = months[i].files || {}, paths = [];
+      for (var p in f) paths = paths.concat(f[p] instanceof Array ? f[p] : [f[p]]);
+      for (var q = 0; q < paths.length; q++) {
+        if (String(paths[q]).indexOf("-" + monthKey) >= 0) return true;
+      }
+    }
+  } catch (e) { return false; }
+  return false;
 }
 
 /**
