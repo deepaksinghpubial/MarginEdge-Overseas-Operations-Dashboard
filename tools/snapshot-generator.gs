@@ -148,11 +148,29 @@ function archiveAug2026() {
  * September label.
  */
 function archiveSep2026() {
-  var r = archiveMonth("2026-09");
+  var r = archiveMonthWithCopy("2026-09");
   Logger.log("");
   Logger.log("September 2026 is frozen. Check the month dropdown on the dashboard,");
   Logger.log("then paste October over the live tabs.");
   return r;
+}
+
+/**
+ * Close whatever month the live sheet is holding. No arguments, so it can be
+ * picked from the Run menu and pressed.
+ *
+ * The Run button calls a function with NO arguments, so anything that needs a
+ * month key cannot be run that way - archiveMonthWithCopy picked from the menu
+ * would be handed undefined and throw. Hence this, and the named wrappers
+ * above: every entry point you can actually press takes nothing.
+ *
+ * Use it from November onwards. The month comes from the data, so there is no
+ * date to keep in step with the calendar.
+ */
+function archiveThisMonth() {
+  var m = liveMonthKey();
+  Logger.log("Closing " + monthLabel(m) + " from the live sheet.");
+  return archiveMonthWithCopy(m);
 }
 
 /**
