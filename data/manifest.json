@@ -6,19 +6,19 @@
       "label": "September 2026",
       "files": {
         "core": [
-          "data/core-2026-09.json"
+          "data/core-current.json"
         ],
         "legacy": [
-          "data/legacy-2026-09.json"
+          "data/legacy-current.json"
         ],
         "ipa": [
-          "data/ipa-2026-09.1.json",
-          "data/ipa-2026-09.2.json",
-          "data/ipa-2026-09.3.json"
+          "data/ipa-current.1.json",
+          "data/ipa-current.2.json",
+          "data/ipa-current.3.json"
         ]
       },
-      "lastUpdated": "2026-10-02T22:11:12-07:00",
-      "live": false
+      "lastUpdated": "2026-10-02T22:44:22-07:00",
+      "live": true
     },
     {
       "key": "2026-08",
@@ -64,5 +64,5 @@
     }
   ],
   "current": "2026-09",
-  "updated": "2026-10-02T22:11:12-07:00"
+  "updated": "2026-10-02T22:44:22-07:00"
 }
