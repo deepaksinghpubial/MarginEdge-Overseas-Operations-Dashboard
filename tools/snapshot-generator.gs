@@ -155,6 +155,98 @@ function archiveSep2026() {
   return r;
 }
 
+/**
+ * Moves every review that does not belong to the live month out of the
+ * "Error Reviews" tab and into a tab of its own, one per month.
+ *
+ * WHY THE TAB FILLS UP
+ *
+ * The dashboard appends each verdict to one running log - it has no idea which
+ * month is "open", and a reviewer correcting a verdict needs to find the row
+ * wherever it is. The SNAPSHOT is trimmed by mistake_date, so the dashboard
+ * has always shown the right month; the TAB simply kept everything. By the
+ * October paste it held 18,445 September rows the live month has no use for.
+ *
+ * Nothing is deleted. Rows move to "Error Reviews 2026-09" and so on, in the
+ * same workbook, so a month's verdicts stay with the month's data when the
+ * workbook is copied for archiving. Once a month's snapshot is published and
+ * checked, its tab can be deleted by hand.
+ *
+ * Run it AFTER archiving the outgoing month and AFTER pasting the new one, so
+ * liveMonthKey() reports the month you mean to keep. It takes the same lock
+ * saveReview uses, so a verdict being saved at that moment cannot be lost.
+ *
+ * Rows whose mistake_date cannot be read are KEPT. An unreadable date gives no
+ * basis for filing a row anywhere, and losing somebody's review is worse than
+ * a few strays.
+ */
+function trimReviewsToLiveMonth() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Error Reviews");
+  if (!sh) return "No 'Error Reviews' tab - nothing to do.";
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch (e) { throw new Error("The sheet is busy with saves - try again in a moment."); }
+
+  try {
+    var last = sh.getLastRow(), width = sh.getLastColumn();
+    if (last < 2) return "'Error Reviews' is empty - nothing to do.";
+
+    var vals = sh.getRange(1, 1, last, width).getValues();
+    var disp = sh.getRange(1, 1, last, width).getDisplayValues();
+    var hdr = vals[0];
+    var di = -1;
+    for (var h = 0; h < hdr.length; h++) {
+      if (String(hdr[h]).trim() === "mistake_date") { di = h; break; }
+    }
+    if (di < 0) throw new Error("'Error Reviews' has no mistake_date column.");
+
+    var month = liveMonthKey();
+    var keep = [], byMonth = {}, undated = 0;
+
+    for (var r = 1; r < vals.length; r++) {
+      // The displayed text, not the cell value: Sheets turns "2026-09-14" into
+      // a Date on paste, and a Date stringifies to "Mon Sep 14 2026 ...", whose
+      // first seven characters are "Mon Sep" - which matches no month at all.
+      var ym = String(disp[r][di] || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(ym)) { keep.push(vals[r]); undated++; continue; }
+      if (ym === month) { keep.push(vals[r]); continue; }
+      (byMonth[ym] = byMonth[ym] || []).push(vals[r]);
+    }
+
+    var moved = 0, where = [];
+    for (var m in byMonth) {
+      var name = "Error Reviews " + m;
+      var dest = ss.getSheetByName(name);
+      if (!dest) {
+        dest = ss.insertSheet(name);
+        dest.getRange(1, 1, 1, width).setValues([hdr]).setFontWeight("bold");
+        dest.setFrozenRows(1);
+      }
+      var rows = byMonth[m];
+      dest.getRange(dest.getLastRow() + 1, 1, rows.length, width).setValues(rows);
+      moved += rows.length;
+      where.push(m + ": " + rows.length);
+    }
+
+    if (moved) {
+      sh.getRange(2, 1, last - 1, width).clearContent();
+      if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
+    }
+
+    var msg = "Error Reviews: kept " + keep.length + " for " + month +
+      (moved ? ", moved " + moved + " to their own tabs (" + where.join(", ") + ")"
+             : ", nothing to move") +
+      (undated ? ", kept " + undated + " with an unreadable date" : "") + ".";
+    Logger.log(msg);
+    try { ss.toast(msg, "Error Reviews", 10); } catch (e2) {}
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** Attach the daily time-driven trigger to this one. */
 function dailySnapshot() {
   return buildAndPublish({ publish: true });
