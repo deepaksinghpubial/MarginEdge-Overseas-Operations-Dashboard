@@ -156,6 +156,45 @@ function archiveSep2026() {
 }
 
 /**
+ * Takes a permanent copy of the live workbook, then archives the month FROM
+ * that copy. This is the right way to close a month.
+ *
+ * The snapshot records the id of the workbook it read, and the dashboard's
+ * "Open sheet" link uses it. Archive straight from the live book and that id
+ * is the LIVE book's - correct on the day, and wrong from the moment the next
+ * month is pasted over it. September's archive points at a workbook now full
+ * of October, which is exactly how that goes.
+ *
+ * Reading from a copy instead means the link points at a workbook that still
+ * holds the month it claims to. The copy is the month's permanent record.
+ *
+ * Run it BEFORE pasting the new month, while the live tabs still hold the old
+ * one. The first run asks for Drive permission, which is new - copying a file
+ * is not something this script needed before.
+ */
+function archiveMonthWithCopy(monthKey) {
+  var live = SpreadsheetApp.getActiveSpreadsheet();
+  var have = liveMonthKey();
+  if (have !== monthKey) {
+    throw new Error("The live sheet holds " + have + ", not " + monthKey +
+      ". Copying it now would file " + have + "'s rows as " + monthKey + ".");
+  }
+
+  var name = live.getName() + " \u2014 " + monthLabel(monthKey);
+  var copy = DriveApp.getFileById(live.getId()).makeCopy(name);
+  var id = copy.getId();
+  Logger.log("Copied the live workbook to \"" + name + "\"");
+  Logger.log("  id: " + id);
+  Logger.log("  " + copy.getUrl());
+
+  var r = archiveMonth(monthKey, id);
+  Logger.log("");
+  Logger.log(monthKey + " is frozen, and the dashboard's \"Open sheet\" link now");
+  Logger.log("points at that copy rather than at the live workbook.");
+  return r;
+}
+
+/**
  * Moves every review that does not belong to the live month out of the
  * "Error Reviews" tab and into a tab of its own, one per month.
  *
@@ -457,7 +496,16 @@ function archiveMonth(monthKey, sheetId) {
     throw new Error('archiveMonth needs a month like "2026-08"');
   }
   var built = buildSnapshot(monthKey, sheetId);
-  if (sheetId) Logger.log("Reading from archived workbook " + sheetId);
+  if (sheetId) {
+    Logger.log("Reading from archived workbook " + sheetId);
+  } else {
+    // Worth saying every time. The data frozen here is right; it is the link
+    // beside it that goes stale, silently, as soon as the next month lands.
+    Logger.log("NOTE: reading the LIVE workbook, so the dashboard's \"Open sheet\"");
+    Logger.log("link for " + monthKey + " will point at it - and will show whatever");
+    Logger.log("month is pasted there next. archiveMonthWithCopy(\"" + monthKey +
+               "\") avoids that by archiving from a permanent copy.");
+  }
   var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/false);
   w.files[MANIFEST_PATH] = JSON.stringify(
     buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false, w.fileMap), null, 2);
