@@ -131,6 +131,30 @@ function archiveAug2026() {
   return r;
 }
 
+/**
+ * Freeze September 2026 from the live workbook.
+ *
+ * Same shape as archiveAug2026: no spreadsheet id, because September IS still
+ * in the live tabs. Run it BEFORE pasting October over them.
+ *
+ * It was never run at the start of October, which is why the month dropdown
+ * offers a September that will not load - the manifest names three files that
+ * were never written. This writes them, and the next publish repairs the
+ * manifest entry to match.
+ *
+ * Running it twice is harmless; it overwrites the same files with the same
+ * rows. Running it AFTER October is pasted is not - there would be no
+ * September left to read, and it would archive October's rows under a
+ * September label.
+ */
+function archiveSep2026() {
+  var r = archiveMonth("2026-09");
+  Logger.log("");
+  Logger.log("September 2026 is frozen. Check the month dropdown on the dashboard,");
+  Logger.log("then paste October over the live tabs.");
+  return r;
+}
+
 /** Attach the daily time-driven trigger to this one. */
 function dailySnapshot() {
   return buildAndPublish({ publish: true });
@@ -323,6 +347,20 @@ function dryRunSnapshot() {
  * numbers labelled as July, and nothing downstream could tell.
  */
 function archiveMonth(monthKey, sheetId) {
+  // Refuse to archive a month the sheet is not actually holding.
+  //
+  // The damage from getting this wrong is permanent and quiet: the rows in the
+  // tabs get frozen under whatever label was asked for, and the real month's
+  // figures are gone once they are pasted over. Checking costs one read.
+  if (!sheetId) {
+    var have = liveMonthKey();
+    if (have !== monthKey) {
+      throw new Error("The live sheet holds " + have + ", not " + monthKey +
+        ". Archiving now would freeze " + have + "'s rows under a " + monthKey +
+        " label. If " + monthKey + " has already been pasted over, archive it " +
+        "from its own workbook instead: archiveMonth(\"" + monthKey + "\", \"<spreadsheet id>\").");
+    }
+  }
   if (!/^\d{4}-\d{2}$/.test(String(monthKey || ""))) {
     throw new Error('archiveMonth needs a month like "2026-08"');
   }
@@ -345,7 +383,7 @@ function archiveMonth(monthKey, sheetId) {
 function buildAndPublish(opts) {
   opts = opts || {};
   var started = new Date();
-  var monthKey = currentMonthKey();
+  var monthKey = liveMonthKey();
   var built, json;
 
   try {
@@ -907,12 +945,31 @@ function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
     Object.keys(PARTS).forEach(function (p) { f[p] = partFileName(p, mKey, live); });
     return f;
   }
-  // fileMap comes from writePartFiles and may list SEVERAL files per part when a
-  // month was too large for one upload. Fall back to the single-file naming when
-  // it is absent (e.g. rewriting an older entry).
+  // fileMap comes from writePartFiles and lists the files this run actually
+  // wrote - several per part when a month was too large for one upload.
+  //
+  // Without one, the old code called fileSet() to GUESS the names. That is how
+  // the dashboard came to offer a September archive whose three files had never
+  // been written: October's first publish rewrote September's entry, guessed
+  // "data/core-2026-09.json" and friends, and the dropdown pointed at nothing.
+  // A guess is worse than a gap here - a missing month is visible, a month that
+  // fails to load looks like a broken dashboard.
+  //
+  // So: use what was written. Failing that, keep whatever the existing entry
+  // already names, since those files at least existed once. Only invent names
+  // as a last resort, and say so in the log.
+  var prior = null;
+  for (var pi = 0; pi < manifest.months.length; pi++) {
+    if (manifest.months[pi].key === monthKey) prior = manifest.months[pi];
+  }
+  var files = fileMap || (prior && prior.files);
+  if (!files) {
+    files = fileSet(monthKey, !!isCurrent);
+    Logger.log("WARNING: no file list for " + monthKey + " - naming files by " +
+               "convention. Check they exist: " + JSON.stringify(files));
+  }
   var entry = { key: monthKey, label: monthLabel(monthKey),
-                files: fileMap || fileSet(monthKey, !!isCurrent),
-                lastUpdated: lastUpdated, live: !!isCurrent };
+                files: files, lastUpdated: lastUpdated, live: !!isCurrent };
 
   var found = false;
   for (var i = 0; i < manifest.months.length; i++) {
@@ -961,6 +1018,56 @@ function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
 function currentMonthKey() {
   var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
   return Utilities.formatDate(new Date(), tz, "yyyy-MM");
+}
+
+/**
+ * The month the LIVE SHEET actually holds, read from the dates in it.
+ *
+ * This used to be currentMonthKey() - the calendar month - and the two are not
+ * the same thing. Ops paste a month's data and it stays there until the next
+ * month's figures are ready, which is days into the new month. At 00:00 on
+ * 1 October the publisher started labelling the snapshot "October 2026" while
+ * the sheet still held every row of September, and three things followed:
+ *
+ *   - the dashboard offered "October 2026" showing September's numbers
+ *   - buildManifest wrote a September archive entry naming files that no
+ *     archive run had ever created, so picking September broke
+ *   - worst, buildSnapshot trims Error Reviews to the month being built, so
+ *     every September verdict was dropped. The live snapshot went to ZERO
+ *     reviews and nobody was told.
+ *
+ * Taking the month from the data means the label changes when the data does,
+ * which is the only moment it should. The calendar is kept as a fallback for
+ * an empty sheet, where there is nothing else to go on.
+ */
+function liveMonthKey() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var counts = {}, best = null;
+
+  ["Legacy Productivity", "IPA Productivity"].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return;
+    var last = sh.getLastRow();
+    if (last < 2) return;
+    var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var di = hdr.indexOf("completed_date");
+    if (di < 0) return;
+    var vals = sh.getRange(2, di + 1, last - 1, 1).getDisplayValues();
+    for (var i = 0; i < vals.length; i++) {
+      var ym = String(vals[i][0] || "").slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) counts[ym] = (counts[ym] || 0) + 1;
+    }
+  });
+
+  for (var k in counts) if (!best || counts[k] > counts[best]) best = k;
+  if (!best) {
+    Logger.log("No readable dates in the productivity tabs - falling back to the calendar month.");
+    return currentMonthKey();
+  }
+  var spread = Object.keys(counts).length;
+  Logger.log("Live sheet holds " + best + " (" + counts[best] + " rows)" +
+    (spread > 1 ? " - NOTE: " + spread + " months present, " + JSON.stringify(counts) : ""));
+  return best;
 }
 
 function monthLabel(monthKey) {
