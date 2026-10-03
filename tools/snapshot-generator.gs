@@ -918,6 +918,34 @@ function githubPutMany(files, message, deletePaths) {
 }
 
 /**
+ * Re-points the month that USED to be live at its own archived files.
+ *
+ * A live month is served from the "-current" files, which are overwritten by
+ * every publish. The moment a new month becomes current, those files stop
+ * holding the old month's data - so an entry left pointing at them would show
+ * the NEW month's figures under the OLD month's name. Nothing would error;
+ * the dashboard would simply be wrong, and plausibly so.
+ *
+ * So the outgoing month is switched to its frozen "-<monthKey>" files. If it
+ * was never archived there is nothing to switch to, and pruneMissingMonths
+ * removes it a moment later - a missing month being far better than a month
+ * showing somebody else's numbers.
+ */
+function demotePreviousCurrent(manifest, incomingKey) {
+  for (var i = 0; i < manifest.months.length; i++) {
+    var m = manifest.months[i];
+    if (!m.live || m.key === incomingKey) continue;
+    var frozen = {};
+    Object.keys(PARTS).forEach(function (p) {
+      frozen[p] = partFileName(p, m.key, /*isCurrent=*/false);
+    });
+    Logger.log(m.key + " is no longer the live month - pointing it at its archive files.");
+    m.files = frozen;
+    m.live = false;
+  }
+}
+
+/**
  * Drops any month whose files are all missing from the repo.
  *
  * A month in the manifest is a promise that its data is there to load. Two
@@ -1019,6 +1047,7 @@ function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
   var entry = { key: monthKey, label: monthLabel(monthKey),
                 files: files, lastUpdated: lastUpdated, live: !!isCurrent };
 
+  if (isCurrent) demotePreviousCurrent(manifest, monthKey);
   pruneMissingMonths(manifest, monthKey);
 
   var found = false;
