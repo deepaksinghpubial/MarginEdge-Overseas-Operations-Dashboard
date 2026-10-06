@@ -963,9 +963,15 @@
       // timing out waiting behind them. A save that gives up at 45s cannot
       // survive a burst that lasts 77s, however fast the save itself is.
       return jsonpFull(q, 75000, activeSheetId).catch(function (e) {
-        if (n >= 2) throw e;
-        console.log("[review] save attempt " + (n + 1) + " failed (" + e.message + ") — retrying…");
-        return new Promise(function (res) { setTimeout(res, 800 * (n + 1)); }).then(function () { return attempt(n + 1); });
+        if (n >= 3) throw e;
+        // 2s, 5s, then 10s. The old 0.8s and 1.6s gave up inside three
+        // seconds, which is nothing against a burst: the point of a retry here
+        // is to come back AFTER whatever filled the execution budget has
+        // drained, and bursts last tens of seconds, not milliseconds.
+        var wait = [2000, 5000, 10000][n] || 10000;
+        console.log("[review] save attempt " + (n + 1) + " failed (" + e.message +
+                    ") — retrying in " + (wait / 1000) + "s…");
+        return new Promise(function (res) { setTimeout(res, wait); }).then(function () { return attempt(n + 1); });
       });
     }
     return attempt(0).then(function (j) {
@@ -1398,9 +1404,14 @@
       applySnapshot_(snap, monthKey, entry && entry.live);
       lsSet("snap_" + (snap.month || monthKey || "current"), { v: SNAPSHOT_VERSION, ts: Date.now(), snap: snap });
       console.log("[snapshot] fetched " + urls.length + " part(s): " + want.join(" + "));
-      // Verdicts recorded since the snapshot ran would otherwise be invisible
-      // until tomorrow.
-      refreshCoreLive("after snapshot load", false);
+      // Deliberately NOT a live read of the reference tabs here.
+      //
+      // One per page load sounds harmless until four hundred people have the
+      // dashboard open. The snapshot already carries roles, locations, teams
+      // and FR, at most fifteen minutes old; a live read buys those fifteen
+      // minutes and spends a slice of the same execution budget that saves
+      // depend on. Anyone who needs it now has the Refresh button, which does
+      // exactly this on demand.
       return true;
     });
   }
@@ -1477,8 +1488,19 @@
         if (!want) return;
         var have = window.__QA_SNAPSHOT && window.__QA_SNAPSHOT.lastUpdated;
         if (have && want.lastUpdated && want.lastUpdated === have) {
-          // Snapshot unchanged, but reviews move all day - pick those up.
-          refreshCoreLive("5-minute poll", false);
+          // Nothing new published, and nothing to do about it.
+          //
+          // This used to call the web app for the four reference tabs, every
+          // five minutes, in every open dashboard. Fifty tabs open across the
+          // floor is fifty requests per five minutes, against a web app that
+          // allows 30 simultaneous executions ACROSS ALL VIEWERS because it
+          // runs as its owner. Reviewers were competing with a background poll
+          // they had no idea was running, and losing: a refused request is
+          // exactly what "JSONP failed to load" looks like on a save.
+          //
+          // The reference tabs barely change, and the snapshot carries them
+          // anyway - every fifteen minutes, over the CDN, costing the web app
+          // nothing. Freshness in between is worth less than a save that works.
           return;
         }
         console.log("[snapshot] newer data published (" + want.lastUpdated + ") — reloading");
