@@ -975,17 +975,101 @@
       });
     }
     return attempt(0).then(function (j) {
+      // The sheet answered and said no. A bad payload is not a transport
+      // problem and queueing it would only retry the same rejection forever.
       if (!j || !j.ok) throw new Error((j && j.error) || "the sheet rejected the save");
-      var saved = j.review || rec;
-      window.REVIEWS = window.REVIEWS || []; bumpReviews();
-      var i = window.REVIEWS.findIndex
-        ? window.REVIEWS.findIndex(function (r) { return r.mistake_key === saved.mistake_key; })
-        : -1;
-      if (i >= 0) window.REVIEWS[i] = saved; else window.REVIEWS.push(saved);
-      bumpReviews();
-      return { ok: true, review: saved, updated: !!j.updated };
+      mirrorReview(j.review || rec);
+      dequeue(rec.mistake_key);
+      return { ok: true, review: j.review || rec, updated: !!j.updated };
+    }).catch(function (e) {
+      // The sheet never answered. Four attempts over seventeen seconds have
+      // failed, and the reviewer has typed a paragraph of reasoning they
+      // should not have to type again.
+      //
+      // Telling them "nothing was recorded - try again" is what has been
+      // losing work: most people retry once, get the same message, and move
+      // on. The verdict is now kept on this device and retried in the
+      // background until it lands, and the banner says how many are waiting.
+      enqueue(rec);
+      mirrorReview(rec);
+      console.warn("[review] save failed (" + (e && e.message) + ") — queued on this device, will retry.");
+      return { ok: true, review: rec, queued: true };
     });
   };
+
+  // ---- verdicts waiting to reach the sheet ---------------------------------
+  //
+  // Kept in localStorage, keyed by mistake_key so a second attempt at the same
+  // error replaces the first rather than queueing twice. Survives a reload and
+  // a closed laptop; does NOT survive a different browser, which is why the
+  // banner asks people not to walk away with work still pending.
+  var QUEUE_KEY = "qa_pending_reviews_" + TARGET;
+
+  function queueAll() {
+    var q = lsGet(QUEUE_KEY);
+    return (q && q.items) || [];
+  }
+  function queueWrite(items) { lsSet(QUEUE_KEY, { items: items }); paintQueueBanner(); }
+  function enqueue(rec) {
+    var items = queueAll().filter(function (r) { return r.mistake_key !== rec.mistake_key; });
+    items.push(rec); queueWrite(items);
+  }
+  function dequeue(key) {
+    var items = queueAll().filter(function (r) { return r.mistake_key !== key; });
+    queueWrite(items);
+  }
+  function mirrorReview(saved) {
+    window.REVIEWS = window.REVIEWS || [];
+    var i = window.REVIEWS.findIndex
+      ? window.REVIEWS.findIndex(function (r) { return r.mistake_key === saved.mistake_key; })
+      : -1;
+    if (i >= 0) window.REVIEWS[i] = saved; else window.REVIEWS.push(saved);
+    bumpReviews();
+  }
+
+  // One at a time, never in parallel: the whole reason these are queued is that
+  // the web app was refusing concurrent work.
+  var flushing = false;
+  function flushQueue() {
+    if (flushing) return Promise.resolve();
+    var items = queueAll();
+    if (!items.length) return Promise.resolve();
+    flushing = true;
+    var rec = items[0];
+    return window.__QA_SAVE_REVIEW(rec).then(function (r) {
+      flushing = false;
+      if (r && r.queued) return;            // still failing - leave it, try later
+      console.log("[review] queued verdict for " + rec.target_login + " reached the sheet.");
+      return flushQueue();                  // next one
+    }).catch(function () {
+      // Rejected outright by the sheet. Retrying forever helps nobody.
+      console.warn("[review] queued verdict was rejected by the sheet and has been dropped: " +
+                   rec.mistake_key);
+      dequeue(rec.mistake_key);
+      flushing = false;
+    });
+  }
+  window.__QA_FLUSH_REVIEWS = flushQueue;
+  window.__QA_PENDING_REVIEWS = queueAll;
+
+  function paintQueueBanner() {
+    if (typeof document === "undefined" || !document.body) return;
+    var n = queueAll().length;
+    var el = document.getElementById("qa-pending-banner");
+    if (!n) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "qa-pending-banner";
+      el.style.cssText = "position:fixed;left:16px;bottom:16px;z-index:99999;max-width:360px;" +
+        "background:#7a3e05;color:#ffe9c7;padding:10px 14px;border-radius:8px;font:13px/1.45 system-ui," +
+        "sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer";
+      el.title = "Click to retry now";
+      el.onclick = function () { flushQueue(); };
+      document.body.appendChild(el);
+    }
+    el.textContent = n + (n === 1 ? " verdict is" : " verdicts are") +
+      " saved on this device and still reaching the sheet. Keep this tab open. (Click to retry now.)";
+  }
 
   // Fetch a large tab in fixed-size pages, retrying each page, and concatenate.
   var PAGE = 24000;
@@ -1475,9 +1559,18 @@
     runLoad(src.sheetId, key, true);
   };
 
+  // Anything left over from a previous session goes first, before the person
+  // starts adding more.
+  function startQueueFlusher() {
+    paintQueueBanner();
+    flushQueue();
+    setInterval(flushQueue, 60000);
+  }
+
   // Poll for a newer snapshot. Cheap: a ~2KB manifest read, and the month file
   // is only refetched when lastUpdated actually changes.
   function startAutoRefresh() {
+    startQueueFlusher();
     setInterval(function () {
       if (document.hidden) return;              // don't poll background tabs
       fetchJSON(SNAP.manifest, 15000).then(function (m) {
