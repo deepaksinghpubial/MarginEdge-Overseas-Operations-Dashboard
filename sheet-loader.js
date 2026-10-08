@@ -280,8 +280,31 @@
     // Audited against all 51 distinct designations in the roster: exactly one
     // changes. "Client service specialist", "EDI Integration Specialist",
     // "US Accounting Specialist" and the rest carry no "lead" and stay Specialist.
+    // Classify on the GRADE, which is the part before the first comma.
+    //
+    // Testing "lead" first was only half the fix. "Analyst, Special Task Team"
+    // carries no "lead", so it fell through to /special/ - which matched the
+    // TEAM NAME - and six analysts were ranked, filtered and reported as
+    // specialists. The team name was never the person's grade, and matching
+    // loosely against the whole string was always going to pick it up sooner
+    // or later.
+    //
+    // "Specialist, French Process" and "Specialist, IPA" still read Specialist;
+    // their grade really is the first segment. A designation with no comma is
+    // its own grade, so "US Accounting Specialist" is unaffected.
+    //
+    // Checked against all 51 designations in the roster: exactly one changes,
+    // and it is the one being reported.
+    var grade = String(d).split(",")[0];
+    if (/\blead\b/i.test(grade)) return "Lead Analyst";
+    if (/specialist/i.test(grade)) return "Specialist";
+    if (/assistant|manager|\bam\b/i.test(grade)) return "Assistant Manager";
+    if (/analyst/i.test(grade)) return "Analyst";
+
+    // Nothing recognisable in the grade - fall back to the whole string, for a
+    // designation that happens to put the grade after the comma.
     if (/\blead\b/i.test(d)) return "Lead Analyst";
-    if (/special/i.test(d)) return "Specialist";
+    if (/specialist/i.test(d)) return "Specialist";
     if (/assistant|manager|\bam\b/i.test(d)) return "Assistant Manager";
     if (/analyst/i.test(d)) return "Analyst";
     return null;
