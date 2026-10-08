@@ -213,6 +213,62 @@ function archiveMonthWithCopy(monthKey) {
 }
 
 /**
+ * Folds away superseded verdicts: keeps only the LAST row for each
+ * mistake_key, which is the one the dashboard already uses.
+ *
+ * Saving appends rather than searching-and-overwriting, because searching
+ * meant holding a global lock while scanning the whole key column and that is
+ * what was making saves time out under load. The cost of that trade is a
+ * second row whenever somebody corrects a verdict. Nothing reads them wrongly
+ * - reviewMap keeps the last row per key - but the tab grows, so this tidies
+ * up.
+ *
+ * Entirely optional and safe to skip for weeks. Run it when the tab feels
+ * large, or before archiving a month.
+ */
+function compactReviews() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Error Reviews");
+  if (!sh) return "No 'Error Reviews' tab.";
+
+  var last = sh.getLastRow(), width = sh.getLastColumn();
+  if (last < 3) return "Nothing to compact.";
+
+  var vals = sh.getRange(1, 1, last, width).getValues();
+  var hdr = vals[0], ki = -1;
+  for (var h = 0; h < hdr.length; h++) {
+    if (String(hdr[h]).trim() === "mistake_key") { ki = h; break; }
+  }
+  if (ki < 0) throw new Error("'Error Reviews' has no mistake_key column.");
+
+  // Walk BACKWARDS and keep the first sighting of each key - that is the last
+  // row written for it. Then put the survivors back in their original order,
+  // so the tab still reads chronologically.
+  var seen = {}, keepIdx = [];
+  for (var r = vals.length - 1; r >= 1; r--) {
+    var k = String(vals[r][ki] || "").trim();
+    if (!k) { keepIdx.push(r); continue; }     // keyless rows are not duplicates
+    if (seen[k]) continue;
+    seen[k] = 1; keepIdx.push(r);
+  }
+  keepIdx.sort(function (a, b) { return a - b; });
+
+  var removed = (vals.length - 1) - keepIdx.length;
+  if (!removed) return "Nothing to compact - " + keepIdx.length + " verdicts, no duplicates.";
+
+  var out = keepIdx.map(function (i) { return vals[i]; });
+  sh.getRange(2, 1, last - 1, width).clearContent();
+  sh.getRange(2, 1, out.length, width).setValues(out);
+
+  var msg = "Compacted Error Reviews: kept " + out.length + " current verdicts, " +
+            "folded away " + removed + " superseded " +
+            (removed === 1 ? "row" : "rows") + ".";
+  Logger.log(msg);
+  try { ss.toast(msg, "Error Reviews", 10); } catch (e) {}
+  return msg;
+}
+
+/**
  * Moves every review that does not belong to the live month out of the
  * "Error Reviews" tab and into a tab of its own, one per month.
  *

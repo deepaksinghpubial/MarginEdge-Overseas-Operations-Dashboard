@@ -328,25 +328,29 @@ function doGet(e) {
     var mk = String(p.mistake_key || "").trim();
     if (!mk) return send({ ok: false, error: "mistake_key is required" });
 
-    // Serialise writes. Several reviewers save at the same time, and each save
-    // reads the mistake_key column to decide append-or-overwrite. Without a lock
-    // two overlapping saves can both read "not present" and both append, leaving
-    // duplicate rows for one mistake - or race on the same row. Waiting briefly
-    // is far better than either.
-    var lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(25000);
-    } catch (eLock) {
-      return send({ ok: false, error: "the sheet is busy with other saves — please try again in a moment" });
-    }
-    try {
-      return saveReviewLocked(p, mk);
-    } finally {
-      lock.releaseLock();
-    }
+    // APPEND. No lock, no search.
+    //
+    // This used to take a GLOBAL script lock, then scan the whole mistake_key
+    // column to decide overwrite-or-append. Both parts were expensive and the
+    // lock was the killer: one lock for the entire script means every save in
+    // the company queues behind every other, and behind anything else holding
+    // it. Fifteen reviewers working a shift do not save concurrently - they
+    // save one at a time, each waiting out the ones in front, and the ones at
+    // the back hit the 75-second ceiling and are told nothing was recorded.
+    // That is the "errors disappear and remarks are not saved" the team keeps
+    // reporting: the verdict never arrived, so the next refresh shows the error
+    // unreviewed again.
+    //
+    // appendRow is atomic server-side, so concurrent appends are safe without a
+    // lock. Correcting a verdict now writes a second row rather than finding
+    // and overwriting the first - which is already how the dashboard reads
+    // them: reviewMap keeps the LAST row for a mistake_key, so the newest
+    // verdict wins wherever it sits. compactReviews() in the generator folds
+    // the superseded rows away when convenient.
+    return saveReviewAppend(p, mk);
   }
 
-  function saveReviewLocked(p, mk) {
+  function saveReviewAppend(p, mk) {
     var sh = reviewSheet();
     var now = new Date();
 
@@ -371,21 +375,10 @@ function doGet(e) {
     };
     var rowVals = REVIEW_COLS.map(function (c) { return rec[c]; });
 
-    // Correcting an existing verdict must not leave a duplicate behind, so
-    // look for this mistake_key first and overwrite that row if present.
-    var keyCol = REVIEW_COLS.indexOf("mistake_key") + 1;
-    var last = sh.getLastRow();
-    var foundRow = 0;
-    if (last > 1) {
-      var keys = sh.getRange(2, keyCol, last - 1, 1).getValues();
-      for (var ki = 0; ki < keys.length; ki++) {
-        if (String(keys[ki][0]).trim() === mk) { foundRow = ki + 2; break; }
-      }
-    }
-    if (foundRow) sh.getRange(foundRow, 1, 1, REVIEW_COLS.length).setValues([rowVals]);
-    else sh.appendRow(rowVals);
+    // One append. Nothing read, nothing locked, nothing to queue behind.
+    sh.appendRow(rowVals);
 
-    return send({ ok: true, review_id: rec.review_id, updated: !!foundRow, review: rec });
+    return send({ ok: true, review_id: rec.review_id, updated: false, review: rec });
   }
 
   // Read requests only: saveReview returned above, so nothing here can be a
