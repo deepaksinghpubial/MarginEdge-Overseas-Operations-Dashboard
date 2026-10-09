@@ -2357,13 +2357,24 @@ class Component extends DCLogic {
       {name:'Points lost to errors',color:'#dc2626',values:vPtsLost,fmt:(v)=>this.fs1(v)}
     ];
     var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, errors &amp; points lost<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body"><div class="note-strip" style="margin-bottom:12px">Final score = Productivity \u00d7 (1 \u2212 error rate)\u00b2 \u00b7 Points lost to errors = |Productivity| \u2212 |Final score| (the productivity magnitude lost to the error penalty)</div>'+(labs.length?wrap(this.normTrendChart(labs,trendSeries,"profile")):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
-    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName,aIdx,role)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login);
+    return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName,aIdx,role)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login,totErr);
   }
 
-  mistakeDetail(login){
+  // `recorded` is the error count the SCORE uses - total_errors, summed from
+  // the daily scores mart. The rows below come from the Mistake Details export.
+  // They are two different exports and they do not always agree: across October
+  // the mart counts 12,074 Legacy errors and the detail export lists 10,493,
+  // and it runs both ways - 68 people have fewer rows than their count, 166
+  // have more.
+  //
+  // The dashboard cannot reconcile them, and should not pretend to. What it can
+  // do is stop the reader doing arithmetic that was never going to work: if the
+  // card says 3 and lists 2, say so on the card instead of leaving someone to
+  // notice and wonder which number is wrong.
+  mistakeDetail(login,recorded){
     var F=this.QF, m=this.mistakesFor(login);
     if(m===null) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail</div><div class="placeholder-msg">'+this.mistLoadingMsg("the mistake details (order links)")+'</div></div>';
-    if(!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').</div></div>';
+    if(!m.length) return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links</div><div class="placeholder-msg">No individual mistakes on record for '+this.esc(login)+' in the Mistake Details export (it covers '+this.esc(this.Q.dates[0])+' \u2013 '+this.esc(this.Q.dates[this.Q.dates.length-1])+').'+(recorded>0?' The score counts '+recorded+' error'+(recorded===1?'':'s')+' for this range, from the daily scores mart \u2014 '+(recorded===1?'it is':'they are')+' not itemised in the detail export.':'')+'</div></div>';
     var Q=this.Q, prettyArea=(a)=>({"LINE_ITEM":"Line Item","MISC_CHARGE":"Misc Charge","SINGLE_VARIABLE":"Header","Header":"Header","Line Item":"Line Item","Misc Charge":"Misc Charge"}[a]||a), areaTag=(a)=>{var p=prettyArea(a);return p==="Header"?"tag tag-hdr":p==="Line Item"?"tag tag-line":"tag tag-misc";};
     var fk=this.sel.mistFilterKind, fv=this.sel.mistFilterValue, full=m;
     if(fk){
@@ -2416,7 +2427,8 @@ class Component extends DCLogic {
       var area=Q.areas[r[F.AREA]];
       return '<tr><td class="r">'+(i+1)+'</td><td>'+Q.dates[r[F.DATE]]+'</td><td><span class="'+areaTag(area)+'">'+this.esc(prettyArea(area))+'</span></td><td style="font-family:var(--font-body)"><a class="order-link" href="'+this.esc(Q.url_prefix+r[F.URL])+'" target="_blank" rel="noopener" title="Open order \u2197">'+this.esc(Q.vars[r[F.VAR]])+' <span class="order-link-icon">\u2197</span></a></td>'+this.reviewCell(r,rmap)+'<td>'+org+'</td><td class="c-item" title="'+this.esc(r[F.ITEM]||"")+'">'+(this.esc(r[F.ITEM])||"\u2014")+'</td><td class="r">'+(r[F.LP]||"\u2014")+'</td><td>'+(this.esc(r[F.ENT])||"\u2014")+'</td><td>'+(this.esc(r[F.CLO])||"\u2014")+'</td><td>'+(this.esc(r[F.CUR])||"\u2014")+'</td><td style="font-family:var(--font-body)">'+this.esc(Q.statuses[r[F.ST]])+'</td></tr>';
     }).join("");
-    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+'<th>Review</th>'+th("Type","type")+th("Item","item")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
+    var gap=(recorded!=null&&recorded!==full.length)?'<div class="note-strip">The score counts <b>'+recorded+'</b> error'+(recorded===1?'':'s')+' for this range; the Mistake Details export lists <b>'+full.length+'</b>. The two come from different exports and do not always agree \u2014 the score uses the mart figure.</div>':'';
+    return '<div class="card" id="mistake-detail-anchor"><div class="card-head">Mistake detail &mdash; order links ('+m.length+(fk?' of '+full.length:'')+')'+filterChip+'</div>'+gap+'<div style="overflow-x:auto"><table class="tbl"><thead><tr><th class="r">S.No.</th>'+th("Date","date")+th("Area","area")+th("Variable","var")+'<th>Review</th>'+th("Type","type")+th("Item","item")+th("Line pos","lp",true)+th("Entered","ent")+th("Closed","clo")+th("Current","cur")+th("Status","status")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>'+(m.length>cap?'<div class="note-strip">Showing '+cap+' of '+m.length+' \u2014 <button class="reset-btn" style="font-size:11px" data-act="showall">show all</button></div>':'')+'</div>';
   }
 
   pageCompare(rws){
