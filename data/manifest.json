@@ -13,10 +13,11 @@
         ],
         "ipa": [
           "data/ipa-current.1.json",
-          "data/ipa-current.2.json"
+          "data/ipa-current.2.json",
+          "data/ipa-current.3.json"
         ]
       },
-      "lastUpdated": "2026-10-23T19:17:10-07:00",
+      "lastUpdated": "2026-10-23T20:02:04-07:00",
       "live": true
     },
     {
@@ -82,5 +83,5 @@
     }
   ],
   "current": "2026-10",
-  "updated": "2026-10-23T19:17:10-07:00"
+  "updated": "2026-10-23T20:02:04-07:00"
 }
