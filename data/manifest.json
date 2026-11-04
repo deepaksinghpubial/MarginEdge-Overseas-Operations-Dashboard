@@ -2,41 +2,24 @@
   "schema": 2,
   "months": [
     {
-      "key": "2026-11",
-      "label": "November 2026",
-      "files": {
-        "core": [
-          "data/core-2026-11.json"
-        ],
-        "legacy": [
-          "data/legacy-2026-11.json"
-        ],
-        "ipa": [
-          "data/ipa-2026-11.json"
-        ]
-      },
-      "lastUpdated": "2026-11-03T22:07:51-08:00",
-      "live": false
-    },
-    {
       "key": "2026-10",
       "label": "October 2026",
       "files": {
         "core": [
-          "data/core-current.1.json",
-          "data/core-current.2.json"
+          "data/core-2026-10.1.json",
+          "data/core-2026-10.2.json"
         ],
         "legacy": [
-          "data/legacy-current.json"
+          "data/legacy-2026-10.json"
         ],
         "ipa": [
-          "data/ipa-current.1.json",
-          "data/ipa-current.2.json",
-          "data/ipa-current.3.json"
+          "data/ipa-2026-10.1.json",
+          "data/ipa-2026-10.2.json",
+          "data/ipa-2026-10.3.json"
         ]
       },
-      "lastUpdated": "2026-11-03T20:40:22-08:00",
-      "live": true
+      "lastUpdated": "2026-11-03T22:18:19-08:00",
+      "live": false
     },
     {
       "key": "2026-09",
@@ -101,5 +84,5 @@
     }
   ],
   "current": "2026-10",
-  "updated": "2026-11-03T22:07:51-08:00"
+  "updated": "2026-11-03T22:18:19-08:00"
 }
