@@ -434,8 +434,8 @@ class Component extends DCLogic {
 
   aggAnalysts(rws){
     var S=this.S, D=this.SD, m={};
-    rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]); });
-    return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, series:ser, trend:this.trendOf(ser)}; });
+    rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]); });
+    return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, series:ser, trend:this.trendOf(ser)}; });
   }
   // ---- Split-only per-platform row model -------------------------------
   // Both Portals lists people who work Legacy AND IPA, so a single blended
@@ -593,7 +593,7 @@ class Component extends DCLogic {
   aggTeams(rws){
     var S=this.S, D=this.SD, m={};
     var self=this, frDaily=(S&&S.frDaily)||{};
-    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},spF:0,spN:0,anF:0,anN:0}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1;
+    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},spF:0,spN:0,anF:0,anN:0}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.mem[r[D.AN]]=1;
       // Specialists and analysts are both in here and always have been, but a
       // single blended average hid how far apart they are - and worse, it judged
       // specialists on a measure that misses most of their work. A specialist's
@@ -613,7 +613,7 @@ class Component extends DCLogic {
       } else { o.anF+=r[D.FS]; o.anN++; } });
     return Object.keys(m).map(k=>{ var o=m[k];
       var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
-      return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts,
+      return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0,
         spF:o.spF, spN:o.spN, anF:o.anF, anN:o.anN, spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
   }
 
@@ -2494,11 +2494,11 @@ class Component extends DCLogic {
     var mode=sel.cmpMode||"analysts";
     var MODES=[["analysts","Analysts"],["specialists","Specialists"],["teams","Teams"],["ams","Asst Managers"],["locations","Locations"]];
     var norm;
-    if(mode==="teams"){ norm=this.aggTeams(rws).map(x=>({key:"t"+x.teamIdx,name:x.team,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="ams"){ norm=this.aggByAM(rws).list.map(x=>({key:"m"+x.am,name:x.am,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="locations"){ norm=this.aggByLocation(rws).list.map(x=>({key:"l"+x.loc,name:x.loc,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="specialists"){ norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Specialist").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
-    else { mode="analysts"; norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Analyst").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
+    if(mode==="teams"){ norm=this.aggTeams(rws).map(x=>({key:"t"+x.teamIdx,name:x.team,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,ipTasks:x.ipTasks,n:x.n})); }
+    else if(mode==="ams"){ norm=this.aggByAM(rws).list.map(x=>({key:"m"+x.am,name:x.am,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,ipTasks:x.ipTasks,n:x.n})); }
+    else if(mode==="locations"){ norm=this.aggByLocation(rws).list.map(x=>({key:"l"+x.loc,name:x.loc,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,ipTasks:x.ipTasks,n:x.n})); }
+    else if(mode==="specialists"){ norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Specialist").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,ipTasks:x.ipTasks})); }
+    else { mode="analysts"; norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Analyst").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,ipTasks:x.ipTasks})); }
     var hasN=(mode==="teams"||mode==="ams"||mode==="locations");
     var byKey={}; norm.forEach(x=>byKey[x.key]=x);
     var sorted=norm.slice().sort((a,b)=>a.name.localeCompare(b.name));
@@ -2512,6 +2512,12 @@ class Component extends DCLogic {
     var bars=[this.dualBar("Avg final score",an,A.fs,bn,B.fs,{dec:true,higherBetter:true})
       ,this.dualBar("Avg error rate",an,A.er,bn,B.er,{pct:true,higherBetter:false})
       ,this.dualBar("Avg productivity",an,A.prod,bn,B.prod,{dec:true,higherBetter:true})
+      // IPA tasks only. On this dashboard pts is a MIXTURE - total_tasks for an
+      // IPA row, total_possible_error_points for a Legacy one, because normDaily
+      // folds both into the same field. Adding them gives a number with no unit,
+      // so only the IPA side is counted - as the Specialist and Analyst tables
+      // on this page already do.
+      ,this.dualBar("Total tasks (IPA)",an,A.ipTasks||0,bn,B.ipTasks||0,{higherBetter:true})
       ,this.dualBar("Total errors",an,A.errs,bn,B.errs,{higherBetter:false})];
     if(hasN) bars.push(this.dualBar("Members",an,A.n,bn,B.n,{higherBetter:true}));
     var dFsA=A.fs-med.fs, dFsB=B.fs-med.fs, gap=A.fs-B.fs;
@@ -2816,8 +2822,8 @@ class Component extends DCLogic {
   locationOf(login){ if(!this.LOC) return null; var m=this.LOC.map; return m[login] || m[String(login).toLowerCase()] || null; }
   aggByLocation(rws){
     var S=this.S,D=this.SD,m={},unmapped=0;
-    rws.forEach(r=>{ var loc=this.locationOf(S.analysts[r[D.AN]]); if(!loc){unmapped++;return;} if(!m[loc])m[loc]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[loc]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
-    var list=Object.keys(m).map(k=>{ var o=m[k]; return {loc:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,ser:o.ser}; });
+    rws.forEach(r=>{ var loc=this.locationOf(S.analysts[r[D.AN]]); if(!loc){unmapped++;return;} if(!m[loc])m[loc]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[loc]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
+    var list=Object.keys(m).map(k=>{ var o=m[k]; return {loc:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,ipTasks:o.ipT||0,ser:o.ser}; });
     return {list:list,unmapped:unmapped};
   }
   multiLineChart(labels, series, opts){
@@ -2944,14 +2950,14 @@ class Component extends DCLogic {
     var teamsAgg=this.aggTeams(rws);
     var byAM={}, unmapped=0, unmappedTeams={};
     var self=this;
-    teamsAgg.forEach(t=>{ var am=this.amOf(t.team); if(!am){ unmapped+=t.days; unmappedTeams[t.team]=1; return; } if(!byAM[am])byAM[am]={teams:[],days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:0,spF:0,spN:0,anF:0,anN:0}; var o=byAM[am]; o.teams.push(t); o.days+=t.days; o.sP+=t.prod*t.days; o.sE+=t.er*t.days; o.sF+=t.fs*t.days; o.errs+=t.errs; o.pts+=t.pts; o.mem+=t.n;
+    teamsAgg.forEach(t=>{ var am=this.amOf(t.team); if(!am){ unmapped+=t.days; unmappedTeams[t.team]=1; return; } if(!byAM[am])byAM[am]={teams:[],days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:0,spF:0,spN:0,anF:0,anN:0}; var o=byAM[am]; o.teams.push(t); o.days+=t.days; o.sP+=t.prod*t.days; o.sE+=t.er*t.days; o.sF+=t.fs*t.days; o.errs+=t.errs; o.pts+=t.pts; o.ipT=(o.ipT||0)+(t.ipTasks||0); o.mem+=t.n;
       // Summed from the raw per-role totals, not by averaging the teams'
       // averages - otherwise a three-person team would weigh the same as a
       // forty-person one.
       o.spF+=t.spF; o.spN+=t.spN; o.anF+=t.anF; o.anN+=t.anN; });
     var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.comb-a.comb);
       var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
-      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, epd:o.errs/(o.days||1),
+      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, epd:o.errs/(o.days||1),
         spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
     return {list:list, unmapped:unmapped, unmappedTeams:Object.keys(unmappedTeams).length};
   }

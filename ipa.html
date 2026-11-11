@@ -2423,11 +2423,11 @@ class Component extends DCLogic {
     var mode=sel.cmpMode||"analysts";
     var MODES=[["analysts","Analysts"],["specialists","Specialists"],["teams","Teams"],["ams","Asst Managers"],["locations","Locations"]];
     var norm;
-    if(mode==="teams"){ norm=this.aggTeams(rws).map(x=>({key:"t"+x.teamIdx,name:x.team,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="ams"){ norm=this.aggByAM(rws).list.map(x=>({key:"m"+x.am,name:x.am,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="locations"){ norm=this.aggByLocation(rws).list.map(x=>({key:"l"+x.loc,name:x.loc,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,n:x.n})); }
-    else if(mode==="specialists"){ norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Specialist").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
-    else { mode="analysts"; norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Analyst").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs})); }
+    if(mode==="teams"){ norm=this.aggTeams(rws).map(x=>({key:"t"+x.teamIdx,name:x.team,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,n:x.n})); }
+    else if(mode==="ams"){ norm=this.aggByAM(rws).list.map(x=>({key:"m"+x.am,name:x.am,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,n:x.n})); }
+    else if(mode==="locations"){ norm=this.aggByLocation(rws).list.map(x=>({key:"l"+x.loc,name:x.loc,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts,n:x.n})); }
+    else if(mode==="specialists"){ norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Specialist").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts})); }
+    else { mode="analysts"; norm=this.aggAnalysts(rws).filter(a=>this.roleOf(a.an)==="Analyst").map(x=>({key:"a"+x.anIdx,name:x.an,fs:x.fs,er:x.er,prod:x.prod,errs:x.errs,pts:x.pts})); }
     var hasN=(mode==="teams"||mode==="ams"||mode==="locations");
     var byKey={}; norm.forEach(x=>byKey[x.key]=x);
     var sorted=norm.slice().sort((a,b)=>a.name.localeCompare(b.name));
@@ -2441,6 +2441,7 @@ class Component extends DCLogic {
     var bars=[this.dualBar("Avg final score",an,A.fs,bn,B.fs,{dec:true,higherBetter:true})
       ,this.dualBar("Avg error rate",an,A.er,bn,B.er,{pct:true,higherBetter:false})
       ,this.dualBar("Avg productivity",an,A.prod,bn,B.prod,{dec:true,higherBetter:true})
+      ,this.dualBar("Total tasks",an,A.pts||0,bn,B.pts||0,{higherBetter:true})
       ,this.dualBar("Total errors",an,A.errs,bn,B.errs,{higherBetter:false})];
     if(hasN) bars.push(this.dualBar("Members",an,A.n,bn,B.n,{higherBetter:true}));
     var dFsA=A.fs-med.fs, dFsB=B.fs-med.fs, gap=A.fs-B.fs;
@@ -2859,7 +2860,7 @@ class Component extends DCLogic {
       o.spF+=t.spF; o.spN+=t.spN; o.anF+=t.anF; o.anN+=t.anN; });
     var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.comb-a.comb);
       var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
-      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, epd:o.errs/(o.days||1),
+      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, epd:o.errs/(o.days||1),
         spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
     return {list:list, unmapped:unmapped, unmappedTeams:Object.keys(unmappedTeams).length};
   }
