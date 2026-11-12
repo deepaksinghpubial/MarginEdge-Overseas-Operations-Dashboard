@@ -50,7 +50,7 @@ var TABS = [
     cols: ["mistake_date", "mistake_area", "variable", "analyst_login", "team_lead_login",
            "vendor_item_name", "position",
            "entered_value", "closed_value", "current_value", "status", "order_url",
-           "differs_from_closed"] },
+           "differs_from_closed", "error_points"] },
 
   { key: "ipaProductivity", tab: "IPA Productivity",
     cols: ["analyst_login", "team_lead_login", "completed_date", "productivity_score",
@@ -59,7 +59,7 @@ var TABS = [
   { key: "ipaMistakes", tab: "IPA Mistakes",
     cols: ["mistake_date", "mistake_area", "variable", "analyst_login", "team_lead_login",
            "line_item_position", "proposed_value", "closed_value", "current_value",
-           "task_type", "order_url", "flow_type", "differs_from_closed"] },
+           "task_type", "order_url", "flow_type", "differs_from_closed", "error_points"] },
 
   // Small reference tabs. Taken whole because the dashboard reads most of them
   // and FR Details has one column PER DAY, so the list is not fixed.

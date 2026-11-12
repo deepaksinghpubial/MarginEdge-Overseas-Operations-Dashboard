@@ -150,19 +150,27 @@
         username: "analyst_login", team: "team_lead_login", lp: "position",
         item: "vendor_item_name",
         ent: "entered_value", clo: "closed_value", cur: "current_value",
-        st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
+        st: "status", url: "order_url", org: null, diffClo: "differs_from_closed",
+        epts: "error_points" } }
     },
     ipa: {
       daily: { tab: "IPA Productivity", cols: {
         username: "analyst_login", team: "team_lead_login", date: "completed_date",
-        productivity: "productivity_score", tasks: "total_tasks", errs: null,
-        pts: "total_tasks", errorRate: "error_rate", finalScore: "final_score" } },
+        productivity: "productivity_score", tasks: "total_tasks",
+        // IPA's mart exports neither the error count nor the possible-error-point
+        // denominator - only the rate. total_tasks is NOT that denominator (a task
+        // is worth 1 point for a single variable, 4 for SLI/MISC and 4*lines+1+4
+        // for MLI), so using it here read 675 possible points where the real figure
+        // was nearer 4,700. Both are derived in build(): errors from the weighted
+        // error_points on the Mistakes tab, points back-solved as errors / rate.
+        errs: null, pts: null, errorRate: "error_rate", finalScore: "final_score" } },
       mistakes: { tab: "IPA Mistakes", cols: {
         date: "mistake_date", area: "mistake_area", variable: "variable",
         username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
         item: null,
         ent: "proposed_value", clo: "closed_value", cur: "current_value",
-        st: "task_type", url: "order_url", org: "flow_type", diffClo: "differs_from_closed" } }
+        st: "task_type", url: "order_url", org: "flow_type", diffClo: "differs_from_closed",
+        epts: "error_points" } }
     }
   };
 
@@ -176,14 +184,15 @@
   CONFIG.split = {
     daily: { tab: null, cols: {
       username: "analyst_login", team: "team_lead_login", date: "completed_date",
-      productivity: "productivity_score", errs: "total_errors",
+      productivity: "productivity_score", errs: "total_errors", tasks: "total_tasks",
       pts: "total_possible_error_points", errorRate: "error_rate", finalScore: "final_score" } },
     mistakes: { tab: null, cols: {
       date: "mistake_date", area: "mistake_area", variable: "variable",
       username: "analyst_login", team: "team_lead_login", lp: "line_item_position",
       item: "vendor_item_name",
       ent: "entered_value", clo: "closed_value", cur: "current_value",
-      st: "status", url: "order_url", org: null, diffClo: "differs_from_closed" } }
+      st: "status", url: "order_url", org: null, diffClo: "differs_from_closed",
+      epts: "error_points" } }
   };
 
   // error_rate in the sheet is already a 0–1 fraction (e.g. 0.0125), not a %.
@@ -195,11 +204,16 @@
   // names; IPA rows are normalized into that shape before merging.
   function normDaily(row, src) {
     var c = CONFIG[src].daily.cols;
-    var er = num(row[c.errorRate]);
-    var pts = c.pts ? num(row[c.pts]) : 0;
-    var errs = c.errs ? num(row[c.errs]) : Math.round(er * pts);
+    // Legacy carries both figures; IPA carries neither and must not have them
+    // invented here. Leaving them null tells build() to derive them from the
+    // weighted error_points on the Mistakes tab, exactly as the IPA dashboard
+    // does - before this, Split multiplied the rate by total_tasks and reported
+    // 9 errors where the IPA dashboard reported 66 for the same analyst-day.
+    var errs = c.errs && row[c.errs] !== "" && row[c.errs] != null ? num(row[c.errs]) : null;
+    var pts = c.pts && row[c.pts] !== "" && row[c.pts] != null ? num(row[c.pts]) : null;
     return { analyst_login: row[c.username], team_lead_login: row[c.team], completed_date: row[c.date],
       productivity_score: row[c.productivity], total_errors: errs, total_possible_error_points: pts,
+      total_tasks: c.tasks ? num(row[c.tasks]) : 0,
       error_rate: row[c.errorRate], final_score: row[c.finalScore], __src: src };
   }
   // Reviews arrive from two places - the daily snapshot and the live overlay
@@ -662,11 +676,19 @@
       desigMap[disp[u].toLowerCase()] = desigByLogin[u.toLowerCase()] || "";
     });
 
-    // --- mistake counts per login|date (for IPA errs) ---
-    var errCount = {};
+    // --- weighted error points per login|date|portal (IPA's error numerator) ---
+    // The error-point system weights a mistake by what it cost: 1 for a single
+    // variable, 4 for a line item or misc charge. Counting ROWS would understate
+    // every multi-line error, so the numerator is the sum of error_points, with
+    // 1 assumed only when the column is missing (older archived snapshots).
+    var errPts = {};
     mist.forEach(function (r) {
       var u = String(r[M.username] || "").trim(), d = String(r[M.date] || "").trim();
-      if (u && d) errCount[u + "|" + normDate(d)] = (errCount[u + "|" + normDate(d)] || 0) + 1;
+      if (!u || !d) return;
+      var w = M.epts && r[M.epts] !== "" && r[M.epts] != null ? num(r[M.epts]) : 1;
+      if (!(w > 0)) w = 1;
+      var k = u + "|" + normDate(d) + "|" + (r.__portal || "");
+      errPts[k] = (errPts[k] || 0) + w;
     });
 
     // --- SCORES ---
@@ -679,14 +701,24 @@
       if (loginIdx[u] == null || sdi[d] == null) return;
       var an = loginIdx[u];
       var er = num(r[C.errorRate]); if (!ERROR_RATE_IS_FRACTION) er = er / 100;
-      var errs = C.errs ? num(r[C.errs]) : (errCount[u + "|" + d] || 0);
-      var pts = C.pts ? num(r[C.pts]) : 0;
+      var rawErrs = C.errs && r[C.errs] !== "" && r[C.errs] != null ? num(r[C.errs]) : null;
+      var rawPts = C.pts && r[C.pts] !== "" && r[C.pts] != null ? num(r[C.pts]) : null;
+      // Legacy's mart states both; IPA's states neither. Where they are absent the
+      // numerator comes from the weighted error_points on the Mistakes tab and the
+      // denominator is back-solved from the mart's own rate, so error_rate on the
+      // dashboard always equals the error_rate in the sheet.
+      var errs = rawErrs != null ? rawErrs
+               : (errPts[u + "|" + d + "|" + (TARGET === "split" ? (r.__src === "ipa" ? "ipa" : "legacy") : "")] || 0);
+      var pts = rawPts != null ? rawPts : (er > 0 ? Math.round(errs / er) : 0);
       var rec = [ sdi[d], an, rowTeamIdx(r[C.team], analyst_team[an]), +num(r[C.productivity]).toFixed(2),
                   errs, pts, +er.toFixed(5), +num(r[C.finalScore]).toFixed(2) ];
       // Split needs to separate Legacy from IPA within whatever range the reader
       // has selected. platformStats cannot do that - it is computed once over the
       // whole month - so the portal travels on the row itself.
       if (TARGET === "split") rec.push(r.__src === "ipa" ? "ipa" : "legacy");
+      // Task volume travels separately from the error-point denominator now that
+      // the two are no longer the same number on IPA.
+      if (TARGET === "ipa" || TARGET === "split") rec.push(C.tasks ? num(r[C.tasks]) : 0);
       records.push(rec);
     });
     var SCORES = { dates: sdates, analysts: analysts, teams: teams, analyst_team: analyst_team, records: records, frDaily: frDaily, frTotal: frTotal, frDates: frDates };

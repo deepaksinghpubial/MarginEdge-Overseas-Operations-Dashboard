@@ -49,7 +49,7 @@
 <script type="text/x-dc" data-dc-script>
 class Component extends DCLogic {
   rootRef = React.createRef();
-  SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7, PORTAL:8};
+  SD = {DATE:0, AN:1, TEAM:2, PROD:3, ERRS:4, PTS:5, ER:6, FS:7, PORTAL:8, TASKS:9};
   QF = {DATE:0, AREA:1, VAR:2, AN:3, TEAM:4, LP:5, ENT:6, CLO:7, CUR:8, ST:9, URL:10, ORG:11, DIFFCLO:12, PORTAL:13, ITEM:14};
   PAGES = {summary:"Executive Summary", overview:"Overview", leaderboard:"Analyst Performance", teams:"Team Lead Performance", teamreport:"Team Report", ams:"AM Performance", amreport:"AM Report", locations:"Location Comparison", specialist:"Specialist Performance", spprofile:"Individual Specialist Performance", anprofile:"Individual Analyst Performance", roles:"By Role", profile:"Analyst Profile", errorexplorer:"Error Explorer", reviewaudit:"Error Genuineness Review", coaching:"Coaching Queue", training:"Training Picks", compare:"Compare"};
   ICON = {
@@ -427,15 +427,46 @@ class Component extends DCLogic {
   exclusiveTeamIdx(){ if(this._exTeams) return this._exTeams; var set={}; var tgt=window.__SHEET_TARGET==="ipa"?"ipa":window.__SHEET_TARGET==="split"?"split":"legacy"; var names=(window.TEAM_SETS&&window.TEAM_SETS[tgt])||[]; var nm={}; names.forEach(n=>nm[n]=1); for(var i=0;i<this.S.teams.length;i++){ if(nm[this.S.teams[i]]) set[i]=1; } this._exTeams=set; return set; }
   srows(ignoreRole){ var S=this.S, st=this.st, D=this.SD, out=[]; var rf=(!ignoreRole && this.ROLE && st.role) ? st.role : null; var gate=this.ROLE; var unTi=S.teams.indexOf("Unassigned"); var teamGate=this.AM; var exOnly=!!st.exclusiveOnly; var exSet=exOnly?this.exclusiveTeamIdx():null; for(var i=0;i<S.records.length;i++){ var rec=S.records[i]; var d=S.dates[rec[D.DATE]]; if(d<st.from||d>st.to) continue; if(rec[D.TEAM]===unTi) continue; if(exOnly && !exSet[rec[D.TEAM]]) continue; if(teamGate && !this._teamAllowed[rec[D.TEAM]]) continue; var login=S.analysts[rec[D.AN]]; if(this.isExcluded(login)) continue; var role=gate?this.roleOf(login):null; if(gate && !role) continue; if(rf && role!==rf) continue; if(st.loc && this.locationOf(login)!==st.loc) continue; out.push(rec); } return out; }
   datesInRange(){ var st=this.st; return this.S.dates.filter(d=>d>=st.from&&d<=st.to); }
-  windowMedians(rws){ var D=this.SD; return { fs:this.median(rws.map(r=>r[D.FS])), er:this.median(rws.map(r=>r[D.ER])) }; }
+  // --- scoring, per the Quality & Productivity writeup -----------------------
+  // The comparison baseline is every analyst-day row in the selected window, so
+  // the median does NOT move when Role, Location or the exclusive-team toggle
+  // narrows the view: picking "Chandigarh" still ranks people against the whole
+  // population, which is what the mart's own median_final_score column does.
+  popRows(){
+    var k=this.st.from+"|"+this.st.to+"|"+(this.AM?"am":"");
+    if(this._popK===k) return this._pop;
+    var S=this.S,D=this.SD,out=[],unTi=S.teams.indexOf("Unassigned");
+    for(var i=0;i<S.records.length;i++){
+      var rec=S.records[i], d=S.dates[rec[D.DATE]];
+      if(d<this.st.from||d>this.st.to) continue;
+      if(rec[D.TEAM]===unTi) continue;
+      if(this.AM && !this._teamAllowed[rec[D.TEAM]]) continue;
+      var login=S.analysts[rec[D.AN]];
+      if(this.isExcluded(login)) continue;
+      if(this.ROLE && !this.roleOf(login)) continue;
+      out.push(rec);
+    }
+    this._popK=k; this._pop=out; return out;
+  }
+  windowMedians(){ var D=this.SD, rws=this.popRows(); return { fs:this.median(rws.map(r=>r[D.FS])), er:this.median(rws.map(r=>r[D.ER])) }; }
+  // Error rate = total errors / total possible error points (the error-point
+  // system), NOT the mean of the daily rates. Averaging the rates let a 10-task
+  // day weigh as much as a 900-task one, which read 3.85% for marzia where the
+  // point-weighted rate was 1.33%. The daily mean survives only as a fallback
+  // for archived snapshots that carry no denominator.
+  erAgg(o){ return o.pts>0 ? o.errs/o.pts : (o.days ? o.sE/o.days : 0); }
+  // Final score = productivity x (1 - error rate)^3, or x (1 + error rate)^3
+  // when productivity is negative, so errors always lower the score on both
+  // sides of zero.
+  fsAgg(prod,er){ return prod*Math.pow(prod>=0 ? 1-er : 1+er, 3); }
   rowsForRange(from,to){ var S=this.S, D=this.SD, out=[]; var unTi=S.teams.indexOf("Unassigned"); var teamGate=this.AM; for(var i=0;i<S.records.length;i++){ var rec=S.records[i]; var d=S.dates[rec[D.DATE]]; if(d<from||d>to) continue; if(rec[D.TEAM]===unTi) continue; if(teamGate && !this._teamAllowed[rec[D.TEAM]]) continue; var login=S.analysts[rec[D.AN]]; if(this.isExcluded(login)) continue; if(this.ROLE && !this.roleOf(login)) continue; if(this.st.loc && this.locationOf(login)!==this.st.loc) continue; out.push(rec); } return out; }
   priorWindow(){ var ds=this.datesInRange(); if(ds.length<2) return null; var allBefore=this.S.dates.filter(d=>d<this.st.from); if(!allBefore.length) return null; var n=ds.length; var prior=allBefore.slice(-n); return {from:prior[0], to:prior[prior.length-1], days:prior.length}; }
   deltaChip(cur,prev,opts){ opts=opts||{}; if(prev==null||!isFinite(prev)){ return '<span class="d-chip d-neu">\u2014</span>'; } var d=cur-prev; var good = opts.higherBetter? d>0 : d<0; var neutral=Math.abs(d)<(opts.eps||0.0001); var cls=neutral?'d-neu':good?'d-up':'d-down'; var arrow=neutral?'\u2192':d>0?'\u25B2':'\u25BC'; var val=opts.pct?(Math.abs(d)*100).toFixed(2)+'pp':this.fs1(Math.abs(d)); return '<span class="d-chip '+cls+'">'+arrow+' '+val+'</span>'; }
 
   aggAnalysts(rws){
     var S=this.S, D=this.SD, m={};
-    rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.ser.push([r[D.DATE],r[D.FS]]); });
-    return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, series:ser, trend:this.trendOf(ser)}; });
+    rws.forEach(r=>{ var k=r[D.AN]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,ser:[]}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+(r[D.TASKS]||0); o.ser.push([r[D.DATE],r[D.FS]]); });
+    return Object.keys(m).map(k=>{ var o=m[k]; var ser=o.ser.slice().sort((a,b)=>a[0]-b[0]).map(x=>x[1]); return {an:S.analysts[k], anIdx:+k, team:S.teams[S.analyst_team[k]], days:o.days, prod:o.sP/o.days, er:this.erAgg(o), fs:this.fsAgg(o.sP/o.days,this.erAgg(o)), errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, series:ser, trend:this.trendOf(ser)}; });
   }
   // ---- Split-only per-platform row model -------------------------------
   // Both Portals lists people who work Legacy AND IPA, so a single blended
@@ -460,7 +491,7 @@ class Component extends DCLogic {
       var k=r[D.AN], o=m[k]||(m[k]={lg:{f:0,e:0,p:0,n:0},ip:{f:0,e:0,p:0,n:0},errs:0,pts:0,ser:[],day:{}});
       var side=(r[D.PORTAL]==="ipa")?o.ip:o.lg;
       side.f+=r[D.FS]; side.e+=r[D.ER]; side.p+=r[D.PROD]; side.n++;
-      if(r[D.PORTAL]==="ipa") o.ipTasks=(o.ipTasks||0)+r[D.PTS];
+      if(r[D.PORTAL]==="ipa") o.ipTasks=(o.ipTasks||0)+(r[D.TASKS]||0);
       // Also kept per DATE: the score is now built a day at a time, so it needs
       // to know what each individual day consisted of, not just the totals.
       var dk=S.dates[r[D.DATE]], dd=o.day[dk]||(o.day[dk]={lg:0,ip:0});
@@ -593,7 +624,7 @@ class Component extends DCLogic {
   aggTeams(rws){
     var S=this.S, D=this.SD, m={};
     var self=this, frDaily=(S&&S.frDaily)||{};
-    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},spF:0,spN:0,anF:0,anN:0}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.mem[r[D.AN]]=1;
+    rws.forEach(r=>{ var k=r[D.TEAM]; if(!m[k])m[k]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},spF:0,spN:0,anF:0,anN:0}; var o=m[k]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+(r[D.TASKS]||0); o.mem[r[D.AN]]=1;
       // Specialists and analysts are both in here and always have been, but a
       // single blended average hid how far apart they are - and worse, it judged
       // specialists on a measure that misses most of their work. A specialist's
@@ -613,7 +644,7 @@ class Component extends DCLogic {
       } else { o.anF+=r[D.FS]; o.anN++; } });
     return Object.keys(m).map(k=>{ var o=m[k];
       var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
-      return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0,
+      return {team:S.teams[k], teamIdx:+k, days:o.days, n:Object.keys(o.mem).length, prod:o.sP/o.days, er:this.erAgg(o), fs:this.fsAgg(o.sP/o.days,this.erAgg(o)), errs:o.errs, pts:o.pts, ipTasks:o.ipT||0,
         spF:o.spF, spN:o.spN, anF:o.anF, anN:o.anN, spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
   }
 
@@ -2822,8 +2853,8 @@ class Component extends DCLogic {
   locationOf(login){ if(!this.LOC) return null; var m=this.LOC.map; return m[login] || m[String(login).toLowerCase()] || null; }
   aggByLocation(rws){
     var S=this.S,D=this.SD,m={},unmapped=0;
-    rws.forEach(r=>{ var loc=this.locationOf(S.analysts[r[D.AN]]); if(!loc){unmapped++;return;} if(!m[loc])m[loc]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[loc]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
-    var list=Object.keys(m).map(k=>{ var o=m[k]; return {loc:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,ipTasks:o.ipT||0,ser:o.ser}; });
+    rws.forEach(r=>{ var loc=this.locationOf(S.analysts[r[D.AN]]); if(!loc){unmapped++;return;} if(!m[loc])m[loc]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[loc]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; if(r[D.PORTAL]==="ipa") o.ipT=(o.ipT||0)+(r[D.TASKS]||0); o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
+    var list=Object.keys(m).map(k=>{ var o=m[k]; return {loc:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:this.erAgg(o), fs:this.fsAgg(o.sP/o.days,this.erAgg(o)),errs:o.errs,pts:o.pts,ipTasks:o.ipT||0,ser:o.ser}; });
     return {list:list,unmapped:unmapped};
   }
   multiLineChart(labels, series, opts){
@@ -2957,7 +2988,7 @@ class Component extends DCLogic {
       o.spF+=t.spF; o.spN+=t.spN; o.anF+=t.anF; o.anN+=t.anN; });
     var list=Object.keys(byAM).map(am=>{ var o=byAM[am]; o.teams.sort((a,b)=>b.comb-a.comb);
       var spFs=o.spN?o.spF/o.spN:null, anFs=o.anN?o.anF/o.anN:null;
-      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:o.sE/o.days, fs:o.sF/o.days, errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, epd:o.errs/(o.days||1),
+      return {am:am, teams:o.teams, nTeams:o.teams.length, n:o.mem, days:o.days, prod:o.sP/o.days, er:this.erAgg(o), fs:this.fsAgg(o.sP/o.days,this.erAgg(o)), errs:o.errs, pts:o.pts, ipTasks:o.ipT||0, epd:o.errs/(o.days||1),
         spFs:spFs, anFs:anFs, comb:self.combScore(spFs,anFs)}; });
     return {list:list, unmapped:unmapped, unmappedTeams:Object.keys(unmappedTeams).length};
   }
@@ -3003,7 +3034,7 @@ class Component extends DCLogic {
     var S=this.S,D=this.SD,m={},unmapped=0;
     rws.forEach(r=>{ var role=this.roleOf(S.analysts[r[D.AN]]); if(!role){unmapped++;return;} if(!m[role])m[role]={days:0,sP:0,sE:0,sF:0,errs:0,pts:0,mem:{},ser:{}}; var o=m[role]; o.days++; o.sP+=r[D.PROD]; o.sE+=r[D.ER]; o.sF+=r[D.FS]; o.errs+=r[D.ERRS]; o.pts+=r[D.PTS]; o.mem[r[D.AN]]=1; var di=r[D.DATE]; o.ser[di]=o.ser[di]||{s:0,n:0}; o.ser[di].s+=r[D.FS]; o.ser[di].n++; });
     var order=this.ROLE?this.ROLE.roles:Object.keys(m);
-    var list=order.filter(k=>m[k]).map(k=>{ var o=m[k]; return {role:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:o.sE/o.days,fs:o.sF/o.days,errs:o.errs,pts:o.pts,epd:o.errs/(o.days||1),ser:o.ser}; });
+    var list=order.filter(k=>m[k]).map(k=>{ var o=m[k]; return {role:k,days:o.days,n:Object.keys(o.mem).length,prod:o.sP/o.days,er:this.erAgg(o), fs:this.fsAgg(o.sP/o.days,this.erAgg(o)),errs:o.errs,pts:o.pts,epd:o.errs/(o.days||1),ser:o.ser}; });
     return {list:list,unmapped:unmapped};
   }
   pageRoles(rws){
