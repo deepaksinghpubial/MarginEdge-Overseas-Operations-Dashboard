@@ -507,7 +507,7 @@ class Component extends DCLogic {
       // Specialists and analysts are both in here and always have been, but a
       // single blended average hid how far apart they are - and worse, it judged
       // specialists on a measure that misses most of their work. A specialist's
-      // final score is productivity x (1 - error rate)^2, and final review does
+      // final score is productivity x (1 - error rate)^3, and final review does
       // not register as productivity, so the more FR someone did the worse they
       // looked.
       //
@@ -565,16 +565,16 @@ class Component extends DCLogic {
   enhanceKpiFx(root){
     if(!root) return;
     var FX={
-      "Avg final score":["Avg final score","Productivity \u00d7 (1 \u2212 error rate)\u00b2, averaged across every analyst-day in range."],
-      "Avg error rate":["Avg error rate","Total errors \u00f7 total possible error points, averaged across analyst-days in range."],
-      "Avg productivity":["Avg productivity","Points reviewed per analyst-day, averaged across the selected range."],
+      "Avg final score":["Avg final score","Avg productivity × (1 − avg error rate)³ for the selected range, using the point-weighted error rate below. Where productivity is negative the factor is (1 + rate)³, so errors always lower the score."],
+      "Avg error rate":["Avg error rate","Total errors ÷ total possible error points across every analyst-day in range. Point-weighted, NOT the average of the daily rates — a 10-task day no longer weighs the same as a 900-task one."],
+      "Avg productivity":["Avg productivity","The mart's productivity_score for the day, averaged across analyst-days in the selected range. It is a score, not a count of points reviewed."],
       "Errors / day":["Errors / day","Total errors in range \u00f7 number of days in the selected range."],
       "Errors / points":["Errors / points","This person's total errors \u00f7 total possible error points in the selected range."],
       "Analysts":["Analysts","Distinct analysts with at least one scored day in the selected range."],
       "Analyst-days":["Analyst-days","Count of scored analyst-day rows (one per analyst per day) in the selected range."],
       "Total errors":["Total errors","Sum of errors across every analyst-day row in the selected range."],
       "Total possible errors":["Total possible errors","Sum of possible error points (7 per IR/Recon \u00b7 4 per line item \u00b7 4 per Recon-misc) across all reviewed rows."],
-      "\u0394 vs median":["\u0394 vs median","This score minus the full-population median for the same metric and date range."],
+      "\u0394 vs median":["Δ vs median","This score minus the median across every analyst-day row in the date range. The baseline is the full population and does not move when the Role or Location filter narrows the view."],
       "Final points (FR-adj.)":["Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0)."]
     };
     var cards=root.querySelectorAll(".kpi");
@@ -2014,7 +2014,7 @@ class Component extends DCLogic {
     var mcard=(t,f,d)=>'<div class="meth-card"><div class="m-t">'+t+'</div><div class="m-f">'+f+'</div><div class="m-d">'+d+'</div></div>';
     return '<div class="card"><div class="card-head">How the scores work</div><div class="card-body" style="display:flex;flex-direction:column;gap:16px"><div class="meth-grid">'
       +mcard("Error rate","Total errors \u00f7 total possible error points","Points: 7 per IR-or-Recon \u00b7 4 per line item \u00b7 4 per Recon (misc charges). Lower is better.")
-      +mcard("Final score","Productivity score \u00d7 (1 \u2212 error rate)\u00b2","Rewards output, penalises errors non-linearly. Higher is better.")
+      +mcard("Final score","Productivity score × (1 − error rate)³","× (1 + error rate)³ where productivity is negative, so errors lower the score on both sides. Higher is better.")
       +mcard("Median &amp; \u0394 from median","Across all analyst-day rows in the window","An analyst is compared to the full-population median for the selected range.")
       +'</div><div class="meth-note">Scoping \u2014 orders currently CLOSED / PENDING_APPROVAL, analyst-role users; system consolidation baked in. Every metric recomputes live for the date range above.</div></div></div>';
   }
@@ -2387,7 +2387,7 @@ class Component extends DCLogic {
       {name:'Errors per day',color:'#0f2a52',values:vErrs,fmt:(v)=>Math.round(v).toLocaleString()},
       {name:'Points lost to errors',color:'#dc2626',values:vPtsLost,fmt:(v)=>this.fs1(v)}
     ];
-    var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, errors &amp; points lost<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body"><div class="note-strip" style="margin-bottom:12px">Final score = Productivity \u00d7 (1 \u2212 error rate)\u00b2 \u00b7 Points lost to errors = |Productivity| \u2212 |Final score| (the productivity magnitude lost to the error penalty)</div>'+(labs.length?wrap(this.normTrendChart(labs,trendSeries,"profile")):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
+    var charts='<div class="card"><div class="card-head">Daily performance \u2014 final score, errors &amp; points lost<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body"><div class="note-strip" style="margin-bottom:12px">Final score = Productivity × (1 − error rate)³ · Points lost to errors = |Productivity| \u2212 |Final score| (the productivity magnitude lost to the error penalty)</div>'+(labs.length?wrap(this.normTrendChart(labs,trendSeries,"profile")):'<div class="placeholder-msg">No days in range.</div>')+'</div></div>';
     return ctrl+kpi+charts+this.dailyRecords(mine,login,teamName,aIdx,role)+this.mistakeExecCards(this.qaRowsForLogins([login]),this.esc(login),true)+this.mistakeDetail(login,totErr);
   }
 
