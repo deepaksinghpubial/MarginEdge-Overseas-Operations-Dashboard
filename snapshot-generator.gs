@@ -1,0 +1,1525 @@
+/**
+ * ============================================================================
+ *  DASHBOARD SNAPSHOT GENERATOR
+ * ============================================================================
+ *  Reads the live QA workbook once a day, converts the tabs the dashboards
+ *  actually use into one compact JSON file, saves it to Drive, and commits it
+ *  to GitHub. Netlify auto-deploys on that commit, so the dashboards then read
+ *  a static file from a CDN instead of calling Google at all.
+ *
+ *  WHY: the previous design had every viewer call an Apps Script web app that
+ *  runs as its owner. Apps Script allows only 30 simultaneous executions PER
+ *  USER, shared across everyone, so ~50 people opening the dashboard in the
+ *  morning exhausted that budget and requests started failing. A static file on
+ *  a CDN has no such ceiling: 50 or 5,000 viewers cost the same, and nothing
+ *  they do can touch the sheet or its quota.
+ *
+ *  WHAT RUNS WHEN
+ *    dailySnapshot()      <- attach the daily time-driven trigger to THIS
+ *    runSnapshotNow()     <- run by hand from the editor to test
+ *    archiveMonth()       <- freeze a finished month into its own JSON file
+ *    doGet()              <- optional read-only endpoint (off unless enabled)
+ *
+ *  SETUP (once) — see docs/SNAPSHOT-SETUP.md for the click-by-click version.
+ *    Project Settings > Script Properties, add:
+ *      GITHUB_TOKEN   fine-grained PAT, Contents: Read and write, THIS repo only
+ *      GITHUB_REPO    deepaksinghpubial/MarginEdge-Overseas-Operations-Dashboard
+ *      GITHUB_BRANCH  main
+ *      DRIVE_FOLDER_ID   (optional) Drive folder for a spare copy. LEAVE THIS
+ *                        UNSET unless you want it — setting it makes the script
+ *                        ask for Drive permission it otherwise never needs.
+ *      ENABLE_WEB_APP    (optional) "true" to serve the JSON over /exec too
+ *  The token is the only secret. It is scoped to one repo and can write only
+ *  file contents, so a leak cannot touch the sheet or any other repo.
+ * ============================================================================
+ */
+
+// ---------------------------------------------------------------------------
+//  CONFIG — the nine tabs the dashboards read, and the columns they use.
+//  Column projection is deliberate: the Mistakes tabs carry columns the
+//  dashboard never reads, and every one of them would otherwise be copied into
+//  the snapshot, committed to git daily and downloaded by every viewer.
+//  `cols: null` means "take every column in the tab".
+// ---------------------------------------------------------------------------
+var TABS = [
+  { key: "legacyProductivity", tab: "Legacy Productivity",
+    cols: ["analyst_login", "team_lead_login", "completed_date", "productivity_score",
+           "total_errors", "total_possible_error_points", "error_rate", "final_score"] },
+
+  { key: "legacyMistakes", tab: "Legacy Mistakes",
+    cols: ["mistake_date", "mistake_area", "variable", "analyst_login", "team_lead_login",
+           "vendor_item_name", "position",
+           "entered_value", "closed_value", "current_value", "status", "order_url",
+           "differs_from_closed", "error_points"] },
+
+  { key: "ipaProductivity", tab: "IPA Productivity",
+    cols: ["analyst_login", "team_lead_login", "completed_date", "productivity_score",
+           "total_tasks", "error_rate", "final_score"] },
+
+  { key: "ipaMistakes", tab: "IPA Mistakes",
+    cols: ["mistake_date", "mistake_area", "variable", "analyst_login", "team_lead_login",
+           "line_item_position", "proposed_value", "closed_value", "current_value",
+           "task_type", "order_url", "flow_type", "differs_from_closed", "error_points"] },
+
+  // Small reference tabs. Taken whole because the dashboard reads most of them
+  // and FR Details has one column PER DAY, so the list is not fixed.
+  { key: "roleDetails",     tab: "Role Details",                 cols: null },
+  { key: "locationDetails", tab: "Location Details",             cols: null },
+  { key: "teamDetails",     tab: "Team Details - Legacy & IPA",  cols: null },
+  { key: "frDetails",       tab: "FR Details",                   cols: null },
+
+  // Written by the dashboard's review popup. Absent until the first review is
+  // saved, which is not an error.
+  { key: "errorReviews",    tab: "Error Reviews",                cols: null, optional: true }
+];
+
+var SNAPSHOT_SCHEMA = 2;   // 2 = split into per-portal parts (see PARTS)
+
+// The snapshot is split into three files rather than one.
+//
+// WHY: measured on day 13 of a month the single file was 22.7 MB, which GitHub
+// needs base64-encoded to 30 MB. The mistakes tabs are ~91% of that and grow all
+// month, so by around day 25 the encoded payload passes UrlFetchApp's 50 MB
+// limit and the daily run would simply start failing in the last week of every
+// month. Splitting keeps every file well clear of that ceiling.
+//
+// It also makes the dashboards much lighter: a Legacy viewer fetches core+legacy
+// and never downloads IPA's 77k mistake rows, which they cannot see anyway.
+var PARTS = {
+  core:   ["roleDetails", "locationDetails", "teamDetails", "frDetails", "errorReviews"],
+  legacy: ["legacyProductivity", "legacyMistakes"],
+  ipa:    ["ipaProductivity", "ipaMistakes"]
+};
+var DATA_DIR = "data";                 // repo folder the JSON lives in
+var MANIFEST_PATH = DATA_DIR + "/manifest.json";
+
+// ===========================================================================
+//  ENTRY POINTS
+// ===========================================================================
+
+/**
+ * Archive July 2026 from its own workbook. A named wrapper so nobody has to
+ * paste a spreadsheet id, and so the id is recorded in one place.
+ */
+function archiveJul2026() {
+  return archiveMonth("2026-07", "1uCFShcJrAG41WU50z-VAFaxucM1k3GbXR44vpuqTMdk");
+}
+
+/**
+ * Freeze August 2026. Pick this from the dropdown and press Run - no arguments
+ * to type.
+ *
+ * No spreadsheet id, unlike July: August IS the live workbook, so this reads the
+ * sheet it is attached to. That is also the deadline. It copies what is in the
+ * tabs RIGHT NOW into permanent data/*-2026-08.json files, so it has to run
+ * while August's rows are still there - after ops pastes September over them
+ * there is nothing left to read.
+ *
+ * Run it once, on 1 or 2 September, before the September paste. Running it
+ * twice is harmless: it simply overwrites the same files with the same data.
+ *
+ * Skipping it is what does damage. September's first publish overwrites the
+ * -current files and marks August archived, and the month dropdown would then
+ * point at frozen files that were never written.
+ */
+function archiveAug2026() {
+  var r = archiveMonth("2026-08");
+  Logger.log("");
+  Logger.log("August 2026 is frozen. Check the month dropdown on the dashboard —");
+  Logger.log("it should offer July 2026, August 2026 and (once September data");
+  Logger.log("arrives) September 2026.");
+  return r;
+}
+
+/**
+ * Freeze September 2026 from the live workbook.
+ *
+ * Same shape as archiveAug2026: no spreadsheet id, because September IS still
+ * in the live tabs. Run it BEFORE pasting October over them.
+ *
+ * It was never run at the start of October, which is why the month dropdown
+ * offers a September that will not load - the manifest names three files that
+ * were never written. This writes them, and the next publish repairs the
+ * manifest entry to match.
+ *
+ * Running it twice is harmless; it overwrites the same files with the same
+ * rows. Running it AFTER October is pasted is not - there would be no
+ * September left to read, and it would archive October's rows under a
+ * September label.
+ */
+function archiveSep2026() {
+  var r = archiveMonthWithCopy("2026-09");
+  Logger.log("");
+  Logger.log("September 2026 is frozen. Check the month dropdown on the dashboard,");
+  Logger.log("then paste October over the live tabs.");
+  return r;
+}
+
+/**
+ * Close whatever month the live sheet is holding. No arguments, so it can be
+ * picked from the Run menu and pressed.
+ *
+ * The Run button calls a function with NO arguments, so anything that needs a
+ * month key cannot be run that way - archiveMonthWithCopy picked from the menu
+ * would be handed undefined and throw. Hence this, and the named wrappers
+ * above: every entry point you can actually press takes nothing.
+ *
+ * Use it from November onwards. The month comes from the data, so there is no
+ * date to keep in step with the calendar.
+ */
+function archiveThisMonth() {
+  var m = liveMonthKey();
+  Logger.log("Closing " + monthLabel(m) + " from the live sheet.");
+  return archiveMonthWithCopy(m);
+}
+
+/**
+ * Takes a permanent copy of the live workbook, then archives the month FROM
+ * that copy. This is the right way to close a month.
+ *
+ * The snapshot records the id of the workbook it read, and the dashboard's
+ * "Open sheet" link uses it. Archive straight from the live book and that id
+ * is the LIVE book's - correct on the day, and wrong from the moment the next
+ * month is pasted over it. September's archive points at a workbook now full
+ * of October, which is exactly how that goes.
+ *
+ * Reading from a copy instead means the link points at a workbook that still
+ * holds the month it claims to. The copy is the month's permanent record.
+ *
+ * Run it BEFORE pasting the new month, while the live tabs still hold the old
+ * one. The first run asks for Drive permission, which is new - copying a file
+ * is not something this script needed before.
+ */
+function archiveMonthWithCopy(monthKey) {
+  var live = SpreadsheetApp.getActiveSpreadsheet();
+  var have = liveMonthKey();
+  if (have !== monthKey) {
+    throw new Error("The live sheet holds " + have + ", not " + monthKey +
+      ". Copying it now would file " + have + "'s rows as " + monthKey + ".");
+  }
+
+  var name = live.getName() + " \u2014 " + monthLabel(monthKey);
+  var copy = DriveApp.getFileById(live.getId()).makeCopy(name);
+  var id = copy.getId();
+  Logger.log("Copied the live workbook to \"" + name + "\"");
+  Logger.log("  id: " + id);
+  Logger.log("  " + copy.getUrl());
+
+  var r = archiveMonth(monthKey, id);
+  Logger.log("");
+  Logger.log(monthKey + " is frozen, and the dashboard's \"Open sheet\" link now");
+  Logger.log("points at that copy rather than at the live workbook.");
+  return r;
+}
+
+/**
+ * Folds away superseded verdicts: keeps only the LAST row for each
+ * mistake_key, which is the one the dashboard already uses.
+ *
+ * Saving appends rather than searching-and-overwriting, because searching
+ * meant holding a global lock while scanning the whole key column and that is
+ * what was making saves time out under load. The cost of that trade is a
+ * second row whenever somebody corrects a verdict. Nothing reads them wrongly
+ * - reviewMap keeps the last row per key - but the tab grows, so this tidies
+ * up.
+ *
+ * Entirely optional and safe to skip for weeks. Run it when the tab feels
+ * large, or before archiving a month.
+ */
+function compactReviews() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Error Reviews");
+  if (!sh) return "No 'Error Reviews' tab.";
+
+  var last = sh.getLastRow(), width = sh.getLastColumn();
+  if (last < 3) return "Nothing to compact.";
+
+  var vals = sh.getRange(1, 1, last, width).getValues();
+  var hdr = vals[0], ki = -1;
+  for (var h = 0; h < hdr.length; h++) {
+    if (String(hdr[h]).trim() === "mistake_key") { ki = h; break; }
+  }
+  if (ki < 0) throw new Error("'Error Reviews' has no mistake_key column.");
+
+  // Walk BACKWARDS and keep the first sighting of each key - that is the last
+  // row written for it. Then put the survivors back in their original order,
+  // so the tab still reads chronologically.
+  var seen = {}, keepIdx = [];
+  for (var r = vals.length - 1; r >= 1; r--) {
+    var k = String(vals[r][ki] || "").trim();
+    if (!k) { keepIdx.push(r); continue; }     // keyless rows are not duplicates
+    if (seen[k]) continue;
+    seen[k] = 1; keepIdx.push(r);
+  }
+  keepIdx.sort(function (a, b) { return a - b; });
+
+  var removed = (vals.length - 1) - keepIdx.length;
+  if (!removed) return "Nothing to compact - " + keepIdx.length + " verdicts, no duplicates.";
+
+  var out = keepIdx.map(function (i) { return vals[i]; });
+  sh.getRange(2, 1, last - 1, width).clearContent();
+  sh.getRange(2, 1, out.length, width).setValues(out);
+
+  var msg = "Compacted Error Reviews: kept " + out.length + " current verdicts, " +
+            "folded away " + removed + " superseded " +
+            (removed === 1 ? "row" : "rows") + ".";
+  Logger.log(msg);
+  try { ss.toast(msg, "Error Reviews", 10); } catch (e) {}
+  return msg;
+}
+
+/**
+ * Moves every review that does not belong to the live month out of the
+ * "Error Reviews" tab and into a tab of its own, one per month.
+ *
+ * WHY THE TAB FILLS UP
+ *
+ * The dashboard appends each verdict to one running log - it has no idea which
+ * month is "open", and a reviewer correcting a verdict needs to find the row
+ * wherever it is. The SNAPSHOT is trimmed by mistake_date, so the dashboard
+ * has always shown the right month; the TAB simply kept everything. By the
+ * October paste it held 18,445 September rows the live month has no use for.
+ *
+ * Nothing is deleted. Rows move to "Error Reviews 2026-09" and so on, in the
+ * same workbook, so a month's verdicts stay with the month's data when the
+ * workbook is copied for archiving. Once a month's snapshot is published and
+ * checked, its tab can be deleted by hand.
+ *
+ * Run it AFTER archiving the outgoing month and AFTER pasting the new one, so
+ * liveMonthKey() reports the month you mean to keep. It takes the same lock
+ * saveReview uses, so a verdict being saved at that moment cannot be lost.
+ *
+ * Rows whose mistake_date cannot be read are KEPT. An unreadable date gives no
+ * basis for filing a row anywhere, and losing somebody's review is worse than
+ * a few strays.
+ */
+function trimReviewsToLiveMonth() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Error Reviews");
+  if (!sh) return "No 'Error Reviews' tab - nothing to do.";
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch (e) { throw new Error("The sheet is busy with saves - try again in a moment."); }
+
+  try {
+    var last = sh.getLastRow(), width = sh.getLastColumn();
+    if (last < 2) return "'Error Reviews' is empty - nothing to do.";
+
+    var vals = sh.getRange(1, 1, last, width).getValues();
+    var disp = sh.getRange(1, 1, last, width).getDisplayValues();
+    var hdr = vals[0];
+    var di = -1;
+    for (var h = 0; h < hdr.length; h++) {
+      if (String(hdr[h]).trim() === "mistake_date") { di = h; break; }
+    }
+    if (di < 0) throw new Error("'Error Reviews' has no mistake_date column.");
+
+    var month = liveMonthKey();
+    var keep = [], byMonth = {}, undated = 0;
+
+    for (var r = 1; r < vals.length; r++) {
+      // The displayed text, not the cell value: Sheets turns "2026-09-14" into
+      // a Date on paste, and a Date stringifies to "Mon Sep 14 2026 ...", whose
+      // first seven characters are "Mon Sep" - which matches no month at all.
+      var ym = String(disp[r][di] || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(ym)) { keep.push(vals[r]); undated++; continue; }
+      if (ym === month) { keep.push(vals[r]); continue; }
+      (byMonth[ym] = byMonth[ym] || []).push(vals[r]);
+    }
+
+    var moved = 0, where = [];
+    for (var m in byMonth) {
+      var name = "Error Reviews " + m;
+      var dest = ss.getSheetByName(name);
+      if (!dest) {
+        dest = ss.insertSheet(name);
+        dest.getRange(1, 1, 1, width).setValues([hdr]).setFontWeight("bold");
+        dest.setFrozenRows(1);
+      }
+      var rows = byMonth[m];
+      dest.getRange(dest.getLastRow() + 1, 1, rows.length, width).setValues(rows);
+      moved += rows.length;
+      where.push(m + ": " + rows.length);
+    }
+
+    if (moved) {
+      sh.getRange(2, 1, last - 1, width).clearContent();
+      if (keep.length) sh.getRange(2, 1, keep.length, width).setValues(keep);
+    }
+
+    var msg = "Error Reviews: kept " + keep.length + " for " + month +
+      (moved ? ", moved " + moved + " to their own tabs (" + where.join(", ") + ")"
+             : ", nothing to move") +
+      (undated ? ", kept " + undated + " with an unreadable date" : "") + ".";
+    Logger.log(msg);
+    try { ss.toast(msg, "Error Reviews", 10); } catch (e2) {}
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Attach the daily time-driven trigger to this one. */
+function dailySnapshot() {
+  return buildAndPublish({ publish: true });
+}
+
+/* ===========================================================================
+ * checkAndPublish - the 15-minute poller
+ *
+ * Publishing once a day meant anything Redash wrote after the run sat in the
+ * sheet until the next morning: on 25 Aug the job published at 10:43 with data
+ * through the 24th, and the 25th's figures then waited a full day.
+ *
+ * Running the full build every 15 minutes would be worse - each publish is a
+ * GitHub commit, and every commit is a Netlify production deploy at 15 credits,
+ * about 4,500 a month.
+ *
+ * So this probes first and builds second. getLastRow() and getLastColumn() are
+ * metadata reads costing milliseconds, not a scan of 180,000 rows. If nothing
+ * has grown since the last publish it returns in a couple of seconds having
+ * touched nothing: no build, no commit, no deploy, no credits. The sheet still
+ * changes about once a day, so the credit cost stays where it was while the
+ * data becomes current within 15 minutes of arriving.
+ *
+ * Error Reviews IS part of the signature, since the move to GitHub Pages made
+ * publishing free. That is what lets the dashboard stop pulling the whole
+ * reviews history out of the web app on a timer.
+ * ======================================================================== */
+var WATCH_TABS = [
+  "Legacy Productivity", "Legacy Mistakes", "IPA Productivity", "IPA Mistakes",
+  "Role Details", "Location Details", "Team Details - Legacy & IPA", "FR Details",
+  // Watched deliberately, which it was NOT while this ran on Netlify: there each
+  // publish cost a paid deploy, so firing one per verdict was unaffordable. On
+  // GitHub Pages a publish is free, and watching it means verdicts reach
+  // everyone through the CDN instead of every viewer pulling the whole reviews
+  // history out of the web app every five minutes.
+  "Error Reviews"
+];
+var SHAPE_PROP = "LAST_PUBLISHED_SHAPE";
+var RUN_FLAG = "PUBLISH_RUNNING_AT";   // set while a build is in flight
+var RUN_STALE_MIN = 20;                // a flag older than this is a dead run
+
+/** Cheap shape of the watched tabs: rows and columns, nothing read. */
+function sheetShape() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = [];
+  for (var i = 0; i < WATCH_TABS.length; i++) {
+    var sh = ss.getSheetByName(WATCH_TABS[i]);
+    out.push(WATCH_TABS[i] + "=" + (sh ? sh.getLastRow() + "x" + sh.getLastColumn() : "missing"));
+  }
+  return out.join("|");
+}
+
+/**
+ * Trigger entry point. Publishes only when the watched tabs have changed.
+ * Pass true to publish regardless, which is what the daily safety net uses.
+ */
+function checkAndPublish(force) {
+  // A TIME-DRIVEN TRIGGER CALLS THIS WITH AN EVENT OBJECT, not with nothing.
+  // `if (!force)` therefore read as false on EVERY scheduled tick, so neither
+  // the shape check nor the rate limit below had ever run since the poller was
+  // installed - the sheet published every 15 minutes round the clock and GitHub
+  // Pages failed deploys on the collisions. Only an explicit true is a force.
+  var isForce = (force === true);
+  var props = PropertiesService.getScriptProperties();
+  var shape = sheetShape();
+  var last = props.getProperty(SHAPE_PROP);
+
+  if (!isForce && last === shape) {
+    Logger.log("No change since the last publish — nothing to do. (" + shape + ")");
+    return { published: false, reason: "unchanged", shape: shape };
+  }
+
+  // Rate limit. I assumed the watched tabs changed about once a day; they change
+  // all day, so on 26 Aug this published 63 times and every publish was a paid
+  // Netlify deploy. On a host that charges per deploy, set MIN_PUBLISH_GAP_MIN
+  // to the smallest number of minutes you are willing to pay for. On GitHub
+  // Pages, where deploys are free, leave it at 0.
+  var gapMin = Number(props.getProperty("MIN_PUBLISH_GAP_MIN") || 0);
+  if (!isForce && gapMin > 0) {
+    var lastAt = Number(props.getProperty("LAST_PUBLISH_AT") || 0);
+    var sinceMin = lastAt ? (Date.now() - lastAt) / 60000 : Infinity;
+    if (sinceMin < gapMin) {
+      Logger.log("Change detected, but the last publish was " + Math.round(sinceMin) +
+                 " min ago and the minimum gap is " + gapMin + " min. Waiting.");
+      return { published: false, reason: "rate-limited", waitMin: Math.ceil(gapMin - sinceMin) };
+    }
+  }
+
+  // Two triggers can overlap if a build runs long. Without a guard, both would
+  // build and both would commit, costing two deploys for one change.
+  //
+  // Deliberately NOT LockService. The dashboard's saveReview takes the script
+  // lock too, waiting 25 seconds before giving up, and a build holds it for
+  // about two minutes - so for two minutes in every fifteen, every reviewer
+  // trying to save a verdict was told "the sheet is busy with other saves".
+  // A property flag keeps two publisher ticks apart without touching the lock
+  // that people's saves depend on.
+  //
+  // The flag is timestamped so a run that dies mid-build (timeout, quota) does
+  // not wedge publishing forever: anything older than RUN_STALE_MIN is ignored.
+  var runningAt = Number(props.getProperty(RUN_FLAG) || 0);
+  var runningMin = runningAt ? (Date.now() - runningAt) / 60000 : Infinity;
+  if (runningMin < RUN_STALE_MIN) {
+    Logger.log("A publish started " + Math.round(runningMin) + " min ago is still running — skipping this tick.");
+    return { published: false, reason: "already-running" };
+  }
+  props.setProperty(RUN_FLAG, String(Date.now()));
+  try {
+    Logger.log(isForce ? "Forced publish." : "Change detected.\n  was: " + (last || "(nothing recorded)") + "\n  now: " + shape);
+    var r = buildAndPublish({ publish: true });
+    // Recorded only after a successful publish, so a failed run is retried on
+    // the next tick instead of being remembered as done.
+    props.setProperty(SHAPE_PROP, shape);
+    props.setProperty("LAST_PUBLISH_AT", String(Date.now()));
+    Logger.log("Published.");
+    return { published: true, shape: shape, summary: r.summary };
+  } finally {
+    props.deleteProperty(RUN_FLAG);
+  }
+}
+
+/**
+ * Install the 15-minute poller, replacing the once-a-day trigger.
+ * Also keeps ONE daily run as a safety net: if the shape somehow matches while
+ * the contents differ - a correction that replaces a row rather than adding one
+ * - the sheet would otherwise never republish.
+ */
+function installPoller(everyMinutes) {
+  everyMinutes = everyMinutes || 15;
+  if ([1, 5, 10, 15, 30].indexOf(everyMinutes) === -1) {
+    throw new Error("Apps Script allows 1, 5, 10, 15 or 30 minute intervals");
+  }
+  var removed = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) {
+    var fn = all[i].getHandlerFunction();
+    if (fn === "dailySnapshot" || fn === "checkAndPublish" || fn === "dailyForcePublish") {
+      ScriptApp.deleteTrigger(all[i]); removed++;
+    }
+  }
+  ScriptApp.newTrigger("checkAndPublish").timeBased().everyMinutes(everyMinutes).create();
+
+  var scriptTz = Session.getScriptTimeZone();
+  var mapped = istHourToScriptHour(10, scriptTz);
+  ScriptApp.newTrigger("dailyForcePublish").timeBased().atHour(mapped.hour).everyDays(1).create();
+
+  Logger.log("---------------------------------------------------------------");
+  Logger.log("Removed " + removed + " old trigger(s).");
+  Logger.log("checkAndPublish   : every " + everyMinutes + " minutes");
+  Logger.log("dailyForcePublish : once daily at " + pad2(mapped.hour) + ":00 " + scriptTz +
+             " (= " + mapped.backInIst + " IST) as a safety net");
+  Logger.log("");
+  Logger.log("A tick that finds no change costs about two seconds and does not");
+  Logger.log("touch GitHub, so it does not cost a Netlify deploy.");
+  Logger.log("---------------------------------------------------------------");
+  return { everyMinutes: everyMinutes, removed: removed };
+}
+
+/** The daily safety net: publishes whether or not the shape changed. */
+function dailyForcePublish() { return checkAndPublish(true); }
+
+/**
+ * Republish the live tabs even if that month is already archived.
+ *
+ * The one deliberate way past the guard in buildAndPublish. Reach for it only
+ * when the archive itself is what is wrong and you mean to overwrite the
+ * month's entry with whatever the live tabs hold.
+ */
+function forcePublishArchivedMonth() {
+  var m = liveMonthKey();
+  Logger.log("Republishing " + monthLabel(m) + " from the live tabs, archived or not.");
+  return buildAndPublish({ publish: true, force: true });
+}
+
+/** Read-only: what the poller can see right now, and whether it would publish. */
+function pollerStatus() {
+  var shape = sheetShape();
+  var last = PropertiesService.getScriptProperties().getProperty(SHAPE_PROP);
+  Logger.log("current shape  : " + shape);
+  Logger.log("last published : " + (last || "(nothing recorded yet)"));
+  Logger.log("would publish  : " + (last === shape ? "no - unchanged" : "YES - changed"));
+  var t = ScriptApp.getProjectTriggers(), names = [];
+  for (var i = 0; i < t.length; i++) names.push(t[i].getHandlerFunction());
+  Logger.log("triggers       : " + (names.join(", ") || "(none)"));
+  return { shape: shape, lastPublished: last, wouldPublish: last !== shape, triggers: names };
+}
+
+/** Run from the editor to test end to end. Publishes exactly like the trigger. */
+function runSnapshotNow() {
+  var r = buildAndPublish({ publish: true });
+  Logger.log(JSON.stringify(r.summary, null, 2));
+  return r;
+}
+
+/** Build and save to Drive only — never touches GitHub. Safe to run anytime. */
+function dryRunSnapshot() {
+  var r = buildAndPublish({ publish: false });
+  Logger.log(JSON.stringify(r.summary, null, 2));
+  return r;
+}
+
+/**
+ * Freeze a finished month so the dashboard's month dropdown keeps offering it
+ * after the live sheet has moved on.
+ *
+ *   archiveMonth("2026-08")                 <- reads THIS workbook
+ *   archiveMonth("2026-07", "1uCFSh...")    <- reads an archived workbook
+ *
+ * Pass the sheetId whenever the month you are archiving no longer lives in this
+ * workbook. Archiving July from the August book would otherwise publish August's
+ * numbers labelled as July, and nothing downstream could tell.
+ */
+function archiveMonth(monthKey, sheetId) {
+  // Refuse to archive a month the sheet is not actually holding.
+  //
+  // The damage from getting this wrong is permanent and quiet: the rows in the
+  // tabs get frozen under whatever label was asked for, and the real month's
+  // figures are gone once they are pasted over. Checking costs one read.
+  if (!sheetId) {
+    var have = liveMonthKey();
+    if (have !== monthKey) {
+      throw new Error("The live sheet holds " + have + ", not " + monthKey +
+        ". Archiving now would freeze " + have + "'s rows under a " + monthKey +
+        " label. If " + monthKey + " has already been pasted over, archive it " +
+        "from its own workbook instead: archiveMonth(\"" + monthKey + "\", \"<spreadsheet id>\").");
+    }
+  }
+  if (!/^\d{4}-\d{2}$/.test(String(monthKey || ""))) {
+    throw new Error('archiveMonth needs a month like "2026-08"');
+  }
+  var built = buildSnapshot(monthKey, sheetId);
+  if (sheetId) {
+    Logger.log("Reading from archived workbook " + sheetId);
+  } else {
+    // Worth saying every time. The data frozen here is right; it is the link
+    // beside it that goes stale, silently, as soon as the next month lands.
+    Logger.log("NOTE: reading the LIVE workbook, so the dashboard's \"Open sheet\"");
+    Logger.log("link for " + monthKey + " will point at it - and will show whatever");
+    Logger.log("month is pasted there next. archiveMonthWithCopy(\"" + monthKey +
+               "\") avoids that by archiving from a permanent copy.");
+  }
+  var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/false);
+  w.files[MANIFEST_PATH] = JSON.stringify(
+    buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/false, w.fileMap), null, 2);
+  var goneArch = stalePartFiles(monthKey, /*isCurrent=*/false, Object.keys(w.files));
+  if (goneArch.length) Logger.log("Removing superseded archive file(s): " + goneArch.join(", "));
+  githubPutMany(w.files, "Archive dashboard snapshot for " + monthKey, goneArch);
+  Logger.log("Archived " + monthKey + " (" + built.snapshot.counts.totalRows + " rows)");
+  return built.summary;
+}
+
+// ===========================================================================
+//  BUILD + PUBLISH
+// ===========================================================================
+
+function buildAndPublish(opts) {
+  opts = opts || {};
+  var started = new Date();
+  var monthKey = liveMonthKey();
+
+  // A month that has been ARCHIVED is finished. If the live tabs still hold it,
+  // the new month simply has not been pasted yet - and publishing anyway does
+  // real damage: buildManifest rewrites that month's entry as the live one,
+  // pointing it back at the -current files and throwing away the link to its
+  // frozen copy. Every fifteen minutes, silently, undoing whatever was just
+  // put right by hand.
+  //
+  // So: stop, and say why. Nothing is published until the new month is in the
+  // sheet, which is the only thing that actually resolves it.
+  if (!opts.force && isArchived(monthKey)) {
+    var stop = "Not publishing. " + monthLabel(monthKey) + " is already archived, " +
+      "and the live tabs still hold it - paste the new month first. " +
+      "(dailyForcePublish overrides this if you really mean to republish.)";
+    Logger.log(stop);
+    return { summary: { skipped: true, month: monthKey, reason: stop }, json: null };
+  }
+
+  var built, json;
+
+  try {
+    built = buildSnapshot(monthKey);
+    json = JSON.stringify(built.snapshot);
+  } catch (e) {
+    // A build failure must be loud. It leaves the PREVIOUS snapshot in place,
+    // so the dashboard keeps serving yesterday's data rather than breaking —
+    // but nobody would notice without this log.
+    Logger.log("SNAPSHOT BUILD FAILED: " + (e && e.stack || e));
+    throw e;
+  }
+
+  var sizeMb = (json.length / 1048576).toFixed(2);
+  Logger.log("Built snapshot for " + monthKey + ": " +
+    built.snapshot.counts.totalRows + " rows, " + sizeMb + " MB of JSON");
+  if (built.snapshot.warnings.length) {
+    Logger.log("WARNINGS: " + built.snapshot.warnings.join(" | "));
+  }
+
+  // Drive copy first: it is the fallback if GitHub is unreachable, and it costs
+  // nothing to keep.
+  try {
+    saveToDrive("dashboard-data.json", json);
+  } catch (e) {
+    // Never fatal: the snapshot is already built and GitHub is next.
+    Logger.log("Drive copy skipped (continuing): " + (e && e.message || e));
+  }
+
+  var w = writePartFiles(built.snapshot, monthKey, /*isCurrent=*/true);
+
+  if (opts.publish) {
+    w.files[MANIFEST_PATH] = JSON.stringify(
+      buildManifest(monthKey, built.snapshot.lastUpdated, /*isCurrent=*/true, w.fileMap), null, 2);
+    var goneNow = stalePartFiles(monthKey, /*isCurrent=*/true, Object.keys(w.files));
+    if (goneNow.length) Logger.log("Removing superseded part file(s): " + goneNow.join(", "));
+    githubPutMany(w.files, "Daily dashboard snapshot " + built.snapshot.lastUpdated, goneNow);
+    Logger.log("Published to GitHub. Netlify will redeploy automatically.");
+  } else {
+    Logger.log("Dry run — GitHub not touched.");
+  }
+
+  built.summary.elapsedSec = Math.round((new Date() - started) / 100) / 10;
+  built.summary.sizeMb = Number(sizeMb);
+  return { summary: built.summary, json: json };
+}
+
+function buildSnapshot(monthKey, sheetId) {
+  // sheetId lets a FINISHED month be read from its own archived workbook. Without
+  // it, archiveMonth("2026-07") would have read the live August book and
+  // published August's figures under a July label - silently wrong data.
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var data = {}, counts = {}, warnings = [], total = 0;
+
+  for (var i = 0; i < TABS.length; i++) {
+    var spec = TABS[i];
+    var sh = ss.getSheetByName(spec.tab);
+
+    if (!sh) {
+      var msg = 'tab "' + spec.tab + '" not found';
+      if (!spec.optional) warnings.push(msg);
+      data[spec.key] = { cols: [], rows: [] };
+      counts[spec.key] = 0;
+      Logger.log((spec.optional ? "note: " : "WARNING: ") + msg);
+      continue;
+    }
+
+    var t = readTab(sh, spec, tz);
+
+    // Error Reviews is one running log covering every month, so a copy of it
+    // taken whole put September's verdicts inside August's archive - 12,965 rows
+    // where a few thousand belong. They never displayed, because a verdict only
+    // shows against the error it was recorded on and that error is not in the
+    // month being viewed, but they made every archive larger to download for no
+    // benefit. Keep only the verdicts whose ERROR falls in this month.
+    //
+    // Rows whose mistake_date cannot be read are KEPT, not dropped: if the date
+    // is unreadable there is no way to tell which month a verdict belongs to,
+    // and silently discarding somebody's review would be far worse than a few
+    // extra rows.
+    if (spec.key === "errorReviews" && t.rows.length) {
+      var di = t.cols.indexOf("mistake_date");
+      if (di >= 0) {
+        var kept = [], dropped = 0, undated = 0;
+        for (var r = 0; r < t.rows.length; r++) {
+          var md = String(t.rows[r][di] || "");
+          var ym = md.length >= 7 ? md.slice(0, 7) : "";
+          if (!/^\d{4}-\d{2}$/.test(ym)) { kept.push(t.rows[r]); undated++; continue; }
+          if (ym === monthKey) kept.push(t.rows[r]); else dropped++;
+        }
+        Logger.log("  Error Reviews: kept " + kept.length + " for " + monthKey +
+                   ", left out " + dropped + " from other months" +
+                   (undated ? ", kept " + undated + " with an unreadable date" : ""));
+        t.rows = kept;
+      } else {
+        Logger.log("  Error Reviews: no mistake_date column — keeping every row.");
+      }
+    }
+
+    data[spec.key] = { cols: t.cols, rows: t.rows };
+    counts[spec.key] = t.rows.length;
+    total += t.rows.length;
+
+    if (t.missing.length) {
+      warnings.push('tab "' + spec.tab + '" is missing expected column(s): ' + t.missing.join(", "));
+    }
+    if (!t.rows.length && !spec.optional) {
+      warnings.push('tab "' + spec.tab + '" returned no rows');
+    }
+    Logger.log("  " + spec.tab + ": " + t.rows.length + " rows x " + t.cols.length + " cols");
+  }
+
+  counts.totalRows = total;
+
+  var snapshot = {
+    schema: SNAPSHOT_SCHEMA,
+    month: monthKey,
+    label: monthLabel(monthKey),
+    lastUpdated: Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+    timezone: tz,
+    sourceSheetId: ss.getId(),
+    generator: "snapshot-generator v1",
+    counts: counts,
+    warnings: warnings,
+    data: data
+  };
+
+  return {
+    snapshot: snapshot,
+    summary: { month: monthKey, counts: counts, warnings: warnings }
+  };
+}
+
+/**
+ * Read one tab into {cols, rows}.
+ *
+ * Rows are arrays in `cols` order rather than objects: an object per row would
+ * repeat every column name on every row, which on the Mistakes tabs is
+ * megabytes of nothing but duplicated key names.
+ *
+ * Value handling, matched to what the dashboard already expects:
+ *   - real Date cells and any column whose name contains "date" -> ISO yyyy-MM-dd
+ *   - Date-typed HEADERS (FR Details has one column per day) -> "d MMM yyyy"
+ *   - numbers and booleans are preserved as-is, NOT stringified
+ *   - blank cells become "" (never null), so a missing value and an empty
+ *     string behave identically downstream
+ *   - rows that are blank in every emitted column are skipped
+ */
+function readTab(sh, spec, tz) {
+  var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (!lastRow || !lastCol) return { cols: [], rows: [], missing: [] };
+
+  // Some tabs open with a merged banner title, so the header is not always row 1.
+  // Pick, from the first few rows, the one with the most filled cells.
+  var scan = sh.getRange(1, 1, Math.min(5, lastRow), lastCol).getValues();
+  var hr = 0, best = -1;
+  for (var r = 0; r < scan.length; r++) {
+    var filled = 0;
+    for (var c = 0; c < scan[r].length; c++) if (String(scan[r][c]).trim() !== "") filled++;
+    if (filled > best) { best = filled; hr = r; }
+  }
+
+  var headers = scan[hr].map(function (h) {
+    if (h instanceof Date) return Utilities.formatDate(h, tz, "d MMM yyyy");
+    return String(h).trim();
+  });
+
+  // Resolve which sheet columns to emit, once per tab rather than per row.
+  var idx = [], cols = [], missing = [];
+  if (spec.cols) {
+    for (var w = 0; w < spec.cols.length; w++) {
+      var at = headers.indexOf(spec.cols[w]);
+      if (at === -1) { missing.push(spec.cols[w]); continue; }
+      idx.push(at); cols.push(headers[at]);
+    }
+  } else {
+    for (var k = 0; k < headers.length; k++) {
+      if (!headers[k]) continue;          // skip unnamed columns
+      idx.push(k); cols.push(headers[k]);
+    }
+  }
+  if (!idx.length) return { cols: [], rows: [], missing: missing };
+
+  var isDateCol = cols.map(function (h) { return /date/i.test(h); });
+  var nData = lastRow - (hr + 1);
+  if (nData <= 0) return { cols: cols, rows: [], missing: missing };
+
+  var values = sh.getRange(hr + 2, 1, nData, lastCol).getValues();
+  var rows = [];
+  for (var v = 0; v < values.length; v++) {
+    var src = values[v], out = new Array(idx.length), blank = true;
+    for (var e = 0; e < idx.length; e++) {
+      var val = src[idx[e]];
+      if (val instanceof Date || isDateCol[e]) val = isoDate(val, tz);
+      if (val === null || val === undefined) val = "";
+      out[e] = val;
+      if (val !== "") blank = false;
+    }
+    if (!blank) rows.push(out);
+  }
+  return { cols: cols, rows: rows, missing: missing };
+}
+
+/**
+ * Normalise a date to ISO yyyy-MM-dd.
+ * Text dates in this workbook are entered DAY-first (DD-MM-YYYY), so "7-1-2026"
+ * is 7 January, not 1 July. Guessing wrong here silently shifts records into the
+ * wrong month, so day-first is applied deliberately rather than left to Date().
+ */
+  // Google Sheets stores plain numbers against its own epoch: serial 0 is
+// 1899-12-30, serial 1 is 1899-12-31. So a quantity of 1, a credit of -13 or a
+// price of 7.95 that someone date-formatted in the sheet arrives here as a
+// Date in 1899/1900 and used to be written out as "1899-12-30" - which reads
+// like corrupt data. The number is recoverable, so convert it back instead of
+// hiding it.
+//
+// The cutoff is deliberately wide: typical values (1, 12, 7.95, 1253.07) land
+// between 1899 and about 1903, and very large ones land in absurd far-future
+// years. Genuine dates in this workbook are invoice dates in the 2020s, so
+// anything outside 2000-2100 is a mis-formatted number, not a real date.
+function looksLikeSerial(v) {
+  var y = v.getFullYear();
+  return y < 2000 || y > 2100;
+}
+function sheetsSerial(v, tz) {
+  var p = Utilities.formatDate(v, tz, "yyyy-MM-dd HH:mm:ss").split(/[- :]/);
+  var days = (Date.UTC(+p[0], +p[1] - 1, +p[2]) - Date.UTC(1899, 11, 30)) / 86400000;
+  var frac = (+p[3] * 3600 + +p[4] * 60 + +p[5]) / 86400;
+  var n = days + frac;
+  // Trim floating-point noise without losing genuine decimals.
+  return Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : Math.round(n * 1e6) / 1e6;
+}
+
+function isoDate(v, tz) {
+  if (v instanceof Date) {
+    if (looksLikeSerial(v)) return sheetsSerial(v, tz);
+    return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+  }
+  var s = String(v).trim();
+  if (!s) return "";
+  var m = s.match(/^(\d{1,4})[-\/](\d{1,2})[-\/](\d{1,4})$/);
+  if (!m) return v;
+  var y, mo, d;
+  if (m[1].length === 4) { y = +m[1]; mo = +m[2]; d = +m[3]; }   // already ISO
+  else { d = +m[1]; mo = +m[2]; y = +m[3]; }                      // day-first
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return v;
+  return y + "-" + ("0" + mo).slice(-2) + "-" + ("0" + d).slice(-2);
+}
+
+/**
+ * Build every file for a snapshot: split into parts, chunk any part that is too
+ * large, and report both the bodies to upload and the per-part file lists the
+ * manifest needs.
+ */
+function writePartFiles(snapshot, monthKey, isCurrent) {
+  var parts = splitSnapshot(snapshot);
+  var files = {}, fileMap = {}, biggest = 0;
+  Object.keys(parts).forEach(function (p) {
+    var chunks = chunkPart(parts[p]);
+    fileMap[p] = [];
+    chunks.forEach(function (ch, i) {
+      var name = partFileName(p, monthKey, isCurrent, chunks.length > 1 ? (i + 1) : 0);
+      var body = JSON.stringify(ch);
+      files[name] = body;
+      fileMap[p].push(name);
+      if (body.length > biggest) biggest = body.length;
+      Logger.log("  " + p + (chunks.length > 1 ? " [" + (i + 1) + "/" + chunks.length + "]" : "") +
+        ": " + ch.counts.totalRows.toLocaleString() + " rows, " + (body.length / 1048576).toFixed(2) + " MB");
+    });
+    if (chunks.length > 1) Logger.log("  (" + p + " split into " + chunks.length + " files to stay under the upload limit)");
+  });
+  Logger.log("Largest file " + (biggest / 1048576).toFixed(2) + " MB -> " +
+    (biggest * 4 / 3 / 1048576).toFixed(1) + " MB base64 (GitHub accepts up to 50 MB).");
+  return { files: files, fileMap: fileMap };
+}
+
+/**
+ * Slice one built snapshot into the per-part files that actually get published.
+ * Each part carries the same metadata so any one of them can be read on its own
+ * and still say which month it is and when it was generated.
+ */
+function splitSnapshot(snap) {
+  var out = {};
+  Object.keys(PARTS).forEach(function (part) {
+    var data = {}, counts = {}, total = 0;
+    PARTS[part].forEach(function (key) {
+      if (!snap.data[key]) return;
+      data[key] = snap.data[key];
+      counts[key] = (snap.data[key].rows || []).length;
+      total += counts[key];
+    });
+    counts.totalRows = total;
+    out[part] = {
+      schema: SNAPSHOT_SCHEMA,
+      part: part,
+      month: snap.month,
+      label: snap.label,
+      lastUpdated: snap.lastUpdated,
+      timezone: snap.timezone,
+      sourceSheetId: snap.sourceSheetId,
+      generator: snap.generator,
+      counts: counts,
+      warnings: snap.warnings,
+      data: data
+    };
+  });
+  return out;
+}
+
+/**
+ * Files this month's parts left behind.
+ *
+ * The number of chunks tracks the data volume, so it changes: a full August
+ * needed legacy-current.1.json and .2.json, while a two-day September fits in
+ * legacy-current.json. Writing the new shape does not remove the old one, so
+ * 45 MB of August chunks sat in the repo unreferenced - served by nobody, but
+ * cloned by everybody.
+ *
+ * Deliberately narrow. It asks GitHub what is actually in data/, matches ONLY
+ * the "<part>-<current|monthKey>[.n].json" names this run is responsible for,
+ * and keeps anything the run just wrote. Another month's files can never match,
+ * and a name that does not fit the pattern is never considered.
+ */
+function stalePartFiles(monthKey, isCurrent, keepPaths) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(DATA_DIR) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) {
+    Logger.log("Could not list " + DATA_DIR + " (" + res.getResponseCode() + ") — skipping cleanup, which is harmless.");
+    return [];
+  }
+  var listing;
+  try { listing = JSON.parse(res.getContentText()); } catch (e) { return []; }
+  if (!listing || !listing.length) return [];
+
+  var keep = {};
+  (keepPaths || []).forEach(function (p) { keep[p] = 1; });
+  var tag = isCurrent ? "current" : monthKey;
+  var stale = [];
+  for (var i = 0; i < listing.length; i++) {
+    var name = listing[i].name, path = DATA_DIR + "/" + name;
+    if (listing[i].type !== "file" || keep[path]) continue;
+    for (var p in PARTS) {
+      // "<part>-<tag>.json" or "<part>-<tag>.<n>.json" and nothing else.
+      var re = new RegExp("^" + p + "-" + tag.replace(/[-]/g, "\\-") + "(\\.\\d+)?\\.json$");
+      if (re.test(name)) { stale.push(path); break; }
+    }
+  }
+  return stale;
+}
+
+function partFileName(part, monthKey, isCurrent, chunk) {
+  var base = DATA_DIR + "/" + part + "-" + (isCurrent ? "current" : monthKey);
+  return base + (chunk ? "." + chunk : "") + ".json";
+}
+
+// Largest JSON we will hand to GitHub in one blob. Base64 inflates by a third,
+// so 12 MB becomes ~16 MB on the wire - comfortably inside UrlFetchApp's 50 MB
+// POST limit with room for a month to grow.
+var CHUNK_TARGET_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Split one part into as many files as needed to stay under the POST limit.
+ *
+ * This is not hypothetical: a PARTIAL August split into three parts fine, but a
+ * COMPLETE July did not - legacy alone was 18.77 MB and the IPA part blew the
+ * limit outright. Per-part splitting is not enough for a full month.
+ *
+ * The part's biggest tab is sliced across the chunks; the smaller tabs ride along
+ * in the first one. Every chunk is a valid part file in its own right, and the
+ * loader concatenates rows for a tab it sees more than once.
+ */
+function chunkPart(partObj) {
+  var body = JSON.stringify(partObj);
+  if (body.length <= CHUNK_TARGET_BYTES) return [partObj];
+
+  var keys = Object.keys(partObj.data);
+  if (!keys.length) return [partObj];
+  var big = keys[0];
+  keys.forEach(function (k) {
+    if ((partObj.data[k].rows || []).length > (partObj.data[big].rows || []).length) big = k;
+  });
+
+  var rows = partObj.data[big].rows || [];
+  var n = Math.ceil(body.length / CHUNK_TARGET_BYTES);
+  if (rows.length < n) n = Math.max(1, rows.length);        // cannot split fewer rows than chunks
+  var per = Math.ceil(rows.length / n);
+  var out = [];
+
+  for (var i = 0; i < n; i++) {
+    var data = {}, counts = {}, total = 0;
+    if (i === 0) {
+      keys.forEach(function (k) {
+        if (k === big) return;
+        data[k] = partObj.data[k];
+        counts[k] = (partObj.data[k].rows || []).length;
+        total += counts[k];
+      });
+    }
+    var slice = rows.slice(i * per, (i + 1) * per);
+    data[big] = { cols: partObj.data[big].cols, rows: slice };
+    counts[big] = slice.length;
+    total += slice.length;
+
+    var chunk = {};
+    Object.keys(partObj).forEach(function (k) { if (k !== "data" && k !== "counts") chunk[k] = partObj[k]; });
+    chunk.chunk = i + 1;
+    chunk.chunks = n;
+    chunk.counts = counts;
+    chunk.counts.totalRows = total;
+    chunk.data = data;
+    out.push(chunk);
+  }
+  return out;
+}
+
+// ===========================================================================
+//  DRIVE
+// ===========================================================================
+
+function saveToDrive(name, json) {
+  var folderId = PropertiesService.getScriptProperties().getProperty("DRIVE_FOLDER_ID");
+
+  // The Drive copy is an OPTIONAL spare. Touching DriveApp at all forces this
+  // script to request Drive permission, which is a lot to ask for a file nobody
+  // reads — GitHub is the destination that matters. So unless a folder is
+  // explicitly configured, Drive is not touched and no such permission is needed.
+  if (!folderId) {
+    Logger.log("Drive copy skipped (no DRIVE_FOLDER_ID set). GitHub is the destination that matters.");
+    return;
+  }
+
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    // Almost always the missing Drive scope rather than a bad folder id: this
+    // project was first authorised before it contained any Drive code, and
+    // Apps Script does not re-prompt on its own.
+    Logger.log("Drive copy skipped — this script has not been granted Drive access. " +
+      "To enable it: clear the DRIVE_FOLDER_ID property (simplest), or re-authorise the " +
+      "project by choosing Run once more and accepting the extra permission. " +
+      "The snapshot itself is unaffected. (" + (e && e.message || e) + ")");
+    return;
+  }
+  var blob = Utilities.newBlob(json, "application/json", name);
+  var existing = folder.getFilesByName(name);
+  if (existing.hasNext()) {
+    var f = existing.next();
+    f.setContent(json);          // keeps the same file id and any shared links
+    Logger.log("Drive: updated " + name + " (" + f.getId() + ")");
+  } else {
+    var created = folder.createFile(blob);
+    Logger.log("Drive: created " + name + " (" + created.getId() + ")");
+  }
+}
+
+// ===========================================================================
+//  GITHUB
+// ===========================================================================
+
+function ghConf() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty("GITHUB_TOKEN");
+  var repo = props.getProperty("GITHUB_REPO");
+  if (!token) throw new Error("Script Property GITHUB_TOKEN is not set — see docs/SNAPSHOT-SETUP.md");
+  if (!repo) throw new Error("Script Property GITHUB_REPO is not set (owner/repo)");
+  return { token: token, repo: repo, branch: props.getProperty("GITHUB_BRANCH") || "main" };
+}
+
+/**
+ * Write SEVERAL files in ONE commit, using the Git Data API.
+ *
+ * The Contents API creates a commit PER FILE, and each commit is a separate Netlify
+ * production deploy at 15 credits a go — publishing four files that way would
+ * cost 60 credits a day instead of 15. So blobs are created first (which do not
+ * commit anything), then a single tree, then a single commit.
+ *
+ * files: { "path/in/repo.json": "contents", ... }
+ */
+function githubPutMany(files, message, deletePaths) {
+  var c = ghConf();
+  var api = "https://api.github.com/repos/" + c.repo;
+  var hdr = { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" };
+
+  function call(url, method, payload) {
+    var opt = { method: method, muteHttpExceptions: true, headers: hdr };
+    if (payload) { opt.contentType = "application/json"; opt.payload = JSON.stringify(payload); }
+    var res = UrlFetchApp.fetch(url, opt);
+    var code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      throw new Error("GitHub " + method + " " + url.replace(api, "") + " failed (" + code + "): " +
+        res.getContentText().slice(0, 300));
+    }
+    return JSON.parse(res.getContentText());
+  }
+
+  var ref = call(api + "/git/ref/heads/" + encodeURIComponent(c.branch), "get");
+  var baseCommitSha = ref.object.sha;
+  var baseCommit = call(api + "/git/commits/" + baseCommitSha, "get");
+
+  var tree = [];
+  // Deletions ride in the same tree, so a chunk count changing from 2 files to 1
+  // is one commit and one deploy - not a write followed by a separate delete.
+  (deletePaths || []).forEach(function (path) {
+    tree.push({ path: path, mode: "100644", type: "blob", sha: null });
+  });
+  Object.keys(files).forEach(function (path) {
+    // base64 so the blob survives regardless of the JSON's contents.
+    var blob = call(api + "/git/blobs", "post", {
+      content: Utilities.base64Encode(files[path], Utilities.Charset.UTF_8),
+      encoding: "base64"
+    });
+    Logger.log("  blob " + path + " (" + (files[path].length / 1048576).toFixed(2) + " MB)");
+    tree.push({ path: path, mode: "100644", type: "blob", sha: blob.sha });
+  });
+
+  // base_tree keeps every other file in the repo untouched.
+  var newTree = call(api + "/git/trees", "post", { base_tree: baseCommit.tree.sha, tree: tree });
+  var commit = call(api + "/git/commits", "post", {
+    message: message, tree: newTree.sha, parents: [baseCommitSha]
+  });
+  call(api + "/git/refs/heads/" + encodeURIComponent(c.branch), "patch", { sha: commit.sha, force: false });
+
+  Logger.log("GitHub: committed " + Object.keys(files).length + " file(s)" +
+    ((deletePaths && deletePaths.length) ? " and removed " + deletePaths.length : "") +
+    " as " + commit.sha.slice(0, 7) + " - one commit, so one deploy.");
+}
+
+/**
+ * Has this month already been frozen? True when the manifest holds an entry
+ * for it that is not live and names its "-<monthKey>" files.
+ */
+function isArchived(monthKey) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(MANIFEST_PATH) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) return false;
+  try {
+    var body = JSON.parse(res.getContentText());
+    var man = JSON.parse(Utilities.newBlob(Utilities.base64Decode(body.content)).getDataAsString());
+    var months = man.months || [];
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].key !== monthKey || months[i].live) continue;
+      var f = months[i].files || {}, paths = [];
+      for (var p in f) paths = paths.concat(f[p] instanceof Array ? f[p] : [f[p]]);
+      for (var q = 0; q < paths.length; q++) {
+        if (String(paths[q]).indexOf("-" + monthKey) >= 0) return true;
+      }
+    }
+  } catch (e) { return false; }
+  return false;
+}
+
+/**
+ * Re-points the month that USED to be live at its own archived files.
+ *
+ * A live month is served from the "-current" files, which are overwritten by
+ * every publish. The moment a new month becomes current, those files stop
+ * holding the old month's data - so an entry left pointing at them would show
+ * the NEW month's figures under the OLD month's name. Nothing would error;
+ * the dashboard would simply be wrong, and plausibly so.
+ *
+ * So the outgoing month is switched to its frozen "-<monthKey>" files. If it
+ * was never archived there is nothing to switch to, and pruneMissingMonths
+ * removes it a moment later - a missing month being far better than a month
+ * showing somebody else's numbers.
+ */
+function demotePreviousCurrent(manifest, incomingKey) {
+  for (var i = 0; i < manifest.months.length; i++) {
+    var m = manifest.months[i];
+    if (!m.live || m.key === incomingKey) continue;
+    var frozen = {};
+    Object.keys(PARTS).forEach(function (p) {
+      frozen[p] = partFileName(p, m.key, /*isCurrent=*/false);
+    });
+    Logger.log(m.key + " is no longer the live month - pointing it at its archive files.");
+    m.files = frozen;
+    m.live = false;
+  }
+}
+
+/**
+ * Drops any month whose files are all missing from the repo.
+ *
+ * A month in the manifest is a promise that its data is there to load. Two
+ * things have broken that promise: a guessed file list for a month nobody ever
+ * archived, and - once the calendar bug made October current while the sheet
+ * held September - an entire month that never existed. Either way the dropdown
+ * offers something that fails to load, which reads as a broken dashboard
+ * rather than a missing month.
+ *
+ * Checking is one directory listing, the same call stalePartFiles already
+ * makes. The month being written is never pruned: its files are in the same
+ * commit and are not on GitHub yet.
+ */
+function pruneMissingMonths(manifest, keepKey) {
+  var c = ghConf();
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(DATA_DIR) +
+      "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() !== 200) {
+    Logger.log("Could not list " + DATA_DIR + " - leaving the manifest alone.");
+    return;
+  }
+  var listing;
+  try { listing = JSON.parse(res.getContentText()); } catch (e) { return; }
+  if (!listing || !listing.length) return;
+
+  var there = {};
+  for (var i = 0; i < listing.length; i++) there[DATA_DIR + "/" + listing[i].name] = 1;
+
+  var kept = [], gone = [];
+  for (var m = 0; m < manifest.months.length; m++) {
+    var mon = manifest.months[m];
+    if (mon.key === keepKey) { kept.push(mon); continue; }
+    var paths = [], f = mon.files || {};
+    for (var p in f) paths = paths.concat(f[p] instanceof Array ? f[p] : [f[p]]);
+    var any = false;
+    for (var q = 0; q < paths.length; q++) if (there[paths[q]]) { any = true; break; }
+    if (any) kept.push(mon); else gone.push(mon.key);
+  }
+  if (gone.length) {
+    Logger.log("Removed from the month dropdown - no data files in the repo: " + gone.join(", "));
+    manifest.months = kept;
+  }
+}
+
+/**
+ * The manifest is what the dashboard's month dropdown is built from. It is
+ * read-modify-written so archiving a month never drops the others.
+ */
+function buildManifest(monthKey, lastUpdated, isCurrent, fileMap) {
+  var c = ghConf();
+  var manifest = { schema: SNAPSHOT_SCHEMA, months: [] };
+
+  var res = UrlFetchApp.fetch(
+    "https://api.github.com/repos/" + c.repo + "/contents/" + encodeURI(MANIFEST_PATH) + "?ref=" + encodeURIComponent(c.branch),
+    { method: "get", muteHttpExceptions: true,
+      headers: { Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json" } });
+  if (res.getResponseCode() === 200) {
+    try {
+      var body = JSON.parse(res.getContentText());
+      manifest = JSON.parse(Utilities.newBlob(Utilities.base64Decode(body.content)).getDataAsString());
+      if (!manifest.months) manifest.months = [];
+    } catch (e) {
+      Logger.log("Manifest unreadable, rebuilding it: " + (e && e.message || e));
+      manifest = { schema: SNAPSHOT_SCHEMA, months: [] };
+    }
+  }
+
+  function fileSet(mKey, live) {
+    var f = {};
+    Object.keys(PARTS).forEach(function (p) { f[p] = partFileName(p, mKey, live); });
+    return f;
+  }
+  // fileMap comes from writePartFiles and lists the files this run actually
+  // wrote - several per part when a month was too large for one upload.
+  //
+  // Without one, the old code called fileSet() to GUESS the names. That is how
+  // the dashboard came to offer a September archive whose three files had never
+  // been written: October's first publish rewrote September's entry, guessed
+  // "data/core-2026-09.json" and friends, and the dropdown pointed at nothing.
+  // A guess is worse than a gap here - a missing month is visible, a month that
+  // fails to load looks like a broken dashboard.
+  //
+  // So: use what was written. Failing that, keep whatever the existing entry
+  // already names, since those files at least existed once. Only invent names
+  // as a last resort, and say so in the log.
+  var prior = null;
+  for (var pi = 0; pi < manifest.months.length; pi++) {
+    if (manifest.months[pi].key === monthKey) prior = manifest.months[pi];
+  }
+  var files = fileMap || (prior && prior.files);
+  if (!files) {
+    files = fileSet(monthKey, !!isCurrent);
+    Logger.log("WARNING: no file list for " + monthKey + " - naming files by " +
+               "convention. Check they exist: " + JSON.stringify(files));
+  }
+  var entry = { key: monthKey, label: monthLabel(monthKey),
+                files: files, lastUpdated: lastUpdated, live: !!isCurrent };
+
+  if (isCurrent) demotePreviousCurrent(manifest, monthKey);
+  pruneMissingMonths(manifest, monthKey);
+
+  var found = false;
+  for (var i = 0; i < manifest.months.length; i++) {
+    if (manifest.months[i].key === monthKey) { manifest.months[i] = entry; found = true; }
+    else if (isCurrent && manifest.months[i].live) {
+      // Only one month can be live. A month that was live and has since been
+      // archived must point at its frozen files instead of the -current ones.
+      manifest.months[i].live = false;
+      manifest.months[i].files = fileSet(manifest.months[i].key, false);
+      delete manifest.months[i].file;     // drop any schema-1 single-file key
+    }
+  }
+  if (!found) manifest.months.push(entry);
+
+  manifest.months.sort(function (a, b) { return a.key < b.key ? 1 : a.key > b.key ? -1 : 0; });
+  manifest.schema = SNAPSHOT_SCHEMA;
+  manifest.current = isCurrent ? monthKey : manifest.current;
+  manifest.updated = lastUpdated;
+  return manifest;
+}
+
+// ===========================================================================
+//  OPTIONAL WEB APP  (off unless ENABLE_WEB_APP = "true")
+// ===========================================================================
+
+/*
+ * There is deliberately NO doGet here.
+ *
+ * This file lives in the same Apps Script project as the dashboard's proxy, and
+ * every .gs file in a project shares ONE global scope. This file used to define
+ * a doGet as a debugging convenience; because it sorts after Code.gs, its doGet
+ * silently replaced the proxy's. The web app then answered {"error":"disabled"}
+ * instead of the JSONP the dashboard expects, so the reviewer list fell back to
+ * the last snapshot and every attempt to save a verdict failed with "JSONP
+ * failed to load" - with nothing to suggest the two files were the cause.
+ *
+ * Publishing here goes through GitHub, not a web app, so no entry point is
+ * needed. If you ever want to serve the snapshot over HTTP, add it to the proxy
+ * as a new action rather than as a second doGet.
+ */
+
+// ===========================================================================
+//  HELPERS
+// ===========================================================================
+
+function currentMonthKey() {
+  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  return Utilities.formatDate(new Date(), tz, "yyyy-MM");
+}
+
+/**
+ * The month the LIVE SHEET actually holds, read from the dates in it.
+ *
+ * This used to be currentMonthKey() - the calendar month - and the two are not
+ * the same thing. Ops paste a month's data and it stays there until the next
+ * month's figures are ready, which is days into the new month. At 00:00 on
+ * 1 October the publisher started labelling the snapshot "October 2026" while
+ * the sheet still held every row of September, and three things followed:
+ *
+ *   - the dashboard offered "October 2026" showing September's numbers
+ *   - buildManifest wrote a September archive entry naming files that no
+ *     archive run had ever created, so picking September broke
+ *   - worst, buildSnapshot trims Error Reviews to the month being built, so
+ *     every September verdict was dropped. The live snapshot went to ZERO
+ *     reviews and nobody was told.
+ *
+ * Taking the month from the data means the label changes when the data does,
+ * which is the only moment it should. The calendar is kept as a fallback for
+ * an empty sheet, where there is nothing else to go on.
+ */
+function liveMonthKey() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var counts = {}, best = null;
+
+  ["Legacy Productivity", "IPA Productivity"].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return;
+    var last = sh.getLastRow();
+    if (last < 2) return;
+    var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var di = hdr.indexOf("completed_date");
+    if (di < 0) return;
+    var vals = sh.getRange(2, di + 1, last - 1, 1).getDisplayValues();
+    for (var i = 0; i < vals.length; i++) {
+      var ym = String(vals[i][0] || "").slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) counts[ym] = (counts[ym] || 0) + 1;
+    }
+  });
+
+  for (var k in counts) if (!best || counts[k] > counts[best]) best = k;
+  if (!best) {
+    Logger.log("No readable dates in the productivity tabs - falling back to the calendar month.");
+    return currentMonthKey();
+  }
+  var spread = Object.keys(counts).length;
+  Logger.log("Live sheet holds " + best + " (" + counts[best] + " rows)" +
+    (spread > 1 ? " - NOTE: " + spread + " months present, " + JSON.stringify(counts) : ""));
+  return best;
+}
+
+function monthLabel(monthKey) {
+  var names = ["January","February","March","April","May","June",
+               "July","August","September","October","November","December"];
+  var parts = String(monthKey).split("-");
+  var mi = parseInt(parts[1], 10) - 1;
+  return (names[mi] || parts[1]) + " " + parts[0];
+}
+
+/**
+ * SET THE DAILY SCHEDULE IN IST — run this one.
+ *
+ *   installDailyTriggerIST()     -> 10:00 IST (default; Redash lands by ~09:00)
+ *   installDailyTriggerIST(11)   -> 11:00 IST
+ *
+ * Why this exists: Apps Script's atHour() uses the SCRIPT PROJECT's timezone,
+ * which is not necessarily the spreadsheet's and not necessarily yours. Rather
+ * than hard-code an offset — which would also be wrong for half the year, since
+ * IST has no daylight saving but US timezones do — the offset is measured at run
+ * time by rendering the same instant in both zones. The result is rounded UP to
+ * the next whole hour so the job can never fire BEFORE the IST time you asked
+ * for, only after.
+ *
+ * Apps Script also runs time-based triggers within a one-hour window, so asking
+ * for 10:00 IST means "some time between 10:00 and 11:00 IST".
+ */
+function installDailyTriggerIST(istHour) {
+  istHour = (istHour == null) ? 10 : Number(istHour);
+  if (!(istHour >= 0 && istHour <= 23)) throw new Error("istHour must be 0-23");
+
+  var scriptTz = Session.getScriptTimeZone();
+  var mapped = istHourToScriptHour(istHour, scriptTz);
+  installDailyTrigger(mapped.hour);
+
+  Logger.log("---------------------------------------------------------------");
+  Logger.log("Requested        : " + pad2(istHour) + ":00 IST");
+  Logger.log("Script timezone  : " + scriptTz);
+  Logger.log("Trigger set to   : " + pad2(mapped.hour) + ":00 " + scriptTz +
+             "  (= " + mapped.backInIst + " IST)");
+  Logger.log("Sheet timezone   : " + SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone() +
+             "   (only affects how dates are written, not when this runs)");
+  Logger.log("Apps Script fires within an hour of the set time.");
+  if (mapped.rounded) {
+    Logger.log("NOTE: rounded up to a whole hour, so it runs slightly after " +
+               pad2(istHour) + ":00 IST rather than before it.");
+  }
+  Logger.log("If your timezone observes daylight saving, this can drift by an");
+  Logger.log("hour when the clocks change — re-run this function if it matters.");
+  Logger.log("---------------------------------------------------------------");
+  return mapped;
+}
+
+function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+/** Minutes past midnight for an instant, as seen in a given timezone. */
+function tzMinutes(d, tz) {
+  var p = Utilities.formatDate(d, tz, "HH:mm").split(":");
+  return Number(p[0]) * 60 + Number(p[1]);
+}
+
+/**
+ * Convert an IST hour to the whole hour in scriptTz that lands at or just after
+ * it. Offsets are measured, not assumed, so this stays correct across zones.
+ */
+function istHourToScriptHour(istHour, scriptTz) {
+  var now = new Date();
+  var diff = tzMinutes(now, scriptTz) - tzMinutes(now, "Asia/Kolkata");
+  // Same wall-clock reading can sit either side of midnight; normalise to +/-12h.
+  while (diff > 720) diff -= 1440;
+  while (diff < -720) diff += 1440;
+
+  var targetMin = (istHour * 60 + diff + 1440) % 1440;
+  var hour = Math.ceil(targetMin / 60) % 24;          // never earlier than asked
+  var backMin = (hour * 60 - diff + 1440) % 1440;
+  return {
+    hour: hour,
+    rounded: (targetMin % 60) !== 0,
+    backInIst: pad2(Math.floor(backMin / 60)) + ":" + pad2(backMin % 60)
+  };
+}
+
+/**
+ * Lower-level: set the trigger using an hour in the SCRIPT's timezone.
+ * Prefer installDailyTriggerIST() unless you specifically want that.
+ */
+function installDailyTrigger(hour) {
+  hour = (hour == null) ? 7 : Number(hour);
+  if (!(hour >= 0 && hour <= 23)) throw new Error("hour must be 0-23");
+
+  var existing = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === "dailySnapshot") ScriptApp.deleteTrigger(existing[i]);
+  }
+  ScriptApp.newTrigger("dailySnapshot").timeBased().atHour(hour).everyDays(1).create();
+  Logger.log("Daily trigger installed for ~" + pad2(hour) + ":00 " + Session.getScriptTimeZone() + ".");
+}
