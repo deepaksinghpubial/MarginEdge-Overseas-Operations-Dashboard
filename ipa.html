@@ -564,13 +564,13 @@ class Component extends DCLogic {
     if(!root) return;
     var FX={
       "Avg final score":["Avg final score","Avg productivity × (1 − avg error rate)³ for the selected range, using the point-weighted error rate below. Where productivity is negative the factor is (1 + rate)³, so errors always lower the score."],
-      "Avg error rate":["Avg error rate","Total errors ÷ total possible error points across every analyst-day in range. Point-weighted, NOT the average of the daily rates — a 10-task day no longer weighs the same as a 900-task one."],
+      "Avg error rate":["Avg error rate","Total error points ÷ total possible error points across every analyst-day in range. Point-weighted, NOT the average of the daily rates — a 10-task day no longer weighs the same as a 900-task one."],
       "Avg productivity":["Avg productivity","The time-based IPA productivity score (actual time capped at 3× target), averaged across analyst-days in the selected range."],
-      "Errors / day":["Errors / day","Total errors in range \u00f7 number of days in the selected range."],
-      "Errors / points":["Errors / points","This person's total errors \u00f7 total possible error points in the selected range."],
+      "Error points / day":["Error points / day","Total error points in range \u00f7 number of days in the selected range."],
+      "Error points / possible":["Error points / possible","This person's total error points \u00f7 total possible error points in the selected range."],
       "Analysts":["Analysts","Distinct analysts with at least one scored day in the selected range."],
       "Analyst-days":["Analyst-days","Count of scored analyst-day rows (one per analyst per day) in the selected range."],
-      "Total errors":["Total errors","Sum of errors across every analyst-day row in the selected range."],
+      "Total error points":["Total error points","Sum of error_points across every analyst-day row in range. A mistake costs 1 point for a single variable and 4 for a line item or misc charge, so this is higher than the number of mistakes."],
       "Total possible errors":["Total possible errors","Sum of possible error points: 1 per single variable · 4 per single-line or misc-charge task · (4 × line items + 1 + 4) per multi-line invoice. IPA's export omits this column, so it is back-solved from the mart's own error rate."],
       "\u0394 vs median":["Δ vs median","This score minus the median across every analyst-day row in the date range. The baseline is the full population and does not move when the Role or Location filter narrows the view."],
       "Final points (FR-adj.)":["Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0)."]
@@ -648,9 +648,9 @@ class Component extends DCLogic {
       +kcard('Avg final score',avgFs,pAvgFs,{higherBetter:true,disp:this.fs1(avgFs),disp2:'median '+this.fs1(med.fs),color:'var(--accent)'})
       +kcard('Avg error rate',avgEr,pAvgEr,{higherBetter:false,pct:true,disp:this.pct(avgEr),disp2:'median '+this.pct(med.er),color:this.erColor(avgEr,med.er)})
       +kcard('Avg productivity',avgProd,pAvgProd,{higherBetter:true,disp:this.fs1(avgProd),disp2:'per analyst-day'})
-      +kcard('Errors / day',errDay,pErrDay,{higherBetter:false,disp:this.fs1(errDay),disp2:'across '+ds.length+' days',color:'var(--proc)'})
+      +kcard('Error points / day',errDay,pErrDay,{higherBetter:false,disp:this.fs1(errDay),disp2:'across '+ds.length+' days',color:'var(--proc)'})
       +'<div class="kpi"><div class="k-label">'+(this.ROLE&&this.st.role?this.esc(this.st.role)+'s':'Analysts')+'</div><div class="k-val">'+ans.length+'</div><div class="k-sub">'+teams.length+' teams \u00b7 '+am.list.length+' AMs</div></div>'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">over '+rws.length.toLocaleString()+' analyst-days</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">over '+rws.length.toLocaleString()+' analyst-days</div></div>'
       +'<div class="kpi"><div class="k-label">Total possible errors</div><div class="k-val">'+rws.reduce((s,r)=>s+r[D.PTS],0).toLocaleString()+'</div><div class="k-sub">points reviewed \u00b7 '+this.pct(totErr/Math.max(1,rws.reduce((s,r)=>s+r[D.PTS],0)))+' error rate</div></div>'
       +'</div>';
     var minDays=Math.max(1,Math.round(ds.length*0.5));
@@ -691,7 +691,7 @@ class Component extends DCLogic {
       {name:"Error rate",color:"#93c5fd",values:dayErrRate,fmt:(v)=>(v*100).toFixed(2)+"%"}
     ],"trend-exec")+'</div></div>';
     var maWin=3, movAvg=dayErrCount.map((_,i)=>{ var a=Math.max(0,i-maWin+1), sl=dayErrCount.slice(a,i+1); return sl.reduce((s,v)=>s+v,0)/sl.length; });
-    var ovErr='<div class="card"><div class="card-head">Total errors per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Errors / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
+    var ovErr='<div class="card"><div class="card-head">Total error points per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Error points / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
     var soCat=this.mistakeExecCards(this.qaRowsForLogins(ans.map(a=>a.an)),"all shown");
     return shout+hero+kpi+leaders+people+trend+errTrend+ovErr+soCat+this.methodPanel();
   }
@@ -787,14 +787,14 @@ class Component extends DCLogic {
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
       +'<div class="kpi"><div class="k-label">Analysts</div><div class="k-val">'+ans.length+'</div><div class="k-sub">'+teams.length+' teams</div></div>'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
       +'<div class="kpi"><div class="k-label">Analyst-days</div><div class="k-val">'+rws.length.toLocaleString()+'</div><div class="k-sub">scored rows</div></div>'
       +'</div>';
     var trend='<div class="grid-2"><div class="card"><div class="card-head">Avg final score per day</div><div class="card-body">'+this.lineChart(ds.map(d=>d.slice(5)),dayFs,{color:"var(--accent)",gid:"fs",fmt:v=>this.fs1(v)})+'</div></div>'
       +'<div class="card"><div class="card-head">Avg error rate per day</div><div class="card-body">'+this.lineChart(ds.map(d=>d.slice(5)),dayEr,{color:"var(--persimmon-500)",gid:"er",fmt:v=>(v*100).toFixed(1)+"%"})+'</div></div></div>';
     var dayErrCount=ds.map(d=>{ var n=0; rws.forEach(r=>{ if(this.S.dates[r[D.DATE]]===d) n+=r[D.ERRS]; }); return n; });
     var maWin=3, movAvg=dayErrCount.map((_,i)=>{ var a=Math.max(0,i-maWin+1), sl=dayErrCount.slice(a,i+1); return sl.reduce((s,v)=>s+v,0)/sl.length; });
-    var errTrend='<div class="card"><div class="card-head">Total errors per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Errors / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
+    var errTrend='<div class="card"><div class="card-head">Total error points per day \u2014 with '+maWin+'-day moving average</div><div class="card-body">'+this.multiLineChart(ds.map(d=>d.slice(5)),[{name:"Error points / day",color:"#d64530",values:dayErrCount},{name:maWin+"-day moving avg",color:"#2563EB",values:movAvg}],{fmt:v=>Math.round(v)})+'</div></div>';
     var performers='<div class="grid-2">'
       +'<div class="card"><div class="card-head" style="color:var(--green)">Top performers \u2014 final score</div><div class="card-body">'+this.rankBars(top.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--green)")+'<div class="chart-note">Analysts active \u2265'+minDays+' of '+ds.length+' days.</div></div></div>'
       +'<div class="card"><div class="card-head" style="color:var(--red)">Needs coaching \u2014 lowest final score</div><div class="card-body">'+this.rankBars(bottom.map(a=>({label:a.an,value:a.fs,disp:this.fs1(a.fs),act:"profile"})),()=>"var(--red)")+'<div class="chart-note">Lowest scorers active \u2265'+minDays+' days \u2014 candidates for training.</div></div></div>'
@@ -905,7 +905,7 @@ class Component extends DCLogic {
       return '<tr'+(on?' class="dim-row-on"':'')+'><td class="dim-label">'+labelH+'</td><td class="dim-bar"><div class="dim-bar-bg"><div class="dim-bar-fill" style="width:'+w+'%"></div></div></td><td class="r dim-errs">'+cntH+'</td><td class="r">'+share.toFixed(1)+'%</td><td class="r" style="color:var(--muted)">'+pp+'</td></tr>';
     }).join('');
     var expanded=shown.length>BASE;
-    var table='<div class="'+(expanded?'dim-scroll':'dim-xscroll')+'"><table class="tbl"><thead><tr><th>'+dimDef.col+'</th><th></th><th class="r">Errors</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    var table='<div class="'+(expanded?'dim-scroll':'dim-xscroll')+'"><table class="tbl"><thead><tr><th>'+dimDef.col+'</th><th></th><th class="r">Error points</th><th class="r">Share</th><th class="r">Proc / Post</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
     var rest=list.length-shown.length;
     var moreH='';
     if(rest>0){
@@ -1485,7 +1485,7 @@ class Component extends DCLogic {
     });
   }
 
-  // Roster of everyone whose errors could be reviewed, so "Total errors" is
+  // Roster of everyone whose errors could be reviewed, so "Total error points" is
   // measured against the same filtered population the rest of the page uses.
   // ======================= ERROR GENUINENESS REVIEW PAGE ====================
   // Laid out as four stacked sections:
@@ -1602,8 +1602,8 @@ class Component extends DCLogic {
     var pc=function(n,d){ return d>0?(n/d*100).toFixed(1)+"%":"—"; };
 
     var kpi='<div class="kpi-row">'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val">'+totalErrors.toLocaleString()+'</div><div class="k-sub">in the selected filters</div></div>'
-      +'<div class="kpi"><div class="k-label">Total errors reviewed</div><div class="k-val" style="color:var(--accent)">'+nRev.toLocaleString()+'</div><div class="k-sub">'+(totalErrors-nRev).toLocaleString()+' still to review</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points</div><div class="k-val">'+totalErrors.toLocaleString()+'</div><div class="k-sub">in the selected filters</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points reviewed</div><div class="k-val" style="color:var(--accent)">'+nRev.toLocaleString()+'</div><div class="k-sub">'+(totalErrors-nRev).toLocaleString()+' still to review</div></div>'
       +'<div class="kpi"><div class="k-label">Reviewed</div><div class="k-val">'+pc(nRev,totalErrors)+'</div><div class="k-sub">of the errors in scope</div></div>'
       +'<div class="kpi"><div class="k-label">Genuine errors</div><div class="k-val" style="color:var(--red)">'+gen.toLocaleString()+'</div><div class="k-sub">upheld on review</div></div>'
       +'<div class="kpi"><div class="k-label">Ingenuine errors</div><div class="k-val" style="color:var(--green)">'+ing.toLocaleString()+'</div><div class="k-sub">overturned on review</div></div>'
@@ -1997,7 +1997,7 @@ class Component extends DCLogic {
   methodPanel(){
     var mcard=(t,f,d)=>'<div class="meth-card"><div class="m-t">'+t+'</div><div class="m-f">'+f+'</div><div class="m-d">'+d+'</div></div>';
     return '<div class="card"><div class="card-head">How the scores work</div><div class="card-body" style="display:flex;flex-direction:column;gap:16px"><div class="meth-grid">'
-      +mcard("Error rate","Total errors ÷ total possible error points","Points: 1 per single variable · 4 per single-line or misc-charge task · (4 × line items + 1 + 4) per multi-line invoice, over completed non-escalated tasks. Lower is better.")
+      +mcard("Error rate","Total error points ÷ total possible error points","Points: 1 per single variable · 4 per single-line or misc-charge task · (4 × line items + 1 + 4) per multi-line invoice, over completed non-escalated tasks. Lower is better.")
       +mcard("Final score","Productivity score × (1 − error rate)³","× (1 + error rate)³ where productivity is negative, so errors lower the score on both sides. Higher is better.")
       +mcard("Median &amp; \u0394 from median","Across all analyst-day rows in the window","An analyst is compared to the full-population median for the selected range.")
       +'</div><div class="meth-note">Productivity is the time-based IPA formula with actual time capped at 3× target, so a negative day reflects consistently slow work rather than one walk-away task. Retired invoices are not an authoritative reference — closed and current comparisons are skipped for them, so a retired invoice yields a mistake only where the analyst differed from the accepted answer. <b>differs_from_imported is informational, not an error.</b> The IPA mart exports no error-point columns, so the denominator is back-solved from its own error rate. Every metric recomputes live for the date range above.</div></div></div>';
@@ -2068,7 +2068,7 @@ class Component extends DCLogic {
         +'<td class="r"><span class="'+(dF>=0?"tag pill-good":"tag pill-bad")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</span></td>'
         +'<td class="r" style="color:var(--proc)">'+t.errs.toLocaleString()+'</td></tr>';
     }).join("");
-    return '<div class="card"><div class="card-head">Team leaderboard \u2014 ranked by avg final score (median '+this.fs1(med.fs)+')'+(this.ROLE&&this.st.role?' \u00b7 counting only each team\u2019s '+this.esc(this.st.role)+'s':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,'Team<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">named after its lead</span>',"team")+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Specialist (after FR)","sp",true)+this.tblTh(tblId,"Analyst","an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Total errors","errs",true,"color:var(--proc)")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    return '<div class="card"><div class="card-head">Team leaderboard \u2014 ranked by avg final score (median '+this.fs1(med.fs)+')'+(this.ROLE&&this.st.role?' \u00b7 counting only each team\u2019s '+this.esc(this.st.role)+'s':'')+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,'Team<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">named after its lead</span>',"team")+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,"Avg final score","fs",true)+this.tblTh(tblId,"Specialist (after FR)","sp",true)+this.tblTh(tblId,"Analyst","an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,"Avg productivity","prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,"Total error points","errs",true,"color:var(--proc)")+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
   }
 
   gotoProfile(login){ var idx=this.S.analysts.indexOf(login); if(idx===-1) return; var role=this.roleOf(login); var team=String(this.S.analyst_team[idx]); this.sel.showAllMistakes=false;
@@ -2181,14 +2181,14 @@ class Component extends DCLogic {
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
       +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
       +'</div>';
     var charts=labs.length?'<div class="card"><div class="card-head">Daily trend \u2014 final score, productivity, error rate<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body">'+this.normTrendChart(labs,[
       {name:"Final score",color:"#0f2942",values:dayFs,fmt:(v)=>this.fs1(v)},
       {name:"Productivity",color:"#2563EB",values:dayProd,fmt:(v)=>this.fs1(v)},
       {name:"Error rate",color:"#93c5fd",values:dayEr,fmt:(v)=>(v*100).toFixed(2)+"%"}
     ],"trend-a")+'</div></div>':'';
-    var charts2=labs.length?'<div class="card"><div class="card-head">Total errors per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Errors / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
+    var charts2=labs.length?'<div class="card"><div class="card-head">Total error points per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Error points / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
     var mxFs=Math.max.apply(null,teams.map(t=>t.fs).concat([0.0001]));
     var rowsH=teams.map((t,i)=>'<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
       +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></td>'
@@ -2197,7 +2197,7 @@ class Component extends DCLogic {
       +'<td class="r" style="color:'+this.erColor(t.er,med.er)+';font-weight:700">'+this.pct(t.er)+'</td>'
       +'<td class="r">'+this.fs1(t.prod)+'</td>'
       +'<td class="r" style="color:var(--proc)">'+t.errs.toLocaleString()+'</td></tr>').join("");
-    var roster='<div class="card"><div class="card-head">Team leaders under '+this.esc(amName)+' \u2014 '+teams.length+' teams, ranked by avg final score \u00b7 click a lead to open the team report</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Team lead</th><th class="r">Analysts</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Total errors</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    var roster='<div class="card"><div class="card-head">Team leaders under '+this.esc(amName)+' \u2014 '+teams.length+' teams, ranked by avg final score \u00b7 click a lead to open the team report</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Team lead</th><th class="r">Analysts</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Total error points</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
     var mcat=this.mistakeExecCards(this.qaRowsForLogins(this.aggAnalysts(mine).map(a=>a.an)),this.esc(amName));
     return back+kpi+roster+charts+charts2+mcat;
   }
@@ -2237,14 +2237,14 @@ class Component extends DCLogic {
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
       +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">points / analyst-day</div></div>'
-      +'<div class="kpi"><div class="k-label">Total errors</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
+      +'<div class="kpi"><div class="k-label">Total error points</div><div class="k-val" style="color:var(--proc)">'+totErr.toLocaleString()+'</div><div class="k-sub">in selected range</div></div>'
       +'</div>';
     var charts=labs.length?'<div class="card"><div class="card-head">Daily trend \u2014 final score, productivity, error rate<span style="font-weight:500;color:var(--muted);margin-left:8px">Each line scaled to its own range so trends stay comparable \u00b7 hover a point for the exact value</span></div><div class="card-body">'+this.normTrendChart(labs,[
       {name:"Final score",color:"#0f2942",values:dayFs,fmt:(v)=>this.fs1(v)},
       {name:"Productivity",color:"#2563EB",values:dayProd,fmt:(v)=>this.fs1(v)},
       {name:"Error rate",color:"#93c5fd",values:dayEr,fmt:(v)=>(v*100).toFixed(2)+"%"}
     ],"trend-b")+'</div></div>':'';
-    var charts2=labs.length?'<div class="card"><div class="card-head">Total errors per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Errors / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
+    var charts2=labs.length?'<div class="card"><div class="card-head">Total error points per day</div><div class="card-body">'+this.multiLineChart(labs,[{name:"Error points / day",color:"#d64530",values:dayErrCount}],{fmt:v=>Math.round(v)})+'</div></div>':'';
     var mxFs=Math.max.apply(null,members.map(a=>a.fs).concat([0.0001]));
     var rowFn=(a,i)=>'<tr><td><span class="rank-badge" style="'+(i<3?"background:var(--honey-600);color:#fff":"background:var(--neutral-100);color:var(--muted)")+'">'+(i+1)+'</span></td>'
       +'<td style="font-weight:700;font-family:var(--font-body)"><button class="team-link" data-act="profile" data-arg="'+this.esc(a.an)+'">'+this.esc(a.an)+'</button></td>'
@@ -2253,7 +2253,7 @@ class Component extends DCLogic {
       +'<td class="r">'+this.fs1(a.prod)+'</td>'
       +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
       +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
-    var rosterTbl=(label,list)=>{ if(!list.length) return ''; return '<div class="card"><div class="card-head">'+label+' \u2014 '+list.length+', ranked by avg final score</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+list.map(rowFn).join("")+'</tbody></table></div></div>'; };
+    var rosterTbl=(label,list)=>{ if(!list.length) return ''; return '<div class="card"><div class="card-head">'+label+' \u2014 '+list.length+', ranked by avg final score</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Error points</th><th class="r">Days</th></tr></thead><tbody>'+list.map(rowFn).join("")+'</tbody></table></div></div>'; };
     var specs=members.filter(a=>this.roleOf(a.an)==="Specialist");
     var anas=members.filter(a=>this.roleOf(a.an)==="Analyst");
     var others=members.filter(a=>{ var r=this.roleOf(a.an); return r!=="Specialist"&&r!=="Analyst"; });
@@ -2281,7 +2281,7 @@ class Component extends DCLogic {
       +'<td class="r" style="color:var(--proc)">'+a.errs+'</td>'
       +'<td class="r" style="color:var(--muted)">'+a.days+'</td></tr>';
     var fpFxT=this.fxInline("Final Points after considering FR counts","FR count \u00d7 2 + Final score, averaged per day over the selected range (days with no FR record on file count as 0).");
-    var specRoster=specs.length?'<div class="card"><div class="card-head">Specialists \u2014 '+specs.length+', ranked by Final Points after considering FR counts'+fpFxT+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Final points after FR</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Errors</th><th class="r">Days</th></tr></thead><tbody>'+specs.map(rowFnSp).join("")+'</tbody></table></div></div>':'';
+    var specRoster=specs.length?'<div class="card"><div class="card-head">Specialists \u2014 '+specs.length+', ranked by Final Points after considering FR counts'+fpFxT+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th><th>Name</th><th class="r">Final points after FR</th><th class="r">Avg final score</th><th class="r">Avg error rate</th><th class="r">Avg productivity</th><th class="r" style="color:var(--proc)">Error points</th><th class="r">Days</th></tr></thead><tbody>'+specs.map(rowFnSp).join("")+'</tbody></table></div></div>':'';
     var roster=specRoster+rosterTbl("Analysts",anas)+rosterTbl("Other members",others);
     if(!specs.length&&!anas.length&&!others.length){
       roster=members.length
@@ -2310,11 +2310,11 @@ class Component extends DCLogic {
       var frv=frDaily[d]!=null?frDaily[d]:0;
       var frCell=showFr?'<td class="r">'+(frDaily[d]!=null?frDaily[d].toLocaleString():"\u2014")+'</td>':'';
       var fpCell=showFr?'<td class="r" style="font-weight:800;color:var(--honey-600)">'+this.fs1(frv*2+r[D.FS])+'</td>':'';
-      return '<tr><td class="mist-clickable" data-act="mistfilter" data-kind="date" data-arg="'+d+'" title="Click to see this day\u2019s mistakes">'+d+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td>'+frCell+fpCell+'</tr>';
+      return '<tr><td class="mist-clickable" data-act="mistfilter" data-kind="date" data-arg="'+d+'" title="Click to see this day\u2019s mistakes">'+d+'</td><td>'+this.esc(login)+'</td><td>'+this.esc(teamName)+'</td><td class="r">'+this.fs1(r[D.PROD])+'</td><td class="r">'+r[D.ERRS]+'</td><td class="r">'+(r[D.TASKS]||0).toLocaleString()+'</td><td class="r">'+r[D.PTS].toLocaleString()+'</td><td class="r">'+this.pct(r[D.ER])+'</td><td class="r">'+this.fs1(r[D.FS])+'</td>'+frCell+fpCell+'</tr>';
     }).join("");
     var frTh=showFr?'<th class="r">Final Review count</th>':'';
     var fpTh=showFr?'<th class="r">Final Points after considering FR counts</th>':'';
-    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Errors</th><th class="r">Total tasks</th><th class="r">Error rate</th><th class="r">Final score</th>'+frTh+fpTh+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
+    return '<div class="card"><div class="card-head">Daily productivity records ('+sorted.length+')</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Date</th><th>Analyst</th><th>Team</th><th class="r">Productivity</th><th class="r">Error points</th><th class="r">Total tasks</th><th class="r">Possible error points</th><th class="r">Error rate</th><th class="r">Final score</th>'+frTh+fpTh+'</tr></thead><tbody>'+rowsH+'</tbody></table></div></div>';
   }
 
 
@@ -2364,7 +2364,7 @@ class Component extends DCLogic {
       +'<div class="kpi"><div class="k-label">Avg error rate</div><div class="k-val" style="color:'+this.erColor(avgEr,med.er)+'">'+this.pct(avgEr)+'</div><div class="k-sub">median '+this.pct(med.er)+'</div></div>'
       +'<div class="kpi"><div class="k-label">\u0394 vs median</div><div class="k-val" style="color:'+(dF>=0?"var(--green)":"var(--red)")+'">'+(dF>=0?"+":"\u2212")+this.fs1(Math.abs(dF))+'</div><div class="k-sub">final score</div></div>'
       +'<div class="kpi"><div class="k-label">Avg productivity</div><div class="k-val">'+this.fs1(avgProd)+'</div><div class="k-sub">'+days+' active days</div></div>'
-      +'<div class="kpi"><div class="k-label">Errors / points</div><div class="k-val" style="color:var(--proc)">'+totErr+'</div><div class="k-sub">of '+totPts.toLocaleString()+' possible</div></div>'
+      +'<div class="kpi"><div class="k-label">Error points / possible</div><div class="k-val" style="color:var(--proc)">'+totErr+'</div><div class="k-sub">of '+totPts.toLocaleString()+' possible</div></div>'
       +'</div>';
     var wrap=(inner)=>anim?'<div class="anim-chart">'+inner+'</div>':inner;
     var vPtsLost=vFs.map((f,i)=>Math.abs(vProd[i])-Math.abs(f));
@@ -2473,7 +2473,7 @@ class Component extends DCLogic {
       ,this.dualBar("Avg error rate",an,A.er,bn,B.er,{pct:true,higherBetter:false})
       ,this.dualBar("Avg productivity",an,A.prod,bn,B.prod,{dec:true,higherBetter:true})
       ,this.dualBar("Total tasks",an,A.tasks||0,bn,B.tasks||0,{higherBetter:true})
-      ,this.dualBar("Total errors",an,A.errs,bn,B.errs,{higherBetter:false})];
+      ,this.dualBar("Total error points",an,A.errs,bn,B.errs,{higherBetter:false})];
     if(hasN) bars.push(this.dualBar("Members",an,A.n,bn,B.n,{higherBetter:true}));
     var dFsA=A.fs-med.fs, dFsB=B.fs-med.fs, gap=A.fs-B.fs;
     var deltas='<div class="delta-grid">'
@@ -2601,8 +2601,8 @@ class Component extends DCLogic {
     var AC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'], TC=['#3b8ae8','#7fdcc9','#9aa3ad','#c3d6fb'];
     var areaItems=srt(byArea), typeItems=srt(byType);
     var donuts='<div class="grid-2">'
-      +'<div class="card"><div class="card-head">Mistakes by area'+lbl+' \u2014 '+total.toLocaleString()+'</div><div class="card-body">'+this.donutChart(areaItems,total,AC,interactive?'area':null)+'</div></div>'
-      +(typeItems.length?'<div class="card"><div class="card-head">Mistakes by type'+lbl+'</div><div class="card-body">'+this.donutChart(typeItems,typeItems.reduce((s,i)=>s+i.value,0),TC,interactive?'type':null)+'</div></div>':'')
+      +'<div class="card"><div class="card-head">Mistakes by area'+lbl+' \u2014 '+total.toLocaleString()+'<span style="font-weight:500;color:var(--muted);margin-left:8px">counts mistakes, not error points \u2014 a line-item mistake costs 4</span></div><div class="card-body">'+this.donutChart(areaItems,total,AC,interactive?'area':null)+'</div></div>'
+      +(typeItems.length?'<div class="card"><div class="card-head">Mistakes by type'+lbl+'<span style="font-weight:500;color:var(--muted);margin-left:8px">counts mistakes, not error points</span></div><div class="card-body">'+this.donutChart(typeItems,typeItems.reduce((s,i)=>s+i.value,0),TC,interactive?'type':null)+'</div></div>':'')
       +'</div>';
     var varItems=srt(byVar).slice(0,12);
     var pareto='<div class="card"><div class="card-head">Top mistake variables'+lbl+'</div><div class="card-body">'+this.paretoBig(varItems,total,interactive?'var':null)+'</div></div>';
@@ -2642,7 +2642,7 @@ class Component extends DCLogic {
     var esc=(x)=>this.esc(x);
     // KPI cards
     var kpi=(l,v,c)=>'<td style="padding:12px 14px;border:1px solid #e2e6ec;border-radius:8px;background:#f7f9fb"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c8698;font-weight:700">'+l+'</div><div style="font-size:22px;font-weight:800;color:'+(c||'#12161c')+';font-family:Arial,sans-serif;margin-top:4px">'+v+'</div></td>';
-    var kpiRow='<table cellspacing="8" cellpadding="0" style="border-collapse:separate;margin:0 -8px"><tr>'+kpi('Avg final score',this.fs1(avgFs),'#0072CE')+kpi('Avg error rate',this.pct(avgEr))+kpi('Avg productivity',this.fs1(avgProd))+kpi('Total errors',totErr.toLocaleString(),'#c0492b')+'</tr></table>';
+    var kpiRow='<table cellspacing="8" cellpadding="0" style="border-collapse:separate;margin:0 -8px"><tr>'+kpi('Avg final score',this.fs1(avgFs),'#0072CE')+kpi('Avg error rate',this.pct(avgEr))+kpi('Avg productivity',this.fs1(avgProd))+kpi('Total error points',totErr.toLocaleString(),'#c0492b')+'</tr></table>';
     var rowsList=(arr,color)=>arr.map((a,i)=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;color:#7c8698;font-size:13px">'+(i+1)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;font-size:13px;font-weight:600">'+esc(a.an)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;font-size:13px;color:#7c8698">'+esc(a.team)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;text-align:right;font-weight:800;color:'+color+';font-family:Arial">'+this.fs1(a.fs)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eef1f4;text-align:right;font-size:13px">'+this.pct(a.er)+'</td></tr>').join('');
     var listCard=(title,arr,color)=>'<div style="margin-top:18px"><div style="font-size:14px;font-weight:800;color:#12161c;margin-bottom:6px">'+title+'</div><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #e2e6ec;border-radius:8px;overflow:hidden"><tr style="background:#f2f4f7"><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">#</th><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">Name</th><th style="padding:7px 10px;text-align:left;font-size:11px;color:#7c8698;text-transform:uppercase">Team</th><th style="padding:7px 10px;text-align:right;font-size:11px;color:#7c8698;text-transform:uppercase">Final</th><th style="padding:7px 10px;text-align:right;font-size:11px;color:#7c8698;text-transform:uppercase">Err rate</th></tr>'+rowsList(arr,color)+'</table></div>';
     var teamsAgg=this.aggTeams(rws).sort((a,b)=>b.fs-a.fs); var bestTeam=teamsAgg[0], worstTeam=teamsAgg[teamsAgg.length-1];
@@ -2671,7 +2671,7 @@ class Component extends DCLogic {
       +'<div style="margin-top:20px;font-size:11px;color:#9aa4b2;border-top:1px solid #e2e6ec;padding-top:10px">Generated from the '+esc(portal)+' \u00b7 median final '+this.fs1(med.fs)+' \u00b7 median error rate '+this.pct(med.er)+'. Figures reflect the selected date range and filters.</div></div>';
     var line=(s)=>s+'\n';
     var text=line(subject)+line('')+line(range+' | '+scopeTxt+' | '+ans.length+' people')+line('')+line('SUMMARY: '+gist)+line('')
-      +line('KPIs: Avg final '+this.fs1(avgFs)+' | Avg error rate '+this.pct(avgEr)+' | Avg productivity '+this.fs1(avgProd)+' | Total errors '+totErr)
+      +line('KPIs: Avg final '+this.fs1(avgFs)+' | Avg error rate '+this.pct(avgEr)+' | Avg productivity '+this.fs1(avgProd)+' | Total error points '+totErr)
       +(areaLine?line('Mistake mix: '+areaLine):'')+line('')
       +line('TOP PERFORMERS:')+top.map((a,i)=>line('  '+(i+1)+'. '+a.an+' ('+a.team+') \u2014 '+this.fs1(a.fs)+', err '+this.pct(a.er))).join('')
       +line('')+line('NEEDS ATTENTION:')+bottom.map((a,i)=>line('  '+(i+1)+'. '+a.an+' ('+a.team+') \u2014 '+this.fs1(a.fs)+', err '+this.pct(a.er))).join('');
@@ -2701,7 +2701,7 @@ class Component extends DCLogic {
   exportCSV(){
     var rws=this.srows(), p=this.st.page, med=this.windowMedians(rws), rows=[], name="qa_"+p+"_"+this.st.from+"_to_"+this.st.to;
     if(p==="teams"){
-      rows.push(["Rank","Team lead","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median final","Total errors"]);
+      rows.push(["Rank","Team lead","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median final","Total error points"]);
       this.aggTeams(rws).sort((a,b)=>b.fs-a.fs).forEach((t,i)=>rows.push([i+1,t.team,t.n,t.fs.toFixed(2),t.er.toFixed(4),t.prod.toFixed(2),(t.fs-med.fs).toFixed(2),t.errs]));
     } else if(p==="profile" && this.sel.prAnalyst!==""){
       var login=this.S.analysts[parseInt(this.sel.prAnalyst)], m=this.mistakesFor(login);
@@ -2709,8 +2709,8 @@ class Component extends DCLogic {
         rows.push(["Date","Area","Variable","Line pos","Proposed Value","Closed","Current","Status","Order link"]);
         m.forEach(r=>rows.push([Q.dates[r[F.DATE]],Q.areas[r[F.AREA]],Q.vars[r[F.VAR]],r[F.LP],r[F.ENT],r[F.CLO],r[F.CUR],Q.statuses[r[F.ST]],Q.url_prefix+r[F.URL]]));
       } else { var D=this.SD, aIdx=parseInt(this.sel.prAnalyst); name="qa_dailyscores_"+login;
-        rows.push(["Date","Productivity","Errors","Possible points","Error rate","Final score"]);
-        rws.filter(r=>r[D.AN]===aIdx).sort((a,b)=>a[D.DATE]-b[D.DATE]).forEach(r=>rows.push([this.S.dates[r[D.DATE]],r[D.PROD],r[D.ERRS],r[D.PTS],r[D.ER],r[D.FS]]));
+        rows.push(["Date","Productivity","Errors","Total tasks","Possible points","Error rate","Final score"]);
+        rws.filter(r=>r[D.AN]===aIdx).sort((a,b)=>a[D.DATE]-b[D.DATE]).forEach(r=>rows.push([this.S.dates[r[D.DATE]],r[D.PROD],r[D.ERRS],r[D.TASKS]||0,r[D.PTS],r[D.ER],r[D.FS]]));
       }
     } else if(p==="coaching"){
       var ds=this.datesInRange(), minDays=Math.max(1,Math.round(ds.length*0.5));
@@ -2724,13 +2724,13 @@ class Component extends DCLogic {
       picks.forEach((a,i)=>{ var top=this.topErrors(a.an); var te=top===null?"":top.map(t=>t.v+" x"+t.count).join("; "); rows.push([i+1,a.team,a.an,a.fs.toFixed(2),(a.fs-med.fs).toFixed(2),a.er.toFixed(4),a.days,a.trend.dir,te]); });
     } else if(p==="ams"){
       if(!this.AM){ rows.push(["No AM mapping loaded"]); }
-      else { var ar=this.aggByAM(rws); rows.push(["Assistant Manager","Teams","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median","Errors per analyst-day","Total errors","Team list"]); ar.list.sort((a,b)=>b.fs-a.fs).forEach(a=>rows.push([a.am,a.nTeams,a.n,a.fs.toFixed(2),a.er.toFixed(4),a.prod.toFixed(2),(a.fs-med.fs).toFixed(2),a.epd.toFixed(2),a.errs,a.teams.map(t=>t.team+" ("+this.fs1(t.fs)+")").join("; ")])); }
+      else { var ar=this.aggByAM(rws); rows.push(["Assistant Manager","Teams","Analysts","Avg final score","Avg error rate","Avg productivity","Delta vs median","Errors per analyst-day","Total error points","Team list"]); ar.list.sort((a,b)=>b.fs-a.fs).forEach(a=>rows.push([a.am,a.nTeams,a.n,a.fs.toFixed(2),a.er.toFixed(4),a.prod.toFixed(2),(a.fs-med.fs).toFixed(2),a.epd.toFixed(2),a.errs,a.teams.map(t=>t.team+" ("+this.fs1(t.fs)+")").join("; ")])); }
     } else if(p==="roles"){
       if(!this.ROLE){ rows.push(["No role mapping loaded"]); }
-      else { var rr=this.aggByRole(this.srows(true)); rows.push(["Role","People","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); rr.list.forEach(L=>rows.push([L.role,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,L.epd.toFixed(2)])); if(rr.unmapped) rows.push(["(unmapped, excluded)","","",rr.unmapped]); }
+      else { var rr=this.aggByRole(this.srows(true)); rows.push(["Role","People","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total error points","Errors per analyst-day"]); rr.list.forEach(L=>rows.push([L.role,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,L.epd.toFixed(2)])); if(rr.unmapped) rows.push(["(unmapped, excluded)","","",rr.unmapped]); }
     } else if(p==="locations"){
       if(!this.LOC){ rows.push(["No location mapping loaded"]); }
-      else { var lr=this.aggByLocation(rws); rows.push(["Location","Analysts","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total errors","Errors per analyst-day"]); lr.list.sort((a,b)=>b.n-a.n).forEach(L=>rows.push([L.loc,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,(L.errs/(L.days||1)).toFixed(2)])); if(lr.unmapped) rows.push(["(unmapped, excluded)","","",lr.unmapped]); }
+      else { var lr=this.aggByLocation(rws); rows.push(["Location","Analysts","Analyst-days","Avg final score","Avg error rate","Avg productivity","Total error points","Errors per analyst-day"]); lr.list.sort((a,b)=>b.n-a.n).forEach(L=>rows.push([L.loc,L.n,L.days,L.fs.toFixed(2),L.er.toFixed(4),L.prod.toFixed(2),L.errs,(L.errs/(L.days||1)).toFixed(2)])); if(lr.unmapped) rows.push(["(unmapped, excluded)","","",lr.unmapped]); }
     } else {
       var list=this.aggAnalysts(rws), sort=this.sel.lbSort;
       // Without this the export ignored the role split the PAGE applies, so
@@ -2832,7 +2832,7 @@ class Component extends DCLogic {
       +metric("Avg final score","fs",v=>this.fs1(v),true)
       +metric("Avg error rate","er",v=>this.pct(v),false)
       +metric("Avg productivity","prod",v=>this.fs1(v),true)
-      +metric("Total errors","errs",v=>v.toLocaleString(),false)
+      +metric("Total error points","errs",v=>v.toLocaleString(),false)
       +metric("Errors / analyst-day","epd",v=>this.fs1(v),false)
       +'</tbody></table></div></div>';
     var bars="";
@@ -2923,8 +2923,8 @@ class Component extends DCLogic {
         +'<td class="r" style="color:var(--muted)">'+a.errs.toLocaleString()+'</td></tr>';
     }).join("");
     var sortOpt=(v,l)=>'<option value="'+v+'"'+(amSort===v?" selected":"")+'>'+l+'</option>';
-    var sortCtrl='<span style="margin-left:auto" class="ctrl-row"><label>Sort</label><select data-act="amsort">'+sortOpt("finalDesc","Final score / analyst \u2193")+sortOpt("prodDesc","Productivity / analyst \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("errDayAsc","Errors / day \u2191 (best)")+'</select></span>';
-    var summary='<div class="card"><div class="card-head">AM leaderboard \u2014 every column is a <b style="color:var(--accent);font-weight:800">&nbsp;per-analyst average&nbsp;</b>, so team size never affects position'+(r.unmappedTeams?'':'')+sortCtrl+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Assistant Manager","am")+this.tblTh(tblId,"Teams","nTeams",true)+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,'Avg final score<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">specialist &amp; analyst</span>',"fs",true)+this.tblTh(tblId,'Specialist<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">final points after FR</span>',"sp",true)+this.tblTh(tblId,'Analyst<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,'Avg productivity<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,'Errors / day<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">per analyst</span>',"epd",true,"color:var(--proc)")+this.tblTh(tblId,'Total errors<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">volume only</span>',"errs",true)+'</tr></thead><tbody>'+summaryRows+'</tbody></table></div><div class="note-strip" style="border-top:1px solid var(--border)"><b>Fair-view guarantee:</b> ranking and every column except <b>Total errors</b> are per-analyst-day averages \u2014 independent of team count. <b>Harjaspreet Singh</b> and <b>Faria</b> run 2 teams (amber); the rest run 3, yet both out-rank one or more 3-team AMs on productivity. <b>Total errors</b> is raw volume (naturally larger for more analysts) \u2014 use <b>Errors / day</b> to compare error levels fairly.</div></div>';
+    var sortCtrl='<span style="margin-left:auto" class="ctrl-row"><label>Sort</label><select data-act="amsort">'+sortOpt("finalDesc","Final score / analyst \u2193")+sortOpt("prodDesc","Productivity / analyst \u2193")+sortOpt("errorAsc","Error rate \u2191 (best)")+sortOpt("errDayAsc","Error points / day \u2191 (best)")+'</select></span>';
+    var summary='<div class="card"><div class="card-head">AM leaderboard \u2014 every column is a <b style="color:var(--accent);font-weight:800">&nbsp;per-analyst average&nbsp;</b>, so team size never affects position'+(r.unmappedTeams?'':'')+sortCtrl+'</div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Rank</th>'+this.tblTh(tblId,"Assistant Manager","am")+this.tblTh(tblId,"Teams","nTeams",true)+this.tblTh(tblId,"Analysts","n",true)+this.tblTh(tblId,'Avg final score<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">specialist &amp; analyst</span>',"fs",true)+this.tblTh(tblId,'Specialist<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">final points after FR</span>',"sp",true)+this.tblTh(tblId,'Analyst<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"an",true)+this.tblTh(tblId,"Avg error rate","er",true)+this.tblTh(tblId,'Avg productivity<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">/ analyst-day</span>',"prod",true)+this.tblTh(tblId,"\u0394 vs median","delta",true)+this.tblTh(tblId,'Error points / day<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">per analyst</span>',"epd",true,"color:var(--proc)")+this.tblTh(tblId,'Total error points<br><span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)">volume only</span>',"errs",true)+'</tr></thead><tbody>'+summaryRows+'</tbody></table></div><div class="note-strip" style="border-top:1px solid var(--border)"><b>Fair-view guarantee:</b> ranking and every column except <b>Total error points</b> are per-analyst-day averages \u2014 independent of team count. <b>Harjaspreet Singh</b> and <b>Faria</b> run 2 teams (amber); the rest run 3, yet both out-rank one or more 3-team AMs on productivity. <b>Total error points</b> is raw volume (naturally larger for more analysts) \u2014 use <b>Error points / day</b> to compare error levels fairly.</div></div>';
     var cards='<div class="am-grid">'+list.map(a=>{
       var mxTeam=Math.max.apply(null,a.teams.map(t=>t.fs).concat([0.0001]));
       var teamRows=a.teams.map(t=>{ var col=this.fsColor(t.fs,med.fs); return '<div class="am-team"><span class="am-team-name" title="'+this.esc(t.team)+'"><button class="team-link" data-act="team" data-arg="'+t.teamIdx+'">'+this.esc(t.team)+'</button></span><div class="am-team-bar"><div style="width:'+Math.min(100,t.fs/mxTeam*100).toFixed(1)+'%;height:100%;border-radius:4px;background:'+col+'"></div></div><span class="am-team-fs" style="color:'+col+'">'+this.fs1(t.fs)+'</span><span class="am-team-er" style="color:'+this.erColor(t.er,med.er)+'">'+this.pct(t.er)+'</span></div>'; }).join("");
@@ -2961,7 +2961,7 @@ class Component extends DCLogic {
       +metric("Avg final score","fs",v=>this.fs1(v),true)
       +metric("Avg error rate","er",v=>this.pct(v),false)
       +metric("Avg productivity","prod",v=>this.fs1(v),true)
-      +metric("Total errors","errs",v=>v.toLocaleString(),false)
+      +metric("Total error points","errs",v=>v.toLocaleString(),false)
       +metric("Errors / analyst-day","epd",v=>this.fs1(v),false)
       +'</tbody></table></div><div class="note-strip">\u201cBest\u201d (\u2713) is highlighted per metric \u2014 remember roles differ in expected workload, so read productivity and error rate together, not in isolation.</div></div>';
     var cards='<div class="kpi-row">'+list.map((L,i)=>'<div class="kpi" style="border-top:3px solid '+COL[i%COL.length]+'"><div class="k-label">'+this.esc(L.role)+'</div><div class="k-val" style="color:'+COL[i%COL.length]+'">'+this.fs1(L.fs)+'</div><div class="k-sub">'+L.n+' people \u00b7 err '+this.pct(L.er)+'</div></div>').join("")+'</div>';
